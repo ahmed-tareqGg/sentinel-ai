@@ -23,8 +23,8 @@ interface ValidationError {
   message: string;
 }
 
-const REQUIRED_FIELDS = ['event_type', 'severity', 'source_ip', 'message'];
-const OPTIONAL_FIELDS = ['destination_ip', 'file_hash', 'user', 'hostname', 'tags', 'event_time'];
+const REQUIRED_FIELDS = ['event_type', 'severity', 'source_ip'];
+const OPTIONAL_FIELDS = ['message', 'destination_ip', 'file_hash', 'user', 'hostname', 'tags', 'event_time'];
 
 export function FileImportDialog({ onSuccess }: { onSuccess?: () => void }) {
   const [open, setOpen] = useState(false);
@@ -67,30 +67,62 @@ export function FileImportDialog({ onSuccess }: { onSuccess?: () => void }) {
   };
 
   const normalizeFieldName = (field: string): string => {
+    const normalizedField = field.toLowerCase().trim().replace(/[\s_-]+/g, '_');
     const mappings: Record<string, string> = {
       'eventtype': 'event_type',
       'event_type': 'event_type',
       'type': 'event_type',
+      'event': 'event_type',
+      'category': 'event_type',
+      'alert_type': 'event_type',
+      'alerttype': 'event_type',
+      'incident_type': 'event_type',
       'sourceip': 'source_ip',
       'source_ip': 'source_ip',
       'srcip': 'source_ip',
       'src_ip': 'source_ip',
+      'src': 'source_ip',
+      'source': 'source_ip',
+      'ip': 'source_ip',
+      'ip_address': 'source_ip',
+      'ipaddress': 'source_ip',
+      'attacker_ip': 'source_ip',
       'destinationip': 'destination_ip',
       'destination_ip': 'destination_ip',
       'dstip': 'destination_ip',
       'dst_ip': 'destination_ip',
+      'dst': 'destination_ip',
+      'dest': 'destination_ip',
+      'destination': 'destination_ip',
+      'target_ip': 'destination_ip',
       'filehash': 'file_hash',
       'file_hash': 'file_hash',
       'hash': 'file_hash',
+      'md5': 'file_hash',
+      'sha256': 'file_hash',
+      'sha1': 'file_hash',
       'msg': 'message',
       'message': 'message',
       'description': 'message',
+      'details': 'message',
+      'note': 'message',
+      'notes': 'message',
+      'summary': 'message',
+      'alert': 'message',
+      'alert_message': 'message',
       'eventtime': 'event_time',
       'event_time': 'event_time',
       'timestamp': 'event_time',
       'time': 'event_time',
+      'date': 'event_time',
+      'datetime': 'event_time',
+      'created_at': 'event_time',
+      'sev': 'severity',
+      'priority': 'severity',
+      'level': 'severity',
+      'risk': 'severity',
     };
-    return mappings[field.toLowerCase()] || field.toLowerCase();
+    return mappings[normalizedField] || normalizedField;
   };
 
   const normalizeData = (data: any[]): any[] => {
@@ -98,12 +130,32 @@ export function FileImportDialog({ onSuccess }: { onSuccess?: () => void }) {
       const normalized: any = {};
       Object.keys(row).forEach(key => {
         const normalizedKey = normalizeFieldName(key);
+        // Merge values if the same normalized key exists (e.g., multiple mappings)
+        if (normalized[normalizedKey] && normalized[normalizedKey].toString().trim() !== '') {
+          return; // Keep the first valid value
+        }
         normalized[normalizedKey] = row[key];
       });
-      // Ensure severity is a number
+      
+      // Ensure severity is a number, default to 3 if not provided
       if (normalized.severity) {
-        normalized.severity = parseInt(normalized.severity) || 3;
+        const sevValue = normalized.severity.toString().toLowerCase();
+        // Handle text severity levels
+        if (sevValue === 'critical' || sevValue === 'crit') normalized.severity = 5;
+        else if (sevValue === 'high') normalized.severity = 4;
+        else if (sevValue === 'medium' || sevValue === 'med') normalized.severity = 3;
+        else if (sevValue === 'low') normalized.severity = 2;
+        else if (sevValue === 'info' || sevValue === 'informational') normalized.severity = 1;
+        else normalized.severity = parseInt(normalized.severity) || 3;
+      } else {
+        normalized.severity = 3;
       }
+      
+      // Generate default message if not provided
+      if (!normalized.message || normalized.message.toString().trim() === '') {
+        normalized.message = `${normalized.event_type || 'Security Event'} from ${normalized.source_ip || 'Unknown'}`;
+      }
+      
       return normalized;
     });
   };
