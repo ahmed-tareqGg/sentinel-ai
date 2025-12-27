@@ -11,7 +11,16 @@ interface PlaybookAction {
   params?: Record<string, unknown>;
 }
 
-async function verifyAuthAndRole(req: Request): Promise<{ user: any; error?: string }> {
+async function verifyAuthAndRole(req: Request, isInternal: boolean): Promise<{ user: any; error?: string }> {
+  // Allow internal calls from other edge functions with service role key
+  if (isInternal) {
+    const authHeader = req.headers.get('Authorization');
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (authHeader === `Bearer ${serviceKey}`) {
+      return { user: { id: 'internal', type: 'service', email: 'system' } };
+    }
+  }
+
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) {
     return { user: null, error: 'Missing authorization header' };
@@ -168,8 +177,11 @@ serve(async (req) => {
   }
 
   try {
+    const body = await req.json();
+    const { incident_id, risk_level, classification, playbook_id, internal } = body;
+
     // Verify authentication and authorization
-    const { user, error: authError } = await verifyAuthAndRole(req);
+    const { user, error: authError } = await verifyAuthAndRole(req, internal === true);
     if (authError) {
       console.error('Auth error:', authError);
       return new Response(JSON.stringify({ error: authError }), {
@@ -178,15 +190,13 @@ serve(async (req) => {
       });
     }
 
-    console.log(`User ${user.id} executing playbook`);
+    console.log(`${user.type === 'service' ? 'Internal call' : `User ${user.id}`} executing playbook`);
 
     // Use service role for privileged operations after auth check
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { incident_id, risk_level, classification, playbook_id } = await req.json();
-    
     console.log(`Executing playbook for incident ${incident_id}, risk: ${risk_level}, classification: ${classification}`);
 
     // Get the incident
