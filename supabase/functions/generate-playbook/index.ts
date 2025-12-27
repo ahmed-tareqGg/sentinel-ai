@@ -106,45 +106,59 @@ Order actions logically (notifications first, then containment, then escalation)
 
     console.log('AI response:', content);
 
-    // Parse JSON from response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    // Parse JSON from response - handle both single object and array
+    const arrayMatch = content.match(/\[[\s\S]*\]/);
+    const objectMatch = content.match(/\{[\s\S]*\}/);
+    
+    let parsed: any;
+    if (arrayMatch) {
+      parsed = JSON.parse(arrayMatch[0]);
+    } else if (objectMatch) {
+      parsed = JSON.parse(objectMatch[0]);
+    } else {
       throw new Error('Could not parse playbook from AI response');
     }
 
-    const playbook = JSON.parse(jsonMatch[0]);
+    // Normalize to array
+    const playbooks = Array.isArray(parsed) ? parsed : [parsed];
 
-    // Validate the playbook structure
-    if (!playbook.name || !playbook.actions || !Array.isArray(playbook.actions)) {
-      throw new Error('Invalid playbook structure');
-    }
-
-    // Filter to only valid actions
-    playbook.actions = playbook.actions.filter((a: any) => 
-      AVAILABLE_ACTIONS.includes(a.type)
-    );
-
-    // Validate conditions
-    if (playbook.conditions) {
-      if (playbook.conditions.risk_level && !RISK_LEVELS.includes(playbook.conditions.risk_level)) {
-        delete playbook.conditions.risk_level;
+    // Validate and clean each playbook
+    const validatedPlaybooks = playbooks.map((playbook: any) => {
+      if (!playbook.name || !playbook.actions || !Array.isArray(playbook.actions)) {
+        throw new Error('Invalid playbook structure');
       }
-      if (playbook.conditions.classification && !CLASSIFICATIONS.includes(playbook.conditions.classification)) {
-        delete playbook.conditions.classification;
-      }
-      if (playbook.conditions.min_severity) {
-        const sev = parseInt(playbook.conditions.min_severity);
-        if (isNaN(sev) || sev < 1 || sev > 5) {
-          delete playbook.conditions.min_severity;
-        } else {
-          playbook.conditions.min_severity = sev;
+
+      // Filter to only valid actions
+      playbook.actions = playbook.actions.filter((a: any) => 
+        AVAILABLE_ACTIONS.includes(a.type)
+      );
+
+      // Validate conditions
+      if (playbook.conditions) {
+        if (playbook.conditions.risk_level && !RISK_LEVELS.includes(playbook.conditions.risk_level)) {
+          delete playbook.conditions.risk_level;
+        }
+        if (playbook.conditions.classification && !CLASSIFICATIONS.includes(playbook.conditions.classification)) {
+          delete playbook.conditions.classification;
+        }
+        if (playbook.conditions.min_severity) {
+          const sev = parseInt(playbook.conditions.min_severity);
+          if (isNaN(sev) || sev < 1 || sev > 5) {
+            delete playbook.conditions.min_severity;
+          } else {
+            playbook.conditions.min_severity = sev;
+          }
         }
       }
-    }
 
-    console.log('Generated playbook:', playbook);
+      return playbook;
+    });
 
-    return new Response(JSON.stringify(playbook), {
+    // Return single or array based on input
+    const result = validatedPlaybooks.length === 1 ? validatedPlaybooks[0] : validatedPlaybooks;
+    console.log('Generated playbook(s):', result);
+
+    return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
