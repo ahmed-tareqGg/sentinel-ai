@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
-import { Incident } from '@/lib/mockData';
+import { Incident } from '@/hooks/useIncidents';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,14 @@ export function IncidentTable({ incidents, limit }: IncidentTableProps) {
   const navigate = useNavigate();
   const displayedIncidents = limit ? incidents.slice(0, limit) : incidents;
 
+  if (displayedIncidents.length === 0) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-8 text-center">
+        <p className="text-muted-foreground">No incidents to display</p>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
       <div className="overflow-x-auto">
@@ -57,10 +65,10 @@ export function IncidentTable({ incidents, limit }: IncidentTableProps) {
                 onClick={() => navigate(`/incidents/${incident.id}`)}
               >
                 <td className="px-4 py-3">
-                  <span className="font-mono text-sm font-medium text-primary">{incident.id}</span>
+                  <span className="font-mono text-sm font-medium text-primary">{incident.incident_number}</span>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="text-sm text-foreground">{incident.eventType}</span>
+                  <span className="text-sm text-foreground">{incident.event_type}</span>
                 </td>
                 <td className="px-4 py-3">
                   <Badge variant="outline" className={cn('font-mono', severityColors[incident.severity])}>
