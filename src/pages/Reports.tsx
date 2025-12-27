@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { FileText, Download, Calendar, TrendingUp, Loader2 } from 'lucide-react';
@@ -17,6 +18,7 @@ interface Report {
 }
 
 export default function Reports() {
+  const navigate = useNavigate();
   const [generatingReport, setGeneratingReport] = useState<string | null>(null);
   const [customReportOpen, setCustomReportOpen] = useState(false);
   const [startDate, setStartDate] = useState('');
@@ -33,7 +35,7 @@ export default function Reports() {
 
   const generateReport = async (reportType: string) => {
     setGeneratingReport(reportType);
-    
+
     try {
       const { data, error } = await supabase.functions.invoke('generate-report', {
         body: {
@@ -43,11 +45,22 @@ export default function Reports() {
         },
       });
 
-      if (error) throw error;
-      
+      if (error) {
+        const status = (error as any)?.context?.status;
+        const message = (error as any)?.message || 'Failed to generate report';
+
+        if (status === 401 || message.toLowerCase().includes('jwt')) {
+          toast.error('جلسة الدخول انتهت. سجّل دخول مرة أخرى.');
+          navigate('/auth');
+          return;
+        }
+
+        throw error;
+      }
+
       setReportData(data);
       setViewReportOpen(true);
-      
+
       // Add to reports list
       const newReport: Report = {
         id: Date.now(),
@@ -56,8 +69,8 @@ export default function Reports() {
         date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         type: reportType,
       };
-      setReports(prev => [newReport, ...prev]);
-      
+      setReports((prev) => [newReport, ...prev]);
+
       toast.success(`${reportType} report generated successfully`);
     } catch (error) {
       console.error('Report generation failed:', error);
