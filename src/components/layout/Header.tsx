@@ -244,14 +244,20 @@ export function Header({ title, subtitle }: HeaderProps) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {role === 'admin' && (
-              <DropdownMenuItem onClick={() => navigate('/settings')} className="cursor-pointer">
+              <DropdownMenuItem 
+                onSelect={() => navigate('/settings')} 
+                className="cursor-pointer"
+              >
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
               </DropdownMenuItem>
             )}
             <DropdownMenuItem 
-              onClick={signOut} 
-              className="cursor-pointer text-destructive focus:text-destructive"
+              onSelect={async () => {
+                await signOut();
+                navigate('/auth');
+              }} 
+              className="cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
             >
               <LogOut className="h-4 w-4 mr-2" />
               Sign Out
