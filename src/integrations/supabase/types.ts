@@ -279,6 +279,8 @@ export type Database = {
       }
       integrations: {
         Row: {
+          auto_execution_threshold: number | null
+          autonomous_mode_enabled: boolean | null
           config: Json | null
           created_at: string
           display_name: string
@@ -293,6 +295,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          auto_execution_threshold?: number | null
+          autonomous_mode_enabled?: boolean | null
           config?: Json | null
           created_at?: string
           display_name: string
@@ -307,6 +311,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          auto_execution_threshold?: number | null
+          autonomous_mode_enabled?: boolean | null
           config?: Json | null
           created_at?: string
           display_name?: string
@@ -322,9 +328,51 @@ export type Database = {
         }
         Relationships: []
       }
+      mitre_coverage: {
+        Row: {
+          coverage_status: string | null
+          detection_count: number | null
+          has_playbook: boolean | null
+          id: string
+          last_detected: string | null
+          playbook_ids: string[] | null
+          tactic: string
+          technique_id: string
+          technique_name: string
+          updated_at: string
+        }
+        Insert: {
+          coverage_status?: string | null
+          detection_count?: number | null
+          has_playbook?: boolean | null
+          id?: string
+          last_detected?: string | null
+          playbook_ids?: string[] | null
+          tactic: string
+          technique_id: string
+          technique_name: string
+          updated_at?: string
+        }
+        Update: {
+          coverage_status?: string | null
+          detection_count?: number | null
+          has_playbook?: boolean | null
+          id?: string
+          last_detected?: string | null
+          playbook_ids?: string[] | null
+          tactic?: string
+          technique_id?: string
+          technique_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       playbook_executions: {
         Row: {
+          ai_explanation: string | null
           completed_at: string | null
+          decision_factors: Json | null
+          execution_mode: string | null
           id: string
           incident_id: string
           playbook_id: string
@@ -333,7 +381,10 @@ export type Database = {
           status: string | null
         }
         Insert: {
+          ai_explanation?: string | null
           completed_at?: string | null
+          decision_factors?: Json | null
+          execution_mode?: string | null
           id?: string
           incident_id: string
           playbook_id: string
@@ -342,7 +393,10 @@ export type Database = {
           status?: string | null
         }
         Update: {
+          ai_explanation?: string | null
           completed_at?: string | null
+          decision_factors?: Json | null
+          execution_mode?: string | null
           id?: string
           incident_id?: string
           playbook_id?: string
@@ -361,6 +415,170 @@ export type Database = {
           {
             foreignKeyName: "playbook_executions_playbook_id_fkey"
             columns: ["playbook_id"]
+            isOneToOne: false
+            referencedRelation: "playbooks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      playbook_feedback: {
+        Row: {
+          analyst_id: string | null
+          created_at: string
+          execution_id: string | null
+          feedback_type: string
+          id: string
+          incident_id: string | null
+          notes: string | null
+          playbook_id: string | null
+          suggested_actions: Json | null
+        }
+        Insert: {
+          analyst_id?: string | null
+          created_at?: string
+          execution_id?: string | null
+          feedback_type: string
+          id?: string
+          incident_id?: string | null
+          notes?: string | null
+          playbook_id?: string | null
+          suggested_actions?: Json | null
+        }
+        Update: {
+          analyst_id?: string | null
+          created_at?: string
+          execution_id?: string | null
+          feedback_type?: string
+          id?: string
+          incident_id?: string | null
+          notes?: string | null
+          playbook_id?: string | null
+          suggested_actions?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playbook_feedback_execution_id_fkey"
+            columns: ["execution_id"]
+            isOneToOne: false
+            referencedRelation: "playbook_executions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "playbook_feedback_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "playbook_feedback_playbook_id_fkey"
+            columns: ["playbook_id"]
+            isOneToOne: false
+            referencedRelation: "playbooks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      playbook_learning: {
+        Row: {
+          approval_count: number | null
+          auto_execution_threshold: number | null
+          confidence_adjustment: number | null
+          id: string
+          last_updated: string
+          modification_count: number | null
+          playbook_id: string | null
+          rejection_count: number | null
+          tenant_id: string | null
+        }
+        Insert: {
+          approval_count?: number | null
+          auto_execution_threshold?: number | null
+          confidence_adjustment?: number | null
+          id?: string
+          last_updated?: string
+          modification_count?: number | null
+          playbook_id?: string | null
+          rejection_count?: number | null
+          tenant_id?: string | null
+        }
+        Update: {
+          approval_count?: number | null
+          auto_execution_threshold?: number | null
+          confidence_adjustment?: number | null
+          id?: string
+          last_updated?: string
+          modification_count?: number | null
+          playbook_id?: string | null
+          rejection_count?: number | null
+          tenant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playbook_learning_playbook_id_fkey"
+            columns: ["playbook_id"]
+            isOneToOne: true
+            referencedRelation: "playbooks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      playbook_suggestions: {
+        Row: {
+          confidence_score: number | null
+          converted_playbook_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          incident_count: number | null
+          name: string
+          pattern_source: string | null
+          reasoning: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          sample_incident_ids: string[] | null
+          status: string | null
+          suggested_actions: Json
+          suggested_conditions: Json
+        }
+        Insert: {
+          confidence_score?: number | null
+          converted_playbook_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          incident_count?: number | null
+          name: string
+          pattern_source?: string | null
+          reasoning: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          sample_incident_ids?: string[] | null
+          status?: string | null
+          suggested_actions: Json
+          suggested_conditions: Json
+        }
+        Update: {
+          confidence_score?: number | null
+          converted_playbook_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          incident_count?: number | null
+          name?: string
+          pattern_source?: string | null
+          reasoning?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          sample_incident_ids?: string[] | null
+          status?: string | null
+          suggested_actions?: Json
+          suggested_conditions?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playbook_suggestions_converted_playbook_id_fkey"
+            columns: ["converted_playbook_id"]
             isOneToOne: false
             referencedRelation: "playbooks"
             referencedColumns: ["id"]
