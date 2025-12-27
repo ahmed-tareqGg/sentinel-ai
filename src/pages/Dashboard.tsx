@@ -6,17 +6,18 @@ import { ClassificationChart } from '@/components/dashboard/ClassificationChart'
 import { TrendChart } from '@/components/dashboard/TrendChart';
 import { MitreChart } from '@/components/dashboard/MitreChart';
 import { useIncidents } from '@/hooks/useIncidents';
+import { useAnalytics } from '@/hooks/useAnalytics';
 import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
   const { incidents, loading } = useIncidents();
+  const metrics = useAnalytics(incidents);
 
-  const openIncidents = incidents.filter(i => i.status === 'Open').length;
-  const criticalAlerts = incidents.filter(i => i.risk_level === 'Critical').length;
-  const truePositives = incidents.filter(i => i.classification === 'True Positive').length;
-  const falsePositives = incidents.filter(i => i.classification === 'False Positive').length;
-  const totalClassified = truePositives + falsePositives;
-  const falsePositiveRate = totalClassified > 0 ? Math.round((falsePositives / totalClassified) * 100) : 0;
+  const openIncidents = metrics.openIncidents;
+  const criticalAlerts = metrics.criticalIncidents;
+  const truePositives = metrics.truePositives;
+  const falsePositives = metrics.falsePositives;
+  const falsePositiveRate = metrics.falsePositiveRate;
 
   return (
     <AppLayout title="Dashboard" subtitle="Real-time security operations overview">
@@ -52,10 +53,9 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="lg:col-span-2">
-          <TrendChart />
+          <TrendChart data={metrics.incidentsPerDay} />
         </div>
         <ClassificationChart truePositives={truePositives} falsePositives={falsePositives} />
       </div>
