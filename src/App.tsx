@@ -12,6 +12,7 @@ import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Reports from "./pages/Reports";
 import Playbooks from "./pages/Playbooks";
+import Demo from "./pages/Demo";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -32,6 +33,7 @@ const App = () => (
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute requiredRole="soc_analyst"><Reports /></ProtectedRoute>} />
             <Route path="/playbooks" element={<ProtectedRoute requiredRole="admin"><Playbooks /></ProtectedRoute>} />
+            <Route path="/demo" element={<ProtectedRoute><Demo /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
