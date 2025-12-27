@@ -14,16 +14,297 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          details: Json | null
+          id: string
+          ip_address: string | null
+          resource_id: string | null
+          resource_type: string
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          ip_address?: string | null
+          resource_id?: string | null
+          resource_type: string
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          ip_address?: string | null
+          resource_id?: string | null
+          resource_type?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      incident_timeline: {
+        Row: {
+          details: string | null
+          id: string
+          incident_id: string
+          stage: string
+          timestamp: string
+        }
+        Insert: {
+          details?: string | null
+          id?: string
+          incident_id: string
+          stage: string
+          timestamp?: string
+        }
+        Update: {
+          details?: string | null
+          id?: string
+          incident_id?: string
+          stage?: string
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incident_timeline_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      incidents: {
+        Row: {
+          ai_analysis: Json | null
+          assigned_to: string | null
+          classification: string | null
+          confidence: number | null
+          created_at: string
+          dst_ip: string | null
+          event_type: string
+          evidence: string[] | null
+          file_hash: string | null
+          id: string
+          incident_number: string
+          message: string | null
+          mitre_tactic: string | null
+          mitre_technique: string | null
+          raw_log: Json | null
+          recommended_actions: string[] | null
+          risk_level: string | null
+          sandbox_result: Json | null
+          severity: number
+          src_ip: string | null
+          status: string | null
+          timestamp: string
+          updated_at: string
+        }
+        Insert: {
+          ai_analysis?: Json | null
+          assigned_to?: string | null
+          classification?: string | null
+          confidence?: number | null
+          created_at?: string
+          dst_ip?: string | null
+          event_type: string
+          evidence?: string[] | null
+          file_hash?: string | null
+          id?: string
+          incident_number: string
+          message?: string | null
+          mitre_tactic?: string | null
+          mitre_technique?: string | null
+          raw_log?: Json | null
+          recommended_actions?: string[] | null
+          risk_level?: string | null
+          sandbox_result?: Json | null
+          severity?: number
+          src_ip?: string | null
+          status?: string | null
+          timestamp?: string
+          updated_at?: string
+        }
+        Update: {
+          ai_analysis?: Json | null
+          assigned_to?: string | null
+          classification?: string | null
+          confidence?: number | null
+          created_at?: string
+          dst_ip?: string | null
+          event_type?: string
+          evidence?: string[] | null
+          file_hash?: string | null
+          id?: string
+          incident_number?: string
+          message?: string | null
+          mitre_tactic?: string | null
+          mitre_technique?: string | null
+          raw_log?: Json | null
+          recommended_actions?: string[] | null
+          risk_level?: string | null
+          sandbox_result?: Json | null
+          severity?: number
+          src_ip?: string | null
+          status?: string | null
+          timestamp?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      playbook_executions: {
+        Row: {
+          completed_at: string | null
+          id: string
+          incident_id: string
+          playbook_id: string
+          results: Json | null
+          started_at: string
+          status: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          id?: string
+          incident_id: string
+          playbook_id: string
+          results?: Json | null
+          started_at?: string
+          status?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          id?: string
+          incident_id?: string
+          playbook_id?: string
+          results?: Json | null
+          started_at?: string
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playbook_executions_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "playbook_executions_playbook_id_fkey"
+            columns: ["playbook_id"]
+            isOneToOne: false
+            referencedRelation: "playbooks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      playbooks: {
+        Row: {
+          actions: Json
+          conditions: Json
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          actions?: Json
+          conditions?: Json
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          actions?: Json
+          conditions?: Json
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string
+          full_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email: string
+          full_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_user_role: {
+        Args: { _user_id: string }
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "soc_analyst" | "viewer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +431,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "soc_analyst", "viewer"],
+    },
   },
 } as const
