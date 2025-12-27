@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FileImportDialog } from '@/components/incidents/FileImportDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -104,6 +105,7 @@ export default function Incidents() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
+          {canModifyIncidents && <FileImportDialog onSuccess={refetch} />}
           {canModifyIncidents && (
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>

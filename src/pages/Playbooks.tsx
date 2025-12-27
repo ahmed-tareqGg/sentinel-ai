@@ -33,6 +33,9 @@ import {
   XCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { PlaybookTemplates } from '@/components/playbooks/PlaybookTemplates';
+import { SimulationMode } from '@/components/playbooks/SimulationMode';
+import { useIncidents } from '@/hooks/useIncidents';
 
 interface PlaybookConditions {
   risk_level?: string;
@@ -86,6 +89,7 @@ export default function Playbooks() {
   const [loading, setLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingPlaybook, setEditingPlaybook] = useState<Playbook | null>(null);
+  const { incidents } = useIncidents();
   
   // Form state
   const [formData, setFormData] = useState({
@@ -309,13 +313,28 @@ export default function Playbooks() {
             <h1 className="text-2xl font-bold text-foreground">Playbooks</h1>
             <p className="text-muted-foreground">Configure automated SOAR response playbooks</p>
           </div>
-          <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) resetForm(); }}>
-            <DialogTrigger asChild>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                Create Playbook
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-2">
+            <PlaybookTemplates onTemplateApplied={fetchPlaybooks} />
+            <SimulationMode 
+              playbooks={playbooks} 
+              incidents={incidents.map(i => ({
+                id: i.id,
+                incident_number: i.incidentNumber,
+                event_type: i.eventType,
+                severity: i.severity,
+                risk_level: i.riskLevel,
+                classification: i.classification,
+                src_ip: i.srcIP,
+                message: i.message,
+              }))} 
+            />
+            <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) resetForm(); }}>
+              <DialogTrigger asChild>
+                <Button className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Create Playbook
+                </Button>
+              </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{editingPlaybook ? 'Edit Playbook' : 'Create New Playbook'}</DialogTitle>
@@ -527,7 +546,8 @@ export default function Playbooks() {
                 </Button>
               </DialogFooter>
             </DialogContent>
-          </Dialog>
+            </Dialog>
+          </div>
         </div>
 
         {/* Tabs */}
