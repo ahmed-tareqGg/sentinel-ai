@@ -8,6 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Report {
   id: number;
@@ -81,30 +83,273 @@ export default function Reports() {
     }
   };
 
+  const generatePDF = (data: any, reportName: string) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let yPos = 20;
+
+    // Title
+    doc.setFontSize(24);
+    doc.setTextColor(59, 130, 246); // Primary blue
+    doc.text('SOCMind Security Report', pageWidth / 2, yPos, { align: 'center' });
+    yPos += 15;
+
+    // Report type and date
+    doc.setFontSize(14);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`${data.metadata?.report_type || reportName} Report`, pageWidth / 2, yPos, { align: 'center' });
+    yPos += 8;
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date(data.metadata?.generated_at || Date.now()).toLocaleString()}`, pageWidth / 2, yPos, { align: 'center' });
+    yPos += 5;
+    doc.text(`By: ${data.metadata?.generated_by || 'System'}`, pageWidth / 2, yPos, { align: 'center' });
+    yPos += 15;
+
+    // Horizontal line
+    doc.setDrawColor(200, 200, 200);
+    doc.line(20, yPos, pageWidth - 20, yPos);
+    yPos += 15;
+
+    // Executive Summary Section
+    doc.setFontSize(16);
+    doc.setTextColor(30, 30, 30);
+    doc.text('Executive Summary', 20, yPos);
+    yPos += 10;
+
+    const summary = data.executive_summary || {};
+    const summaryData = [
+      ['Total Incidents', String(summary.total_incidents || 0)],
+      ['True Positives', String(summary.true_positives || 0)],
+      ['False Positives', String(summary.false_positives || 0)],
+      ['Pending Analysis', String(summary.pending_analysis || 0)],
+      ['Closed Incidents', String(summary.closed_incidents || 0)],
+      ['False Positive Rate', summary.false_positive_rate || '0%'],
+      ['AI Accuracy', summary.ai_accuracy || '0%'],
+      ['SLA Compliance', summary.sla_compliance || '100%'],
+    ];
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Metric', 'Value']],
+      body: summaryData,
+      theme: 'striped',
+      headStyles: { fillColor: [59, 130, 246] },
+      margin: { left: 20, right: 20 },
+    });
+
+    yPos = (doc as any).lastAutoTable.finalY + 15;
+
+    // Severity Breakdown
+    if (data.severity_breakdown) {
+      doc.setFontSize(16);
+      doc.setTextColor(30, 30, 30);
+      doc.text('Severity Breakdown', 20, yPos);
+      yPos += 10;
+
+      const severityData = [
+        ['Critical', String(data.severity_breakdown.critical || 0)],
+        ['High', String(data.severity_breakdown.high || 0)],
+        ['Medium', String(data.severity_breakdown.medium || 0)],
+        ['Low', String(data.severity_breakdown.low || 0)],
+      ];
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Severity', 'Count']],
+        body: severityData,
+        theme: 'striped',
+        headStyles: { fillColor: [239, 68, 68] },
+        margin: { left: 20, right: 20 },
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 15;
+    }
+
+    // Risk Breakdown
+    if (data.risk_breakdown) {
+      doc.setFontSize(16);
+      doc.setTextColor(30, 30, 30);
+      doc.text('Risk Level Breakdown', 20, yPos);
+      yPos += 10;
+
+      const riskData = [
+        ['Critical', String(data.risk_breakdown.critical || 0)],
+        ['High', String(data.risk_breakdown.high || 0)],
+        ['Medium', String(data.risk_breakdown.medium || 0)],
+        ['Low', String(data.risk_breakdown.low || 0)],
+      ];
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Risk Level', 'Count']],
+        body: riskData,
+        theme: 'striped',
+        headStyles: { fillColor: [245, 158, 11] },
+        margin: { left: 20, right: 20 },
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 15;
+    }
+
+    // Check if we need a new page
+    if (yPos > 250) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    // Key Findings
+    if (data.key_findings && data.key_findings.length > 0) {
+      doc.setFontSize(16);
+      doc.setTextColor(30, 30, 30);
+      doc.text('Key Findings', 20, yPos);
+      yPos += 10;
+
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      data.key_findings.forEach((finding: string, idx: number) => {
+        if (yPos > 270) {
+          doc.addPage();
+          yPos = 20;
+        }
+        const lines = doc.splitTextToSize(`${idx + 1}. ${finding}`, pageWidth - 50);
+        doc.text(lines, 25, yPos);
+        yPos += lines.length * 5 + 3;
+      });
+      yPos += 10;
+    }
+
+    // Recommendations
+    if (data.recommendations && data.recommendations.length > 0) {
+      if (yPos > 250) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      doc.setFontSize(16);
+      doc.setTextColor(30, 30, 30);
+      doc.text('Recommendations', 20, yPos);
+      yPos += 10;
+
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      data.recommendations.forEach((rec: string, idx: number) => {
+        if (yPos > 270) {
+          doc.addPage();
+          yPos = 20;
+        }
+        const lines = doc.splitTextToSize(`${idx + 1}. ${rec}`, pageWidth - 50);
+        doc.text(lines, 25, yPos);
+        yPos += lines.length * 5 + 3;
+      });
+      yPos += 10;
+    }
+
+    // MITRE Coverage
+    if (data.mitre_coverage && data.mitre_coverage.top_techniques?.length > 0) {
+      if (yPos > 220) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      doc.setFontSize(16);
+      doc.setTextColor(30, 30, 30);
+      doc.text('MITRE ATT&CK Coverage', 20, yPos);
+      yPos += 5;
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Techniques Detected: ${data.mitre_coverage.techniques_detected}`, 20, yPos + 5);
+      yPos += 15;
+
+      const mitreData = data.mitre_coverage.top_techniques.map((t: any) => [t.technique, String(t.count)]);
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Technique', 'Count']],
+        body: mitreData,
+        theme: 'striped',
+        headStyles: { fillColor: [139, 92, 246] },
+        margin: { left: 20, right: 20 },
+      });
+
+      yPos = (doc as any).lastAutoTable.finalY + 15;
+    }
+
+    // Detailed Incidents
+    if (data.detailed_incidents && data.detailed_incidents.length > 0) {
+      doc.addPage();
+      yPos = 20;
+
+      doc.setFontSize(16);
+      doc.setTextColor(30, 30, 30);
+      doc.text('Detailed Incidents', 20, yPos);
+      yPos += 10;
+
+      const incidentData = data.detailed_incidents.map((inc: any) => [
+        inc.id || '-',
+        inc.event_type || '-',
+        String(inc.severity || '-'),
+        inc.classification || '-',
+        inc.risk_level || '-',
+        inc.status || '-',
+      ]);
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['ID', 'Event Type', 'Severity', 'Classification', 'Risk', 'Status']],
+        body: incidentData,
+        theme: 'striped',
+        headStyles: { fillColor: [59, 130, 246] },
+        margin: { left: 10, right: 10 },
+        styles: { fontSize: 8 },
+      });
+    }
+
+    // Footer
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text(
+        `Page ${i} of ${pageCount} | SOCMind Security Platform | Confidential`,
+        pageWidth / 2,
+        doc.internal.pageSize.getHeight() - 10,
+        { align: 'center' }
+      );
+    }
+
+    return doc;
+  };
+
   const downloadPDF = (report: Report) => {
-    // Create a simple PDF-like download
-    const content = reportData ? JSON.stringify(reportData, null, 2) : `
-SOCMind Security Report
-=======================
-Report: ${report.name}
-Type: ${report.type}
-Generated: ${report.date}
+    if (reportData) {
+      const doc = generatePDF(reportData, report.name);
+      doc.save(`${report.name.replace(/\s+/g, '_')}_${report.date.replace(/\s+/g, '_')}.pdf`);
+    } else {
+      // Generate a placeholder PDF for demo reports
+      const doc = new jsPDF();
+      doc.setFontSize(24);
+      doc.setTextColor(59, 130, 246);
+      doc.text('SOCMind Security Report', 105, 30, { align: 'center' });
+      doc.setFontSize(14);
+      doc.setTextColor(100, 100, 100);
+      doc.text(report.name, 105, 45, { align: 'center' });
+      doc.setFontSize(10);
+      doc.text(`Type: ${report.type}`, 105, 55, { align: 'center' });
+      doc.text(`Generated: ${report.date}`, 105, 62, { align: 'center' });
+      doc.setFontSize(12);
+      doc.setTextColor(60, 60, 60);
+      doc.text('This is a demo report. Generate a new report to see real data.', 105, 80, { align: 'center' });
+      doc.save(`${report.name.replace(/\s+/g, '_')}_${report.date.replace(/\s+/g, '_')}.pdf`);
+    }
+    toast.success('PDF downloaded successfully');
+  };
 
-This report contains security incident analysis and SOC metrics.
-For full functionality, connect to the reporting backend.
-    `;
-
-    const blob = new Blob([content], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${report.name.replace(/\s+/g, '_')}_${report.date.replace(/\s+/g, '_')}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    toast.success('Report downloaded');
+  const downloadCurrentReportPDF = () => {
+    if (!reportData) return;
+    const doc = generatePDF(reportData, reportData.metadata?.report_type || 'Report');
+    doc.save(`SOCMind_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+    toast.success('PDF downloaded successfully');
   };
 
   return (
@@ -253,20 +498,9 @@ For full functionality, connect to the reporting backend.
                 </div>
               )}
 
-              <Button onClick={() => {
-                const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `SOCMind_Report_${new Date().toISOString().split('T')[0]}.json`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                toast.success('Report downloaded');
-              }}>
+              <Button onClick={downloadCurrentReportPDF}>
                 <Download className="h-4 w-4 mr-2" />
-                Download Report
+                Download PDF
               </Button>
             </div>
           )}
