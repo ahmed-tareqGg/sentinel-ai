@@ -17,14 +17,242 @@ const AVAILABLE_ACTIONS = [
 const RISK_LEVELS = ['Critical', 'High', 'Medium', 'Low'];
 const CLASSIFICATIONS = ['True Positive', 'False Positive', 'Pending'];
 
+// Event type templates with recommended actions
+const EVENT_TYPE_TEMPLATES: Record<string, { conditions: Record<string, any>; actions: Array<{ type: string; params?: Record<string, any> }> }> = {
+  'sql_injection': {
+    conditions: { event_type: 'sql_injection', min_severity: 3 },
+    actions: [
+      { type: 'notify_slack', params: { message: '🚨 SQL Injection Attack Detected' } },
+      { type: 'block_ip' },
+      { type: 'create_ticket' },
+    ],
+  },
+  'xss': {
+    conditions: { event_type: 'xss', min_severity: 3 },
+    actions: [
+      { type: 'notify_slack', params: { message: '⚠️ XSS Attack Detected' } },
+      { type: 'block_ip' },
+      { type: 'create_ticket' },
+    ],
+  },
+  'brute_force': {
+    conditions: { event_type: 'brute_force', min_severity: 3 },
+    actions: [
+      { type: 'notify_slack', params: { message: '🔐 Brute Force Attack Detected' } },
+      { type: 'block_ip' },
+      { type: 'disable_user' },
+      { type: 'create_ticket' },
+    ],
+  },
+  'malware': {
+    conditions: { event_type: 'malware', min_severity: 4 },
+    actions: [
+      { type: 'notify_slack', params: { message: '🦠 Malware Detected' } },
+      { type: 'isolate_host' },
+      { type: 'block_ip' },
+      { type: 'escalate', params: { team: 'Incident Response Team' } },
+      { type: 'create_ticket' },
+    ],
+  },
+  'ransomware': {
+    conditions: { event_type: 'ransomware', risk_level: 'Critical', min_severity: 5 },
+    actions: [
+      { type: 'notify_slack', params: { message: '🔴 RANSOMWARE EMERGENCY' } },
+      { type: 'isolate_host' },
+      { type: 'block_ip' },
+      { type: 'disable_user' },
+      { type: 'escalate', params: { team: 'CISO & Executive Team' } },
+      { type: 'create_ticket' },
+    ],
+  },
+  'exfiltration': {
+    conditions: { event_type: 'exfiltration', risk_level: 'Critical' },
+    actions: [
+      { type: 'notify_slack', params: { message: '⚠️ Data Exfiltration Detected' } },
+      { type: 'block_ip' },
+      { type: 'escalate', params: { team: 'SOC Lead & CISO' } },
+      { type: 'create_ticket' },
+    ],
+  },
+  'web_attack': {
+    conditions: { event_type: 'web_attack', min_severity: 3 },
+    actions: [
+      { type: 'notify_slack', params: { message: '🌐 Web Attack Detected' } },
+      { type: 'block_ip' },
+      { type: 'create_ticket' },
+    ],
+  },
+  'authentication': {
+    conditions: { event_type: 'authentication', min_severity: 4 },
+    actions: [
+      { type: 'notify_slack', params: { message: '🔑 Suspicious Authentication Activity' } },
+      { type: 'disable_user' },
+      { type: 'create_ticket' },
+    ],
+  },
+  'phishing': {
+    conditions: { event_type: 'phishing', min_severity: 3 },
+    actions: [
+      { type: 'notify_slack', params: { message: '🎣 Phishing Attempt Detected' } },
+      { type: 'block_ip' },
+      { type: 'create_ticket' },
+    ],
+  },
+  'ddos': {
+    conditions: { event_type: 'ddos', risk_level: 'High' },
+    actions: [
+      { type: 'notify_slack', params: { message: '🌊 DDoS Attack Detected' } },
+      { type: 'block_ip' },
+      { type: 'escalate', params: { team: 'Network Operations' } },
+      { type: 'create_ticket' },
+    ],
+  },
+};
+
+function extractJSONFromContent(content: string): any {
+  // Try to extract JSON from markdown code blocks first
+  const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    const jsonStr = codeBlockMatch[1].trim();
+    return JSON.parse(jsonStr);
+  }
+
+  // Try to find array first (more specific pattern)
+  const arrayMatch = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
+  if (arrayMatch) {
+    return JSON.parse(arrayMatch[0]);
+  }
+
+  // Try to find single object
+  const objectMatch = content.match(/\{[\s\S]*\}/);
+  if (objectMatch) {
+    return JSON.parse(objectMatch[0]);
+  }
+
+  throw new Error('No JSON found in response');
+}
+
+function validatePlaybook(playbook: any): any {
+  // Ensure required fields exist
+  if (!playbook.name) {
+    playbook.name = 'AI Generated Playbook';
+  }
+  
+  if (!playbook.description) {
+    playbook.description = 'Automatically generated playbook';
+  }
+
+  // Ensure conditions object exists
+  if (!playbook.conditions || typeof playbook.conditions !== 'object') {
+    playbook.conditions = {};
+  }
+
+  // Ensure actions array exists and has at least one action
+  if (!playbook.actions || !Array.isArray(playbook.actions) || playbook.actions.length === 0) {
+    playbook.actions = [
+      { type: 'notify_slack', params: { message: 'Security alert triggered' } },
+      { type: 'create_ticket' },
+    ];
+  }
+
+  // Filter to only valid actions
+  playbook.actions = playbook.actions.filter((a: any) => 
+    a && a.type && AVAILABLE_ACTIONS.includes(a.type)
+  );
+
+  // If all actions were filtered out, add defaults
+  if (playbook.actions.length === 0) {
+    playbook.actions = [
+      { type: 'notify_slack', params: { message: 'Security alert triggered' } },
+      { type: 'create_ticket' },
+    ];
+  }
+
+  // Validate conditions
+  if (playbook.conditions.risk_level && !RISK_LEVELS.includes(playbook.conditions.risk_level)) {
+    delete playbook.conditions.risk_level;
+  }
+  if (playbook.conditions.classification && !CLASSIFICATIONS.includes(playbook.conditions.classification)) {
+    delete playbook.conditions.classification;
+  }
+  if (playbook.conditions.min_severity) {
+    const sev = parseInt(playbook.conditions.min_severity);
+    if (isNaN(sev) || sev < 1 || sev > 5) {
+      delete playbook.conditions.min_severity;
+    } else {
+      playbook.conditions.min_severity = sev;
+    }
+  }
+
+  return playbook;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { prompt } = await req.json();
+    const body = await req.json();
+    const { prompt, autoGenerate, eventType, riskLevel, severity } = body;
 
+    // Auto-generate mode: create playbook based on detected attack type
+    if (autoGenerate && eventType) {
+      console.log('Auto-generating playbook for event type:', eventType);
+      
+      const eventKey = eventType.toLowerCase().replace(/[^a-z_]/g, '_');
+      const template = EVENT_TYPE_TEMPLATES[eventKey];
+      
+      if (template) {
+        const playbook = {
+          name: `Auto: ${eventType.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())} Response`,
+          description: `Automatically generated playbook for ${eventType} incidents`,
+          conditions: { ...template.conditions },
+          actions: [...template.actions],
+        };
+        
+        // Adjust based on risk level
+        if (riskLevel === 'Critical' || severity >= 5) {
+          playbook.conditions.risk_level = 'Critical';
+          // Add escalation if not present
+          if (!playbook.actions.some(a => a.type === 'escalate')) {
+            playbook.actions.push({ type: 'escalate', params: { team: 'Incident Response Team' } });
+          }
+        }
+        
+        console.log('Auto-generated playbook:', playbook);
+        return new Response(JSON.stringify(playbook), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // Fallback: generic playbook for unknown event types
+      const genericActions: Array<{ type: string; params?: Record<string, any> }> = [
+        { type: 'notify_slack', params: { message: `🚨 ${eventType} Alert` } },
+        { type: 'create_ticket' },
+      ];
+      
+      if (riskLevel === 'Critical' || riskLevel === 'High') {
+        genericActions.push({ type: 'escalate', params: { team: 'SOC Team' } });
+      }
+      
+      const genericPlaybook = {
+        name: `Auto: ${eventType.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())} Response`,
+        description: `Automatically generated playbook for ${eventType} incidents`,
+        conditions: { 
+          event_type: eventType,
+          min_severity: severity || 3,
+        },
+        actions: genericActions,
+      };
+      
+      console.log('Generated generic playbook:', genericPlaybook);
+      return new Response(JSON.stringify(genericPlaybook), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // AI generation mode
     if (!prompt || typeof prompt !== 'string') {
       return new Response(JSON.stringify({ error: 'Prompt is required' }), {
         status: 400,
@@ -39,50 +267,35 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
-    const systemPrompt = `You are a cybersecurity SOAR (Security Orchestration, Automation, and Response) expert. 
-Generate playbook configuration(s) based on the user's natural language description.
+    const systemPrompt = `You are a cybersecurity SOAR expert. Generate playbook configuration(s) as JSON.
 
-Available trigger conditions:
-- risk_level: One of ${RISK_LEVELS.join(', ')}
-- classification: One of ${CLASSIFICATIONS.join(', ')}
-- min_severity: Number from 1-5
-- event_type: String to match in event type (e.g., "malware", "authentication", "exfiltration", "web_attack", "sql_injection", "xss", "brute_force")
+AVAILABLE CONDITIONS:
+- risk_level: ${RISK_LEVELS.join(' | ')}
+- classification: ${CLASSIFICATIONS.join(' | ')}
+- min_severity: 1-5 (number)
+- event_type: malware, ransomware, authentication, exfiltration, web_attack, sql_injection, xss, brute_force, phishing, ddos
 
-Available actions:
+AVAILABLE ACTIONS (use only these):
 ${AVAILABLE_ACTIONS.map(a => `- ${a}`).join('\n')}
 
 Action parameters:
-- notify_slack: { message: "custom message" }
-- escalate: { team: "team name" }
-- Other actions don't require parameters
+- notify_slack: { "message": "alert text" }
+- escalate: { "team": "team name" }
+- Others need no params
 
-IMPORTANT: You MUST respond with ONLY valid JSON, no explanatory text before or after.
+OUTPUT FORMAT - Return ONLY valid JSON, nothing else:
 
-For a SINGLE playbook, respond with:
-{
-  "name": "Descriptive playbook name",
-  "description": "Brief description of what this playbook does",
-  "conditions": {
-    "risk_level": "Critical",
-    "event_type": "malware"
-  },
-  "actions": [
-    { "type": "notify_slack", "params": { "message": "Alert message" } },
-    { "type": "block_ip" },
-    { "type": "escalate", "params": { "team": "SOC Team" } }
-  ]
-}
+Single playbook:
+{"name":"Playbook Name","description":"What it does","conditions":{"event_type":"malware","min_severity":4},"actions":[{"type":"notify_slack","params":{"message":"Alert"}},{"type":"block_ip"},{"type":"create_ticket"}]}
 
-For MULTIPLE playbooks (when user asks for several), respond with a JSON array:
-[
-  { "name": "Playbook 1", "description": "...", "conditions": {...}, "actions": [...] },
-  { "name": "Playbook 2", "description": "...", "conditions": {...}, "actions": [...] }
-]
+Multiple playbooks (when user asks for several):
+[{"name":"Playbook 1","description":"...","conditions":{...},"actions":[...]},{"name":"Playbook 2","description":"...","conditions":{...},"actions":[...]}]
 
-If the user asks for multiple playbooks or different scenarios, generate them all as an array.
-Only include conditions that are relevant to each playbook.
-Order actions logically (notifications first, then containment, then escalation).
-NEVER include explanatory text - ONLY JSON.`;
+RULES:
+1. Always include at least 2-3 actions per playbook
+2. Always include event_type or risk_level in conditions
+3. Order: notifications → containment → escalation
+4. NO explanatory text, ONLY JSON`;
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -94,8 +307,9 @@ NEVER include explanatory text - ONLY JSON.`;
         model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: prompt },
+          { role: 'user', content: `Generate SOAR playbook(s) for: ${prompt}` },
         ],
+        temperature: 0.3,
       }),
     });
 
@@ -112,59 +326,37 @@ NEVER include explanatory text - ONLY JSON.`;
       throw new Error('No response from AI');
     }
 
-    console.log('AI response:', content);
+    console.log('AI raw response:', content);
 
-    // Parse JSON from response - handle both single object and array
-    const arrayMatch = content.match(/\[[\s\S]*\]/);
-    const objectMatch = content.match(/\{[\s\S]*\}/);
-    
     let parsed: any;
-    if (arrayMatch) {
-      parsed = JSON.parse(arrayMatch[0]);
-    } else if (objectMatch) {
-      parsed = JSON.parse(objectMatch[0]);
-    } else {
-      throw new Error('Could not parse playbook from AI response');
+    try {
+      parsed = extractJSONFromContent(content);
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError);
+      console.log('Attempting to clean content...');
+      
+      // Try removing common issues
+      const cleaned = content
+        .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+        .replace(/,\s*([}\]])/g, '$1') // Remove trailing commas
+        .trim();
+      
+      try {
+        parsed = extractJSONFromContent(cleaned);
+      } catch (_e) {
+        throw new Error('Could not parse playbook from AI response');
+      }
     }
 
     // Normalize to array
     const playbooks = Array.isArray(parsed) ? parsed : [parsed];
 
     // Validate and clean each playbook
-    const validatedPlaybooks = playbooks.map((playbook: any) => {
-      if (!playbook.name || !playbook.actions || !Array.isArray(playbook.actions)) {
-        throw new Error('Invalid playbook structure');
-      }
+    const validatedPlaybooks = playbooks.map(validatePlaybook);
 
-      // Filter to only valid actions
-      playbook.actions = playbook.actions.filter((a: any) => 
-        AVAILABLE_ACTIONS.includes(a.type)
-      );
-
-      // Validate conditions
-      if (playbook.conditions) {
-        if (playbook.conditions.risk_level && !RISK_LEVELS.includes(playbook.conditions.risk_level)) {
-          delete playbook.conditions.risk_level;
-        }
-        if (playbook.conditions.classification && !CLASSIFICATIONS.includes(playbook.conditions.classification)) {
-          delete playbook.conditions.classification;
-        }
-        if (playbook.conditions.min_severity) {
-          const sev = parseInt(playbook.conditions.min_severity);
-          if (isNaN(sev) || sev < 1 || sev > 5) {
-            delete playbook.conditions.min_severity;
-          } else {
-            playbook.conditions.min_severity = sev;
-          }
-        }
-      }
-
-      return playbook;
-    });
-
-    // Return single or array based on input
+    // Return single or array based on count
     const result = validatedPlaybooks.length === 1 ? validatedPlaybooks[0] : validatedPlaybooks;
-    console.log('Generated playbook(s):', result);
+    console.log('Generated playbook(s):', JSON.stringify(result));
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

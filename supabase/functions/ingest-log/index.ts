@@ -193,6 +193,63 @@ serve(async (req) => {
         });
       }
 
+      // Auto-generate playbook suggestion for new attack types
+      const existingPlaybook = await supabase
+        .from('playbooks')
+        .select('id')
+        .or(`conditions->event_type.eq.${normalizedLog.eventType},conditions->event_type.ilike.%${normalizedLog.eventType}%`)
+        .eq('is_active', true)
+        .limit(1);
+
+      if (!existingPlaybook.data?.length) {
+        console.log('No playbook for event type, generating suggestion:', normalizedLog.eventType);
+        
+        // Auto-generate playbook for this event type
+        try {
+          const generateResponse = await fetch(`${supabaseUrl}/functions/v1/generate-playbook`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+              autoGenerate: true,
+              eventType: normalizedLog.eventType,
+              riskLevel: analysis?.risk_level || 'Medium',
+              severity: normalizedLog.severity,
+            }),
+          });
+
+          if (generateResponse.ok) {
+            const generatedPlaybook = await generateResponse.json();
+            
+            // Insert as suggestion (not auto-create to let analyst approve)
+            await supabase.from('playbook_suggestions').insert({
+              name: generatedPlaybook.name,
+              description: generatedPlaybook.description || `Auto-generated for ${normalizedLog.eventType}`,
+              suggested_conditions: generatedPlaybook.conditions,
+              suggested_actions: generatedPlaybook.actions,
+              reasoning: `Automatically suggested based on detected ${normalizedLog.eventType} incident (${incident.incident_number})`,
+              confidence_score: analysis?.confidence || 70,
+              pattern_source: 'auto_detection',
+              sample_incident_ids: [incident.id],
+              incident_count: 1,
+              status: 'pending',
+            });
+
+            console.log('Created playbook suggestion for:', normalizedLog.eventType);
+
+            await supabase.from('incident_timeline').insert({
+              incident_id: incident.id,
+              stage: 'Playbook Suggested',
+              details: `Auto-generated playbook suggestion: ${generatedPlaybook.name}`,
+            });
+          }
+        } catch (genError) {
+          console.error('Failed to generate playbook suggestion:', genError);
+        }
+      }
+
       // Check if we need to trigger a playbook (for critical incidents)
       if (analysis?.risk_level === 'Critical' || (analysis?.classification === 'True Positive' && normalizedLog.severity >= 4)) {
         console.log('Triggering SOAR playbook for critical incident');
