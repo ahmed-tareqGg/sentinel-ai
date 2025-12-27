@@ -14,6 +14,75 @@ export type Database = {
   }
   public: {
     Tables: {
+      approval_requests: {
+        Row: {
+          action_params: Json | null
+          action_type: string
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          escalated_to: string | null
+          escalation_count: number | null
+          id: string
+          incident_id: string | null
+          playbook_id: string | null
+          reason: string | null
+          requested_at: string
+          requested_by: string | null
+          sla_deadline: string | null
+          status: string
+        }
+        Insert: {
+          action_params?: Json | null
+          action_type: string
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          escalated_to?: string | null
+          escalation_count?: number | null
+          id?: string
+          incident_id?: string | null
+          playbook_id?: string | null
+          reason?: string | null
+          requested_at?: string
+          requested_by?: string | null
+          sla_deadline?: string | null
+          status?: string
+        }
+        Update: {
+          action_params?: Json | null
+          action_type?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          escalated_to?: string | null
+          escalation_count?: number | null
+          id?: string
+          incident_id?: string | null
+          playbook_id?: string | null
+          reason?: string | null
+          requested_at?: string
+          requested_by?: string | null
+          sla_deadline?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "approval_requests_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "approval_requests_playbook_id_fkey"
+            columns: ["playbook_id"]
+            isOneToOne: false
+            referencedRelation: "playbooks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -44,6 +113,57 @@ export type Database = {
           resource_id?: string | null
           resource_type?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      compliance_audit_logs: {
+        Row: {
+          action: string
+          actor_email: string | null
+          actor_id: string | null
+          actor_type: string
+          created_at: string
+          details: Json | null
+          execution_mode: string | null
+          id: string
+          ip_address: string | null
+          resource_id: string | null
+          resource_type: string
+          result: string
+          tenant_id: string | null
+          timestamp: string
+        }
+        Insert: {
+          action: string
+          actor_email?: string | null
+          actor_id?: string | null
+          actor_type: string
+          created_at?: string
+          details?: Json | null
+          execution_mode?: string | null
+          id?: string
+          ip_address?: string | null
+          resource_id?: string | null
+          resource_type: string
+          result: string
+          tenant_id?: string | null
+          timestamp?: string
+        }
+        Update: {
+          action?: string
+          actor_email?: string | null
+          actor_id?: string | null
+          actor_type?: string
+          created_at?: string
+          details?: Json | null
+          execution_mode?: string | null
+          id?: string
+          ip_address?: string | null
+          resource_id?: string | null
+          resource_type?: string
+          result?: string
+          tenant_id?: string | null
+          timestamp?: string
         }
         Relationships: []
       }
@@ -153,6 +273,51 @@ export type Database = {
           src_ip?: string | null
           status?: string | null
           timestamp?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      integrations: {
+        Row: {
+          config: Json | null
+          created_at: string
+          display_name: string
+          execution_mode: string | null
+          id: string
+          is_configured: boolean | null
+          is_enabled: boolean | null
+          last_error: string | null
+          last_successful_call: string | null
+          name: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          config?: Json | null
+          created_at?: string
+          display_name: string
+          execution_mode?: string | null
+          id?: string
+          is_configured?: boolean | null
+          is_enabled?: boolean | null
+          last_error?: string | null
+          last_successful_call?: string | null
+          name: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          config?: Json | null
+          created_at?: string
+          display_name?: string
+          execution_mode?: string | null
+          id?: string
+          is_configured?: boolean | null
+          is_enabled?: boolean | null
+          last_error?: string | null
+          last_successful_call?: string | null
+          name?: string
+          type?: string
           updated_at?: string
         }
         Relationships: []

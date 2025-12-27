@@ -10,7 +10,10 @@ import {
   LogOut,
   User,
   Zap,
-  Play
+  Play,
+  Plug,
+  ClipboardCheck,
+  FileCheck
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -22,6 +25,9 @@ const navItems = [
   { icon: BarChart3, label: 'Analytics', path: '/analytics', roles: ['admin', 'soc_analyst', 'viewer'] },
   { icon: FileText, label: 'Reports', path: '/reports', roles: ['admin', 'soc_analyst'] },
   { icon: Zap, label: 'Playbooks', path: '/playbooks', roles: ['admin'] },
+  { icon: ClipboardCheck, label: 'Approvals', path: '/approvals', roles: ['admin', 'soc_analyst'] },
+  { icon: Plug, label: 'Integrations', path: '/integrations', roles: ['admin'] },
+  { icon: FileCheck, label: 'Compliance', path: '/compliance', roles: ['admin'] },
   { icon: Play, label: 'Demo', path: '/demo', roles: ['admin', 'soc_analyst', 'viewer'] },
   { icon: Settings, label: 'Settings', path: '/settings', roles: ['admin'] },
 ];
