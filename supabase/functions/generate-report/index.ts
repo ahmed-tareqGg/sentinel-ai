@@ -6,26 +6,54 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function verifyAuth(req: Request): Promise<{ user: any; error?: string }> {
-  const authHeader = req.headers.get('Authorization');
+interface Incident {
+  id: string;
+  incident_number: string;
+  created_at: string;
+  event_type: string;
+  severity: number;
+  classification: string;
+  confidence: number;
+  risk_level: string;
+  status: string;
+  mitre_technique: string | null;
+  mitre_tactic: string | null;
+}
+
+async function verifyAuth(req: Request): Promise<{ user: any; supabase: any; error?: string }> {
+  // Try multiple header variations
+  const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
+  
+  console.log('Auth header present:', !!authHeader);
+  
   if (!authHeader) {
-    return { user: null, error: 'Missing authorization header' };
+    return { user: null, supabase: null, error: 'Missing authorization header' };
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: authHeader } }
+  // Use service role to verify the token
+  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    }
   });
 
-  const { data: { user }, error } = await supabase.auth.getUser();
+  // Extract the token from Bearer header
+  const token = authHeader.replace('Bearer ', '');
+  
+  // Verify the JWT token
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  
+  console.log('User verification result:', { userId: user?.id, error: error?.message });
+  
   if (error || !user) {
-    return { user: null, error: 'Invalid or expired token' };
+    return { user: null, supabase: null, error: error?.message || 'Invalid or expired token' };
   }
 
   // All authenticated users can generate reports (read-only operation)
-  // But we still verify they have at least viewer role
   const { data: roleData } = await supabase
     .from('user_roles')
     .select('role')
@@ -33,10 +61,12 @@ async function verifyAuth(req: Request): Promise<{ user: any; error?: string }> 
     .single();
 
   if (!roleData) {
-    return { user: null, error: 'No role assigned. Contact administrator.' };
+    return { user: null, supabase: null, error: 'No role assigned. Contact administrator.' };
   }
 
-  return { user };
+  console.log('User role:', roleData.role);
+
+  return { user, supabase };
 }
 
 serve(async (req) => {
@@ -46,21 +76,16 @@ serve(async (req) => {
 
   try {
     // Verify authentication
-    const { user, error: authError } = await verifyAuth(req);
+    const { user, supabase, error: authError } = await verifyAuth(req);
     if (authError) {
       console.error('Auth error:', authError);
-      return new Response(JSON.stringify({ error: authError }), {
+      return new Response(JSON.stringify({ code: 401, message: authError }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     console.log(`User ${user.id} generating report`);
-
-    // Use service role for data access after auth check
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { report_type, start_date, end_date } = await req.json();
     
@@ -81,30 +106,32 @@ serve(async (req) => {
       throw new Error(`Failed to fetch incidents: ${incidentsError.message}`);
     }
 
+    const incidentList = (incidents as Incident[]) || [];
+
     // Calculate statistics
-    const totalIncidents = incidents?.length || 0;
-    const truePositives = incidents?.filter(i => i.classification === 'True Positive').length || 0;
-    const falsePositives = incidents?.filter(i => i.classification === 'False Positive').length || 0;
-    const pending = incidents?.filter(i => i.classification === 'Pending').length || 0;
-    const closed = incidents?.filter(i => i.status === 'Closed').length || 0;
+    const totalIncidents = incidentList.length;
+    const truePositives = incidentList.filter((i: Incident) => i.classification === 'True Positive').length;
+    const falsePositives = incidentList.filter((i: Incident) => i.classification === 'False Positive').length;
+    const pending = incidentList.filter((i: Incident) => i.classification === 'Pending').length;
+    const closed = incidentList.filter((i: Incident) => i.status === 'Closed').length;
 
     const severityBreakdown = {
-      critical: incidents?.filter(i => i.severity === 5).length || 0,
-      high: incidents?.filter(i => i.severity === 4).length || 0,
-      medium: incidents?.filter(i => i.severity === 3).length || 0,
-      low: incidents?.filter(i => i.severity <= 2).length || 0,
+      critical: incidentList.filter((i: Incident) => i.severity === 5).length,
+      high: incidentList.filter((i: Incident) => i.severity === 4).length,
+      medium: incidentList.filter((i: Incident) => i.severity === 3).length,
+      low: incidentList.filter((i: Incident) => i.severity <= 2).length,
     };
 
     const riskBreakdown = {
-      critical: incidents?.filter(i => i.risk_level === 'Critical').length || 0,
-      high: incidents?.filter(i => i.risk_level === 'High').length || 0,
-      medium: incidents?.filter(i => i.risk_level === 'Medium').length || 0,
-      low: incidents?.filter(i => i.risk_level === 'Low').length || 0,
+      critical: incidentList.filter((i: Incident) => i.risk_level === 'Critical').length,
+      high: incidentList.filter((i: Incident) => i.risk_level === 'High').length,
+      medium: incidentList.filter((i: Incident) => i.risk_level === 'Medium').length,
+      low: incidentList.filter((i: Incident) => i.risk_level === 'Low').length,
     };
 
     // MITRE ATT&CK coverage
     const mitreTechniques: Record<string, number> = {};
-    incidents?.forEach(i => {
+    incidentList.forEach((i: Incident) => {
       if (i.mitre_technique) {
         const key = `${i.mitre_technique}${i.mitre_tactic ? ` - ${i.mitre_tactic}` : ''}`;
         mitreTechniques[key] = (mitreTechniques[key] || 0) + 1;
@@ -118,7 +145,7 @@ serve(async (req) => {
 
     // Event type breakdown
     const eventTypes: Record<string, number> = {};
-    incidents?.forEach(i => {
+    incidentList.forEach((i: Incident) => {
       eventTypes[i.event_type] = (eventTypes[i.event_type] || 0) + 1;
     });
 
@@ -128,14 +155,14 @@ serve(async (req) => {
       .map(([type, count]) => ({ type, count }));
 
     // Calculate AI accuracy (based on confirmed classifications)
-    const confirmed = incidents?.filter(i => i.classification !== 'Pending') || [];
+    const confirmed = incidentList.filter((i: Incident) => i.classification !== 'Pending');
     const aiAccuracy = confirmed.length > 0 
-      ? Math.round((confirmed.filter(i => i.confidence >= 80).length / confirmed.length) * 100)
+      ? Math.round((confirmed.filter((i: Incident) => i.confidence >= 80).length / confirmed.length) * 100)
       : 0;
 
     // Calculate average confidence
     const avgConfidence = confirmed.length > 0
-      ? Math.round(confirmed.reduce((sum, i) => sum + (i.confidence || 0), 0) / confirmed.length)
+      ? Math.round(confirmed.reduce((sum: number, i: Incident) => sum + (i.confidence || 0), 0) / confirmed.length)
       : 0;
 
     // False positive rate
@@ -144,8 +171,8 @@ serve(async (req) => {
       : 0;
 
     // SLA metrics (assuming 15 min for critical, 1 hour for high)
-    const criticalIncidents = incidents?.filter(i => i.risk_level === 'Critical') || [];
-    const closedCritical = criticalIncidents.filter(i => i.status === 'Closed');
+    const criticalIncidents = incidentList.filter((i: Incident) => i.risk_level === 'Critical');
+    const closedCritical = criticalIncidents.filter((i: Incident) => i.status === 'Closed');
     const slaCompliance = criticalIncidents.length > 0
       ? Math.round((closedCritical.length / criticalIncidents.length) * 100)
       : 100;
@@ -191,7 +218,7 @@ serve(async (req) => {
         slaCompliance < 90 ? 'Review incident response procedures to improve SLA compliance' : null,
         'Continue monitoring and update playbooks based on detected techniques',
       ].filter(Boolean),
-      detailed_incidents: incidents?.slice(0, 20).map(i => ({
+      detailed_incidents: incidentList.slice(0, 20).map((i: Incident) => ({
         id: i.incident_number,
         timestamp: i.created_at,
         event_type: i.event_type,
