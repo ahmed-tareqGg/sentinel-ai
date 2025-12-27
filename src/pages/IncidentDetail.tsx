@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play } from 'lucide-react';
+import { ArrowLeft, Clock, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2 } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { soarActions } from '@/lib/soarActions';
 
 interface Incident {
   id: string;
@@ -67,6 +68,7 @@ export default function IncidentDetail() {
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [executingAction, setExecutingAction] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -116,7 +118,6 @@ export default function IncidentDetail() {
       setIncident(prev => prev ? { ...prev, status: newStatus } : null);
       toast.success(`Status updated to ${newStatus}`);
       
-      // Add timeline entry
       await supabase.from('incident_timeline').insert({
         incident_id: incident.id,
         stage: `Status Changed to ${newStatus}`,
@@ -151,11 +152,81 @@ export default function IncidentDetail() {
     }
   };
 
+  const handleRecommendedAction = async (action: string) => {
+    if (!incident) return;
+    setExecutingAction(action);
+    
+    const actionKey = action.toLowerCase().replace(/\s+/g, '');
+    
+    try {
+      switch (actionKey) {
+        case 'isolatehost':
+          await soarActions.isolateHost(incident.id, incident.src_ip || 'Unknown');
+          break;
+        case 'blockip':
+          await soarActions.blockIp(incident.id, incident.src_ip || 'Unknown');
+          break;
+        case 'resetcredentials':
+        case 'forcepasswordreset':
+          await soarActions.resetCredentials(incident.id);
+          break;
+        case 'forensicanalysis':
+          await soarActions.forensicAnalysis(incident.id);
+          break;
+        case 'disableuseraccount':
+          await soarActions.disableUser(incident.id);
+          break;
+        case 'geo-blockip':
+        case 'geoblockip':
+          await soarActions.geoBlockIp(incident.id, incident.src_ip || 'Unknown');
+          break;
+        case 'investigatedatacontent':
+          await soarActions.investigateData(incident.id);
+          break;
+        case 'interviewuser':
+          await soarActions.interviewUser(incident.id);
+          break;
+        case 'networkforensics':
+          await soarActions.networkForensics(incident.id);
+          break;
+        default:
+          await soarActions.createTicket(incident.id, incident.incident_number);
+      }
+      fetchTimeline();
+    } catch (error) {
+      console.error('Action failed:', error);
+    } finally {
+      setExecutingAction(null);
+    }
+  };
+
+  const exportIncident = () => {
+    if (!incident) return;
+    
+    const exportData = {
+      ...incident,
+      timeline,
+      exported_at: new Date().toISOString(),
+    };
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${incident.incident_number}_export.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success('Incident exported successfully');
+  };
+
   if (loading) {
     return (
       <AppLayout title="Loading...">
         <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">Loading incident...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       </AppLayout>
     );
@@ -177,15 +248,27 @@ export default function IncidentDetail() {
 
   return (
     <AppLayout title={incident.incident_number} subtitle={incident.message || 'Security Incident'}>
-      {/* Back button */}
-      <Button 
-        variant="ghost" 
-        onClick={() => navigate('/incidents')} 
-        className="mb-6 text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4 mr-2" />
-        Back to Incidents
-      </Button>
+      {/* Back button & Actions */}
+      <div className="flex items-center justify-between mb-6">
+        <Button 
+          variant="ghost" 
+          onClick={() => navigate('/incidents')} 
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Incidents
+        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => toast.info('Advanced filtering coming soon')}>
+            <Filter className="h-4 w-4 mr-2" />
+            Advanced Filter
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportIncident}>
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </Button>
+        </div>
+      </div>
 
       {/* Header Card */}
       <div className="rounded-xl border border-border bg-card p-6 mb-6">
@@ -231,7 +314,7 @@ export default function IncidentDetail() {
                   disabled={updating}
                   className="border-primary/30 text-primary hover:bg-primary/10"
                 >
-                  <Play className="h-4 w-4 mr-2" />
+                  {updating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
                   Run Playbook
                 </Button>
               </div>
@@ -322,7 +405,17 @@ export default function IncidentDetail() {
               <h3 className="text-sm font-semibold text-foreground mb-4">Recommended Actions</h3>
               <div className="flex flex-wrap gap-2">
                 {incident.recommended_actions.map((action, idx) => (
-                  <Button key={idx} variant="outline" size="sm" className="border-primary/30 text-primary hover:bg-primary/10">
+                  <Button 
+                    key={idx} 
+                    variant="outline" 
+                    size="sm" 
+                    className="border-primary/30 text-primary hover:bg-primary/10"
+                    disabled={executingAction === action}
+                    onClick={() => handleRecommendedAction(action)}
+                  >
+                    {executingAction === action ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : null}
                     {action}
                   </Button>
                 ))}
