@@ -57,7 +57,7 @@ export default function Dashboard() {
         <div className="lg:col-span-2">
           <TrendChart />
         </div>
-        <ClassificationChart />
+        <ClassificationChart truePositives={truePositives} falsePositives={falsePositives} />
       </div>
 
       {/* MITRE & Recent Incidents */}
