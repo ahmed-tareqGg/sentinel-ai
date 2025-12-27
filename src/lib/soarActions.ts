@@ -22,11 +22,10 @@ interface ExecuteActionParams {
 
 export async function executeRecommendedAction({ action, incidentId, targetIp, targetUser }: ExecuteActionParams) {
   const actionName = action.toLowerCase().replace(/\s+/g, '_');
-  
+
   toast.loading(`Executing: ${action}...`, { id: actionName });
 
-  try {
-    // Call the playbook function with the specific action
+  const invoke = async () => {
     const { data, error } = await supabase.functions.invoke('execute-playbook', {
       body: {
         incident_id: incidentId,
@@ -35,12 +34,17 @@ export async function executeRecommendedAction({ action, incidentId, targetIp, t
           params: {
             ip: targetIp,
             user: targetUser,
-          }
-        }
+          },
+        },
       },
     });
 
     if (error) throw error;
+    return data;
+  };
+
+  try {
+    const data = await invoke();
 
     // Add timeline entry
     await supabase.from('incident_timeline').insert({
@@ -52,6 +56,26 @@ export async function executeRecommendedAction({ action, incidentId, targetIp, t
     toast.success(`${action} executed successfully`, { id: actionName });
     return { success: true, data };
   } catch (error) {
+    const status = (error as any)?.context?.status ?? (error as any)?.status;
+    const message = String((error as any)?.message || '').toLowerCase();
+
+    if (status === 401 || message.includes('jwt')) {
+      const refreshed = await supabase.auth.refreshSession();
+      if (!refreshed.data.session) {
+        toast.error('جلسة الدخول انتهت. سجّل دخول مرة أخرى.', { id: actionName });
+        window.location.assign('/auth');
+        return { success: false, error };
+      }
+
+      try {
+        const data = await invoke();
+        toast.success(`${action} executed successfully`, { id: actionName });
+        return { success: true, data };
+      } catch (retryError) {
+        console.error('Action retry failed:', retryError);
+      }
+    }
+
     console.error('Action execution failed:', error);
     toast.error(`Failed to execute ${action}`, { id: actionName });
     return { success: false, error };

@@ -132,7 +132,7 @@ export default function IncidentDetail() {
     if (!incident) return;
     setUpdating(true);
 
-    try {
+    const invoke = async () => {
       const { data, error } = await supabase.functions.invoke('execute-playbook', {
         body: {
           incident_id: incident.id,
@@ -140,11 +140,37 @@ export default function IncidentDetail() {
           classification: incident.classification,
         },
       });
-
       if (error) throw error;
+      return data;
+    };
+
+    try {
+      const data = await invoke();
       toast.success(`Playbook executed: ${data.executed} actions`);
       fetchTimeline();
     } catch (error) {
+      const status = (error as any)?.context?.status ?? (error as any)?.status;
+      const message = String((error as any)?.message || '').toLowerCase();
+
+      // Retry once if the session/JWT is stale
+      if (status === 401 || message.includes('jwt')) {
+        const refreshed = await supabase.auth.refreshSession();
+        if (!refreshed.data.session) {
+          toast.error('جلسة الدخول انتهت. سجّل دخول مرة أخرى.');
+          navigate('/auth');
+          return;
+        }
+
+        try {
+          const data = await invoke();
+          toast.success(`Playbook executed: ${data.executed} actions`);
+          fetchTimeline();
+          return;
+        } catch (retryError) {
+          console.error('Playbook retry error:', retryError);
+        }
+      }
+
       console.error('Playbook error:', error);
       toast.error('Failed to execute playbook');
     } finally {
