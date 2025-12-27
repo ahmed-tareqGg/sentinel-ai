@@ -178,6 +178,54 @@ export default function IncidentDetail() {
     }
   };
 
+  const runAnalysis = async () => {
+    if (!incident) return;
+    setUpdating(true);
+
+    const invoke = async () => {
+      const { data, error } = await supabase.functions.invoke('reanalyze-incident', {
+        body: { incident_id: incident.id },
+      });
+      if (error) throw error;
+      return data;
+    };
+
+    try {
+      await invoke();
+      await fetchIncident();
+      await fetchTimeline();
+      toast.success('Analysis completed');
+    } catch (error) {
+      const status = (error as any)?.context?.status ?? (error as any)?.status;
+      const message = String((error as any)?.message || '').toLowerCase();
+
+      if (status === 401 || message.includes('jwt')) {
+        const refreshed = await supabase.auth.refreshSession();
+        if (!refreshed.data.session) {
+          toast.error('جلسة الدخول انتهت. سجّل دخول مرة أخرى.');
+          navigate('/auth');
+          return;
+        }
+
+        try {
+          await invoke();
+          await fetchIncident();
+          await fetchTimeline();
+          toast.success('Analysis completed');
+          return;
+        } catch (retryError) {
+          console.error('Run analysis retry error:', retryError);
+        }
+      }
+
+      console.error('Run analysis error:', error);
+      toast.error('Failed to run analysis');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+
   const handleRecommendedAction = async (action: string) => {
     if (!incident) return;
     setExecutingAction(action);
