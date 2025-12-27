@@ -62,7 +62,7 @@ export default function Dashboard() {
 
       {/* MITRE & Recent Incidents */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <MitreChart />
+        <MitreChart incidents={incidents} />
         <div className="lg:col-span-2">
           <div className="rounded-xl border border-border bg-card p-5">
             <div className="flex items-center justify-between mb-4">
