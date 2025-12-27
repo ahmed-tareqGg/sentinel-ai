@@ -368,17 +368,17 @@ export default function Playbooks() {
                     <div className="space-y-2">
                       <Label>Risk Level</Label>
                       <Select
-                        value={formData.conditions.risk_level || ''}
+                        value={formData.conditions.risk_level || 'any'}
                         onValueChange={(value) => setFormData(prev => ({
                           ...prev,
-                          conditions: { ...prev.conditions, risk_level: value }
+                          conditions: { ...prev.conditions, risk_level: value === 'any' ? '' : value }
                         }))}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Any risk level" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Any</SelectItem>
+                          <SelectItem value="any">Any</SelectItem>
                           {RISK_LEVELS.map(level => (
                             <SelectItem key={level} value={level}>{level}</SelectItem>
                           ))}
@@ -389,17 +389,17 @@ export default function Playbooks() {
                     <div className="space-y-2">
                       <Label>Classification</Label>
                       <Select
-                        value={formData.conditions.classification || ''}
+                        value={formData.conditions.classification || 'any'}
                         onValueChange={(value) => setFormData(prev => ({
                           ...prev,
-                          conditions: { ...prev.conditions, classification: value }
+                          conditions: { ...prev.conditions, classification: value === 'any' ? '' : value }
                         }))}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Any classification" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Any</SelectItem>
+                          <SelectItem value="any">Any</SelectItem>
                           {CLASSIFICATIONS.map(c => (
                             <SelectItem key={c} value={c}>{c}</SelectItem>
                           ))}
