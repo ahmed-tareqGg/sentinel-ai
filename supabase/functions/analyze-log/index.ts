@@ -81,10 +81,10 @@ serve(async (req) => {
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
+      throw new Error('API key is not configured');
     }
 
-    // AI Classification using Lovable AI
+    // Classification Engine
     const aiPrompt = `You are a senior SOC analyst with expertise in threat detection and incident classification.
 
 Analyze the following security event and classify it as either "True Positive" or "False Positive".

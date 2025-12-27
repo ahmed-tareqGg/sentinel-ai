@@ -135,7 +135,7 @@ function extractJSONFromContent(content: string): any {
 function validatePlaybook(playbook: any): any {
   // Ensure required fields exist
   if (!playbook.name) {
-    playbook.name = 'AI Generated Playbook';
+    playbook.name = 'Generated Playbook';
   }
   
   if (!playbook.description) {

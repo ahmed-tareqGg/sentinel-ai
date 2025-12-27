@@ -237,7 +237,7 @@ export default function Settings() {
                   <Input 
                     id="openai" 
                     type="password" 
-                    placeholder="Using Lovable AI by default" 
+                    placeholder="Using built-in intelligence by default" 
                     className="bg-secondary/50"
                     value={apiKeys.openai}
                     onChange={(e) => setApiKeys(prev => ({ ...prev, openai: e.target.value }))}
@@ -245,7 +245,7 @@ export default function Settings() {
                   <Button 
                     variant="outline"
                     onClick={() => {
-                      toast.info('Lovable AI is being used - no OpenAI key required');
+                      toast.info('Built-in intelligence is active - no OpenAI key required');
                     }}
                   >
                     Validate

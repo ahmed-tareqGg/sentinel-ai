@@ -57,7 +57,7 @@ export function ExplainableAI({ incident, playbook, className }: ExplainableAIPr
     if (incident.classification) {
       const isTP = incident.classification === 'True Positive';
       factors.push({
-        factor: 'AI Classification',
+        factor: 'Threat Classification',
         weight: 30,
         value: incident.classification,
         contribution: isTP ? 'positive' : incident.classification === 'False Positive' ? 'negative' : 'neutral',
