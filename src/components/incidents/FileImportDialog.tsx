@@ -213,26 +213,41 @@ export function FileImportDialog({ onSuccess }: { onSuccess?: () => void }) {
       let data: any[];
 
       if (selectedFile.name.endsWith('.json')) {
+        let parsed: any;
+        
+        // First try standard JSON parse
         try {
-          const parsed = JSON.parse(text);
-          data = Array.isArray(parsed) ? parsed : parsed.logs || parsed.incidents || [parsed];
+          parsed = JSON.parse(text);
         } catch (jsonError) {
-          // Try to fix common JSON issues
-          let fixedText = text
-            .replace(/,\s*}/g, '}')           // Remove trailing commas before }
-            .replace(/,\s*]/g, ']')           // Remove trailing commas before ]
-            .replace(/'/g, '"')               // Replace single quotes with double quotes
-            .replace(/(\w+):/g, '"$1":')      // Add quotes to unquoted keys
-            .replace(/""(\w+)""/g, '"$1"');   // Fix double-quoted keys
+          // Try progressive fixes
+          let fixedText = text;
           
+          // Fix 1: Remove trailing commas
+          fixedText = fixedText.replace(/,(\s*[}\]])/g, '$1');
+          
+          // Fix 2: Try parsing after trailing comma fix
           try {
-            const parsed = JSON.parse(fixedText);
-            data = Array.isArray(parsed) ? parsed : parsed.logs || parsed.incidents || [parsed];
-            toast.info('Fixed minor JSON formatting issues');
+            parsed = JSON.parse(fixedText);
+            toast.info('Fixed trailing comma issues in JSON');
           } catch {
-            throw new Error('Invalid JSON format. Please ensure your JSON file has proper syntax (double quotes, no trailing commas).');
+            // Fix 3: More aggressive - handle JavaScript object notation
+            try {
+              // Remove comments
+              fixedText = fixedText.replace(/\/\/.*$/gm, '');
+              fixedText = fixedText.replace(/\/\*[\s\S]*?\*\//g, '');
+              
+              // Use Function to parse JS object literal (safer than eval)
+              const fn = new Function('return ' + fixedText);
+              parsed = fn();
+              toast.info('Parsed JavaScript object notation');
+            } catch {
+              const errorMsg = jsonError instanceof Error ? jsonError.message : 'Unknown error';
+              throw new Error(`Invalid JSON: ${errorMsg}. Tip: Use a JSON validator to check your file.`);
+            }
           }
         }
+        
+        data = Array.isArray(parsed) ? parsed : parsed.logs || parsed.incidents || parsed.data || [parsed];
       } else if (selectedFile.name.endsWith('.csv')) {
         data = parseCSV(text);
       } else {
