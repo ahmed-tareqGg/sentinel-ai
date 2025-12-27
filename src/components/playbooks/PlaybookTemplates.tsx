@@ -249,7 +249,7 @@ export function PlaybookTemplates({ onTemplateApplied }: PlaybookTemplatesProps)
         .filter(Boolean)
         .map((p: any, idx: number) => ({
           id: `ai-${idx}`,
-          name: p?.name || `AI Generated Playbook ${idx + 1}`,
+          name: p?.name || `Generated Playbook ${idx + 1}`,
           description: p?.description || aiPrompt,
           icon: Sparkles,
           color: 'text-primary',
@@ -292,7 +292,7 @@ export function PlaybookTemplates({ onTemplateApplied }: PlaybookTemplatesProps)
         <DialogHeader>
           <DialogTitle>SOAR Playbook Templates</DialogTitle>
           <DialogDescription>
-            Choose from pre-built enterprise scenarios or generate custom playbooks with AI
+            Choose from pre-built enterprise scenarios or use the smart generator
           </DialogDescription>
         </DialogHeader>
 
@@ -472,7 +472,7 @@ export function PlaybookTemplates({ onTemplateApplied }: PlaybookTemplatesProps)
                         <CardTitle className="text-base">{selectedGenerated.name}</CardTitle>
                         <CardDescription>
                           {generatedPlaybooks.length > 1
-                            ? `AI generated ${generatedPlaybooks.length} playbooks — select one below.`
+                            ? `Generated ${generatedPlaybooks.length} playbooks — select one below.`
                             : selectedGenerated.description}
                         </CardDescription>
                       </div>

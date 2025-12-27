@@ -4,7 +4,6 @@ import {
   AlertTriangle, 
   BarChart3, 
   Settings, 
-  Shield,
   Activity,
   FileText,
   LogOut,
@@ -18,6 +17,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
+import socmindLogo from '@/assets/socmind-logo.png';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/', roles: ['admin', 'soc_analyst', 'viewer'] },
@@ -57,12 +57,10 @@ export function Sidebar() {
       <div className="flex h-full flex-col">
         {/* Logo */}
         <div className="flex h-16 items-center gap-3 border-b border-border px-6">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 glow-primary">
-            <Shield className="h-5 w-5 text-primary" />
-          </div>
+          <img src={socmindLogo} alt="SOCMind" className="h-9 w-9 rounded-lg" />
           <div>
             <h1 className="text-lg font-bold text-foreground">SOCMind</h1>
-            <p className="text-xs text-muted-foreground">AI-Powered SOC</p>
+            <p className="text-xs text-muted-foreground">Security Operations</p>
           </div>
         </div>
 

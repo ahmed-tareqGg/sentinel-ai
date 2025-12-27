@@ -369,7 +369,7 @@ export default function MitreCoverage() {
                   Improvement Recommendations
                 </CardTitle>
                 <CardDescription>
-                  AI-generated suggestions to improve MITRE coverage
+                  Automated suggestions to improve MITRE coverage
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">

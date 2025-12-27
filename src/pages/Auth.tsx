@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Mail, Lock, User, Eye, EyeOff, Check, X } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { z } from 'zod';
+import socmindLogo from '@/assets/socmind-logo.png';
 
 const emailSchema = z.string().email('Please enter a valid email address');
 
@@ -183,12 +184,10 @@ export default function Auth() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-8">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 glow-primary">
-            <Shield className="h-7 w-7 text-primary" />
-          </div>
+          <img src={socmindLogo} alt="SOCMind" className="h-12 w-12 rounded-xl" />
           <div>
             <h1 className="text-2xl font-bold text-foreground">SOCMind</h1>
-            <p className="text-sm text-muted-foreground">AI-Powered SOC Platform</p>
+            <p className="text-sm text-muted-foreground">Security Operations Platform</p>
           </div>
         </div>
 

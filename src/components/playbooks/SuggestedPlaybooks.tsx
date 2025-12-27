@@ -289,7 +289,7 @@ export function SuggestedPlaybooks({ onPlaybookCreated }: SuggestedPlaybooksProp
             </Button>
           </div>
           <CardDescription>
-            AI-generated playbook recommendations based on incident patterns and analyst behavior
+            Intelligent playbook recommendations based on incident patterns and analyst behavior
           </CardDescription>
         </CardHeader>
         <CardContent>
