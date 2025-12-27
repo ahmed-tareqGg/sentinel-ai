@@ -40,13 +40,13 @@ serve(async (req) => {
     }
 
     const systemPrompt = `You are a cybersecurity SOAR (Security Orchestration, Automation, and Response) expert. 
-Generate a playbook configuration based on the user's natural language description.
+Generate playbook configuration(s) based on the user's natural language description.
 
 Available trigger conditions:
 - risk_level: One of ${RISK_LEVELS.join(', ')}
 - classification: One of ${CLASSIFICATIONS.join(', ')}
 - min_severity: Number from 1-5
-- event_type: String to match in event type (e.g., "malware", "authentication", "exfiltration")
+- event_type: String to match in event type (e.g., "malware", "authentication", "exfiltration", "web_attack", "sql_injection", "xss", "brute_force")
 
 Available actions:
 ${AVAILABLE_ACTIONS.map(a => `- ${a}`).join('\n')}
@@ -56,15 +56,15 @@ Action parameters:
 - escalate: { team: "team name" }
 - Other actions don't require parameters
 
-Respond ONLY with a valid JSON object in this exact format:
+IMPORTANT: You MUST respond with ONLY valid JSON, no explanatory text before or after.
+
+For a SINGLE playbook, respond with:
 {
   "name": "Descriptive playbook name",
   "description": "Brief description of what this playbook does",
   "conditions": {
-    "risk_level": "Critical" (optional),
-    "classification": "True Positive" (optional),
-    "min_severity": 4 (optional),
-    "event_type": "malware" (optional)
+    "risk_level": "Critical",
+    "event_type": "malware"
   },
   "actions": [
     { "type": "notify_slack", "params": { "message": "Alert message" } },
@@ -73,8 +73,16 @@ Respond ONLY with a valid JSON object in this exact format:
   ]
 }
 
-Only include conditions that are relevant to the user's request.
-Order actions logically (notifications first, then containment, then escalation).`;
+For MULTIPLE playbooks (when user asks for several), respond with a JSON array:
+[
+  { "name": "Playbook 1", "description": "...", "conditions": {...}, "actions": [...] },
+  { "name": "Playbook 2", "description": "...", "conditions": {...}, "actions": [...] }
+]
+
+If the user asks for multiple playbooks or different scenarios, generate them all as an array.
+Only include conditions that are relevant to each playbook.
+Order actions logically (notifications first, then containment, then escalation).
+NEVER include explanatory text - ONLY JSON.`;
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
