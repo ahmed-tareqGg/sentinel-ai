@@ -17,15 +17,67 @@ interface LogData {
   rawLog?: Record<string, unknown>;
 }
 
+async function verifyAuth(req: Request, isInternal: boolean): Promise<{ user: any; error?: string }> {
+  // Allow internal calls from other edge functions with service role key
+  if (isInternal) {
+    const authHeader = req.headers.get('Authorization');
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (authHeader === `Bearer ${serviceKey}`) {
+      return { user: { id: 'internal', type: 'service' } };
+    }
+  }
+
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return { user: null, error: 'Missing authorization header' };
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } }
+  });
+
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    return { user: null, error: 'Invalid or expired token' };
+  }
+
+  // Check if user has required role
+  const { data: roleData } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id)
+    .single();
+
+  if (!roleData || !['admin', 'soc_analyst'].includes(roleData.role)) {
+    return { user: null, error: 'Insufficient permissions. Admin or SOC Analyst role required.' };
+  }
+
+  return { user };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { log } = await req.json() as { log: LogData };
+    const body = await req.json() as { log: LogData; internal?: boolean };
+    const { log, internal } = body;
+
+    // Verify authentication
+    const { user, error: authError } = await verifyAuth(req, internal === true);
+    if (authError) {
+      console.error('Auth error:', authError);
+      return new Response(JSON.stringify({ error: authError }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     
-    console.log('Analyzing log:', JSON.stringify(log));
+    console.log(`Analyzing log for ${user.type === 'service' ? 'internal call' : `user ${user.id}`}:`, JSON.stringify(log));
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {

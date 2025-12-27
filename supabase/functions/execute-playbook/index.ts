@@ -11,6 +11,38 @@ interface PlaybookAction {
   params?: Record<string, unknown>;
 }
 
+async function verifyAuthAndRole(req: Request): Promise<{ user: any; error?: string }> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return { user: null, error: 'Missing authorization header' };
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } }
+  });
+
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    return { user: null, error: 'Invalid or expired token' };
+  }
+
+  // Check if user has required role (admin or soc_analyst)
+  const { data: roleData } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id)
+    .single();
+
+  if (!roleData || !['admin', 'soc_analyst'].includes(roleData.role)) {
+    return { user: null, error: 'Insufficient permissions. Admin or SOC Analyst role required.' };
+  }
+
+  return { user };
+}
+
 async function sendSlackNotification(webhookUrl: string, message: string, incident: Record<string, unknown>) {
   try {
     const payload = {
@@ -93,29 +125,24 @@ async function executeAction(action: PlaybookAction, incident: Record<string, un
       break;
 
     case 'block_ip':
-      // In production, this would integrate with FortiGate API
-      // For now, we log the action
       results.ip = incident.src_ip || action.params?.ip;
       results.note = 'IP block request logged - integrate with firewall API for production';
       console.log(`Would block IP: ${results.ip}`);
       break;
 
     case 'isolate_host':
-      // In production, this would integrate with EDR API
       results.host = incident.src_ip || action.params?.host;
       results.note = 'Host isolation request logged - integrate with EDR API for production';
       console.log(`Would isolate host: ${results.host}`);
       break;
 
     case 'disable_user':
-      // In production, this would integrate with Azure AD/IAM
       results.user = action.params?.user;
       results.note = 'User disable request logged - integrate with IAM API for production';
       console.log(`Would disable user: ${results.user}`);
       break;
 
     case 'create_ticket':
-      // In production, this would integrate with ServiceNow or similar
       results.ticket = `TKT-${Date.now()}`;
       results.note = 'Ticket creation simulated - integrate with ticketing system for production';
       console.log(`Would create ticket for incident: ${incident.incident_number}`);
@@ -141,6 +168,19 @@ serve(async (req) => {
   }
 
   try {
+    // Verify authentication and authorization
+    const { user, error: authError } = await verifyAuthAndRole(req);
+    if (authError) {
+      console.error('Auth error:', authError);
+      return new Response(JSON.stringify({ error: authError }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log(`User ${user.id} executing playbook`);
+
+    // Use service role for privileged operations after auth check
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -268,7 +308,7 @@ serve(async (req) => {
     await supabase.from('incident_timeline').insert({
       incident_id: incident.id,
       stage: 'Playbook Executed',
-      details: `Executed ${actionsToExecute.length} actions: ${actionsToExecute.map(a => a.type).join(', ')}`,
+      details: `Executed ${actionsToExecute.length} actions: ${actionsToExecute.map(a => a.type).join(', ')} (by user ${user.email || user.id})`,
     });
 
     console.log('Playbook execution complete');

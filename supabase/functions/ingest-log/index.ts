@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key',
 };
 
 interface RawLog {
@@ -21,6 +21,48 @@ interface RawLog {
   time?: string;
   timestamp?: string;
   [key: string]: unknown;
+}
+
+async function verifyAuth(req: Request): Promise<{ user: any; isApiKey: boolean; error?: string }> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+
+  // Check for API key authentication (for external systems like SIEM)
+  const apiKey = req.headers.get('x-api-key');
+  const validApiKeys = Deno.env.get('INGEST_API_KEYS')?.split(',').filter(k => k.trim()) || [];
+  
+  if (apiKey && validApiKeys.includes(apiKey)) {
+    console.log('Authenticated via API key');
+    return { user: { id: 'api-key-user', type: 'api_key' }, isApiKey: true };
+  }
+
+  // Check for JWT authentication
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return { user: null, isApiKey: false, error: 'Missing authorization. Provide JWT token or X-API-Key header.' };
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } }
+  });
+
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    return { user: null, isApiKey: false, error: 'Invalid or expired token' };
+  }
+
+  // Check if user has required role (admin or soc_analyst)
+  const { data: roleData } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id)
+    .single();
+
+  if (!roleData || !['admin', 'soc_analyst'].includes(roleData.role)) {
+    return { user: null, isApiKey: false, error: 'Insufficient permissions. Admin or SOC Analyst role required.' };
+  }
+
+  return { user, isApiKey: false };
 }
 
 function normalizeLog(rawLog: RawLog) {
@@ -43,6 +85,19 @@ serve(async (req) => {
   }
 
   try {
+    // Verify authentication
+    const { user, isApiKey, error: authError } = await verifyAuth(req);
+    if (authError) {
+      console.error('Auth error:', authError);
+      return new Response(JSON.stringify({ error: authError }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log(`Authenticated: ${isApiKey ? 'API Key' : `User ${user.id}`}`);
+
+    // Use service role for privileged operations after auth check
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -58,7 +113,7 @@ serve(async (req) => {
       const normalizedLog = normalizeLog(rawLog);
       console.log('Normalized log:', normalizedLog);
 
-      // Analyze the log using AI
+      // Analyze the log using AI (internal call with service key)
       const analyzeResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-log`, {
         method: 'POST',
         headers: {
@@ -73,7 +128,8 @@ serve(async (req) => {
             dstIP: normalizedLog.dstIP,
             msg: normalizedLog.msg,
             fileHash: normalizedLog.fileHash,
-          }
+          },
+          internal: true // Mark as internal call
         }),
       });
 
@@ -120,7 +176,7 @@ serve(async (req) => {
       await supabase.from('incident_timeline').insert({
         incident_id: incident.id,
         stage: 'Event Received',
-        details: `Log ingested from ${source || 'API'}`,
+        details: `Log ingested from ${source || 'API'} by ${isApiKey ? 'API key' : user.email || user.id}`,
       });
 
       await supabase.from('incident_timeline').insert({
@@ -141,7 +197,7 @@ serve(async (req) => {
       if (analysis?.risk_level === 'Critical' || (analysis?.classification === 'True Positive' && normalizedLog.severity >= 4)) {
         console.log('Triggering SOAR playbook for critical incident');
         
-        // Call execute-playbook function
+        // Call execute-playbook function (internal call)
         await fetch(`${supabaseUrl}/functions/v1/execute-playbook`, {
           method: 'POST',
           headers: {
@@ -152,6 +208,7 @@ serve(async (req) => {
             incident_id: incident.id,
             risk_level: analysis.risk_level,
             classification: analysis.classification,
+            internal: true
           }),
         });
       }
