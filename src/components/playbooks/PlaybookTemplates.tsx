@@ -163,12 +163,17 @@ export function PlaybookTemplates({ onTemplateApplied }: PlaybookTemplatesProps)
   const [applying, setApplying] = useState<string | null>(null);
   const [aiPrompt, setAiPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
-  const [generatedPlaybook, setGeneratedPlaybook] = useState<PlaybookTemplate | null>(null);
+  const [generatedPlaybooks, setGeneratedPlaybooks] = useState<PlaybookTemplate[]>([]);
+  const [selectedGeneratedId, setSelectedGeneratedId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  const filteredTemplates = selectedCategory === 'all' 
-    ? PLAYBOOK_TEMPLATES 
+  const filteredTemplates = selectedCategory === 'all'
+    ? PLAYBOOK_TEMPLATES
     : PLAYBOOK_TEMPLATES.filter(t => t.category === selectedCategory);
+
+  const selectedGenerated = selectedGeneratedId
+    ? generatedPlaybooks.find(p => p.id === selectedGeneratedId) || generatedPlaybooks[0]
+    : generatedPlaybooks[0];
 
   const applyTemplate = async (template: PlaybookTemplate) => {
     setApplying(template.id);
@@ -227,7 +232,8 @@ export function PlaybookTemplates({ onTemplateApplied }: PlaybookTemplatesProps)
     }
 
     setGenerating(true);
-    setGeneratedPlaybook(null);
+    setGeneratedPlaybooks([]);
+    setSelectedGeneratedId(null);
 
     try {
       const response = await supabase.functions.invoke('generate-playbook', {
@@ -236,19 +242,26 @@ export function PlaybookTemplates({ onTemplateApplied }: PlaybookTemplatesProps)
 
       if (response.error) throw response.error;
 
-      const generated = response.data;
-      setGeneratedPlaybook({
-        id: 'ai-generated',
-        name: generated.name || 'AI Generated Playbook',
-        description: generated.description || aiPrompt,
-        icon: Sparkles,
-        color: 'text-primary',
-        category: 'containment',
-        conditions: generated.conditions || {},
-        actions: generated.actions || [],
-      });
+      const raw = response.data;
+      const rawPlaybooks = Array.isArray(raw) ? raw : [raw];
 
-      toast.success('Playbook generated successfully!');
+      const mapped: PlaybookTemplate[] = rawPlaybooks
+        .filter(Boolean)
+        .map((p: any, idx: number) => ({
+          id: `ai-${idx}`,
+          name: p?.name || `AI Generated Playbook ${idx + 1}`,
+          description: p?.description || aiPrompt,
+          icon: Sparkles,
+          color: 'text-primary',
+          category: 'containment',
+          conditions: p?.conditions || {},
+          actions: p?.actions || [],
+        }));
+
+      setGeneratedPlaybooks(mapped);
+      setSelectedGeneratedId(mapped[0]?.id ?? null);
+
+      toast.success(`Generated ${mapped.length} playbook${mapped.length === 1 ? '' : 's'} successfully!`);
     } catch (error) {
       console.error('AI generation failed:', error);
       toast.error('Failed to generate playbook. Please try again.');
@@ -449,25 +462,88 @@ export function PlaybookTemplates({ onTemplateApplied }: PlaybookTemplatesProps)
               </Button>
             </div>
 
-            {generatedPlaybook && (
+            {generatedPlaybooks.length > 0 && selectedGenerated && (
               <Card className="border-primary/50">
                 <CardHeader className="pb-3">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-5 w-5 text-primary" />
-                    <CardTitle className="text-base">{generatedPlaybook.name}</CardTitle>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-5 w-5 text-primary" />
+                      <div>
+                        <CardTitle className="text-base">{selectedGenerated.name}</CardTitle>
+                        <CardDescription>
+                          {generatedPlaybooks.length > 1
+                            ? `AI generated ${generatedPlaybooks.length} playbooks — select one below.`
+                            : selectedGenerated.description}
+                        </CardDescription>
+                      </div>
+                    </div>
+                    {generatedPlaybooks.length > 1 && (
+                      <Button
+                        variant="secondary"
+                        onClick={async () => {
+                          setApplying('ai-generated-all');
+                          try {
+                            const payload = generatedPlaybooks.map(p => ({
+                              name: p.name,
+                              description: p.description,
+                              is_active: true,
+                              conditions: p.conditions,
+                              actions: p.actions,
+                            }));
+                            const { error } = await supabase.from('playbooks').insert(payload as any);
+                            if (error) throw error;
+                            toast.success(`Created ${generatedPlaybooks.length} playbooks`);
+                            onTemplateApplied?.();
+                            setOpen(false);
+                          } catch (e) {
+                            console.error(e);
+                            toast.error('Failed to create playbooks');
+                          } finally {
+                            setApplying(null);
+                          }
+                        }}
+                        disabled={applying === 'ai-generated-all'}
+                      >
+                        {applying === 'ai-generated-all' ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Creating...
+                          </>
+                        ) : (
+                          `Create All (${generatedPlaybooks.length})`
+                        )}
+                      </Button>
+                    )}
                   </div>
-                  <CardDescription>{generatedPlaybook.description}</CardDescription>
+
+                  {generatedPlaybooks.length > 1 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {generatedPlaybooks.map((p, idx) => (
+                        <Button
+                          key={p.id}
+                          size="sm"
+                          variant={p.id === selectedGeneratedId ? 'default' : 'outline'}
+                          onClick={() => setSelectedGeneratedId(p.id)}
+                        >
+                          {idx + 1}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {generatedPlaybooks.length === 1 && (
+                    <CardDescription>{selectedGenerated.description}</CardDescription>
+                  )}
                   <div>
                     <p className="text-xs font-medium text-muted-foreground mb-1">CONDITIONS</p>
                     <div className="flex flex-wrap gap-1">
-                      {Object.entries(generatedPlaybook.conditions).map(([key, value]) => (
+                      {Object.entries(selectedGenerated.conditions).map(([key, value]) => (
                         <Badge key={key} variant="outline" className="text-xs">
                           {key}: {String(value)}
                         </Badge>
                       ))}
-                      {Object.keys(generatedPlaybook.conditions).length === 0 && (
+                      {Object.keys(selectedGenerated.conditions).length === 0 && (
                         <span className="text-xs text-muted-foreground">No specific conditions</span>
                       )}
                     </div>
@@ -475,19 +551,22 @@ export function PlaybookTemplates({ onTemplateApplied }: PlaybookTemplatesProps)
                   <div>
                     <p className="text-xs font-medium text-muted-foreground mb-1">ACTIONS</p>
                     <div className="flex flex-wrap gap-1">
-                      {generatedPlaybook.actions.map((action, idx) => (
+                      {selectedGenerated.actions.map((action, idx) => (
                         <Badge key={idx} variant="secondary" className="text-xs">
                           {action.type.replace(/_/g, ' ')}
                         </Badge>
                       ))}
+                      {selectedGenerated.actions.length === 0 && (
+                        <span className="text-xs text-muted-foreground">No actions returned</span>
+                      )}
                     </div>
                   </div>
                   <Button
-                    onClick={() => applyTemplate(generatedPlaybook)}
-                    disabled={applying === 'ai-generated'}
+                    onClick={() => applyTemplate(selectedGenerated)}
+                    disabled={applying === selectedGenerated.id}
                     className="w-full"
                   >
-                    {applying === 'ai-generated' ? (
+                    {applying === selectedGenerated.id ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         Creating...
