@@ -6,12 +6,58 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+async function verifyAuth(req: Request): Promise<{ user: any; error?: string }> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return { user: null, error: 'Missing authorization header' };
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } }
+  });
+
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    return { user: null, error: 'Invalid or expired token' };
+  }
+
+  // All authenticated users can generate reports (read-only operation)
+  // But we still verify they have at least viewer role
+  const { data: roleData } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id)
+    .single();
+
+  if (!roleData) {
+    return { user: null, error: 'No role assigned. Contact administrator.' };
+  }
+
+  return { user };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // Verify authentication
+    const { user, error: authError } = await verifyAuth(req);
+    if (authError) {
+      console.error('Auth error:', authError);
+      return new Response(JSON.stringify({ error: authError }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log(`User ${user.id} generating report`);
+
+    // Use service role for data access after auth check
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -109,6 +155,7 @@ serve(async (req) => {
       metadata: {
         report_type,
         generated_at: new Date().toISOString(),
+        generated_by: user.email || user.id,
         period: { start: startDate, end: endDate },
       },
       executive_summary: {

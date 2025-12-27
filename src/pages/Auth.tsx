@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
+import { Shield, Mail, Lock, User, Eye, EyeOff, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,7 +9,54 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 const emailSchema = z.string().email('Please enter a valid email address');
-const passwordSchema = z.string().min(6, 'Password must be at least 6 characters');
+
+// Strong password requirements: 12+ chars, uppercase, lowercase, number, special char
+const passwordSchema = z.string()
+  .min(12, 'Password must be at least 12 characters')
+  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+  .regex(/[0-9]/, 'Password must contain at least one number')
+  .regex(/[^a-zA-Z0-9]/, 'Password must contain at least one special character');
+
+// Common passwords to reject
+const COMMON_PASSWORDS = [
+  'password123', '12345678901', 'qwerty12345', 'admin12345',
+  'letmein1234', 'welcome1234', 'password1234', 'changeme123'
+];
+
+function calculatePasswordStrength(password: string): number {
+  let strength = 0;
+  if (password.length >= 12) strength++;
+  if (password.length >= 16) strength++;
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
+  if (/[0-9]/.test(password)) strength++;
+  if (/[^a-zA-Z0-9]/.test(password)) strength++;
+  return Math.min(strength, 5);
+}
+
+function getStrengthLabel(strength: number): string {
+  switch (strength) {
+    case 0: return 'Very Weak';
+    case 1: return 'Weak';
+    case 2: return 'Fair';
+    case 3: return 'Good';
+    case 4: return 'Strong';
+    case 5: return 'Very Strong';
+    default: return 'Unknown';
+  }
+}
+
+function getStrengthColor(strength: number): string {
+  switch (strength) {
+    case 0:
+    case 1: return 'bg-destructive';
+    case 2: return 'bg-orange-500';
+    case 3: return 'bg-yellow-500';
+    case 4: return 'bg-green-500';
+    case 5: return 'bg-emerald-600';
+    default: return 'bg-muted';
+  }
+}
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -20,7 +67,22 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const validateInputs = () => {
+  // Password strength calculation
+  const passwordStrength = useMemo(() => calculatePasswordStrength(password), [password]);
+  const strengthLabel = getStrengthLabel(passwordStrength);
+  const strengthColor = getStrengthColor(passwordStrength);
+
+  // Password requirement checks
+  const passwordChecks = useMemo(() => ({
+    length: password.length >= 12,
+    lowercase: /[a-z]/.test(password),
+    uppercase: /[A-Z]/.test(password),
+    number: /[0-9]/.test(password),
+    special: /[^a-zA-Z0-9]/.test(password),
+    notCommon: !COMMON_PASSWORDS.some(common => password.toLowerCase().includes(common)),
+  }), [password]);
+
+  const validateInputs = (isSignup: boolean) => {
     try {
       emailSchema.parse(email);
     } catch (e) {
@@ -30,11 +92,26 @@ export default function Auth() {
       }
     }
 
-    try {
-      passwordSchema.parse(password);
-    } catch (e) {
-      if (e instanceof z.ZodError) {
-        toast.error(e.errors[0].message);
+    // Only validate password strength for signup
+    if (isSignup) {
+      try {
+        passwordSchema.parse(password);
+      } catch (e) {
+        if (e instanceof z.ZodError) {
+          toast.error(e.errors[0].message);
+          return false;
+        }
+      }
+
+      // Check for common passwords
+      if (!passwordChecks.notCommon) {
+        toast.error('Password is too common. Choose a stronger password.');
+        return false;
+      }
+    } else {
+      // For login, just check minimum length
+      if (password.length < 6) {
+        toast.error('Password must be at least 6 characters');
         return false;
       }
     }
@@ -45,7 +122,7 @@ export default function Auth() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validateInputs()) return;
+    if (!validateInputs(!isLogin)) return;
     
     setLoading(true);
 
@@ -173,7 +250,7 @@ export default function Auth() {
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
+                  placeholder="••••••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-10 pr-10 bg-secondary/50 border-border"
@@ -187,6 +264,54 @@ export default function Auth() {
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              
+              {/* Password strength indicator - only show during signup */}
+              {!isLogin && password.length > 0 && (
+                <div className="space-y-2 mt-2">
+                  {/* Strength meter */}
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <div
+                        key={i}
+                        className={`h-1.5 flex-1 rounded-full transition-colors ${
+                          passwordStrength >= i ? strengthColor : 'bg-muted'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Password strength: <span className={passwordStrength >= 3 ? 'text-green-500' : 'text-orange-500'}>{strengthLabel}</span>
+                  </p>
+
+                  {/* Requirements checklist */}
+                  <div className="grid grid-cols-2 gap-1 text-xs">
+                    <div className={`flex items-center gap-1 ${passwordChecks.length ? 'text-green-500' : 'text-muted-foreground'}`}>
+                      {passwordChecks.length ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                      12+ characters
+                    </div>
+                    <div className={`flex items-center gap-1 ${passwordChecks.uppercase ? 'text-green-500' : 'text-muted-foreground'}`}>
+                      {passwordChecks.uppercase ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                      Uppercase letter
+                    </div>
+                    <div className={`flex items-center gap-1 ${passwordChecks.lowercase ? 'text-green-500' : 'text-muted-foreground'}`}>
+                      {passwordChecks.lowercase ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                      Lowercase letter
+                    </div>
+                    <div className={`flex items-center gap-1 ${passwordChecks.number ? 'text-green-500' : 'text-muted-foreground'}`}>
+                      {passwordChecks.number ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                      Number
+                    </div>
+                    <div className={`flex items-center gap-1 ${passwordChecks.special ? 'text-green-500' : 'text-muted-foreground'}`}>
+                      {passwordChecks.special ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                      Special character
+                    </div>
+                    <div className={`flex items-center gap-1 ${passwordChecks.notCommon ? 'text-green-500' : 'text-destructive'}`}>
+                      {passwordChecks.notCommon ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                      Not common
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <Button
