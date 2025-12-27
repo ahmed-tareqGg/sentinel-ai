@@ -61,6 +61,7 @@ export default function Incidents() {
       if (response.error) throw response.error;
       
       toast.success('Log submitted for analysis');
+      refetch();
       setDialogOpen(false);
       setNewLog({
         eventType: 'Malware',

@@ -382,15 +382,26 @@ export default function IncidentDetail() {
                     <SelectItem value="Closed">Closed</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button 
-                  variant="outline" 
-                  onClick={executePlaybook} 
-                  disabled={updating}
-                  className="border-primary/30 text-primary hover:bg-primary/10"
-                >
-                  {updating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
-                  Run Playbook
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={runAnalysis} 
+                    disabled={updating}
+                    className="border-primary/30 text-primary hover:bg-primary/10"
+                  >
+                    {updating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Shield className="h-4 w-4 mr-2" />}
+                    Run Analysis
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={executePlaybook} 
+                    disabled={updating}
+                    className="border-primary/30 text-primary hover:bg-primary/10"
+                  >
+                    {updating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
+                    Run Playbook
+                  </Button>
+                </div>
               </div>
             )}
           </div>
