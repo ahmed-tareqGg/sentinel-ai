@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.reanalyze-incident]
 verify_jwt = false
+
+[functions.generate-playbook]
+verify_jwt = false
+
+[functions.smart-playbook]
+verify_jwt = false
