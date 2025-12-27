@@ -5,41 +5,49 @@ import { IncidentTable } from '@/components/dashboard/IncidentTable';
 import { ClassificationChart } from '@/components/dashboard/ClassificationChart';
 import { TrendChart } from '@/components/dashboard/TrendChart';
 import { MitreChart } from '@/components/dashboard/MitreChart';
-import { mockIncidents, dashboardStats } from '@/lib/mockData';
+import { useIncidents } from '@/hooks/useIncidents';
+import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
+  const { incidents, loading } = useIncidents();
+
+  const openIncidents = incidents.filter(i => i.status === 'Open').length;
+  const criticalAlerts = incidents.filter(i => i.risk_level === 'Critical').length;
+  const truePositives = incidents.filter(i => i.classification === 'True Positive').length;
+  const falsePositives = incidents.filter(i => i.classification === 'False Positive').length;
+  const totalClassified = truePositives + falsePositives;
+  const falsePositiveRate = totalClassified > 0 ? Math.round((falsePositives / totalClassified) * 100) : 0;
+
   return (
     <AppLayout title="Dashboard" subtitle="Real-time security operations overview">
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
           title="Open Incidents"
-          value={dashboardStats.openIncidents}
-          subtitle={`of ${dashboardStats.totalIncidents} total`}
+          value={openIncidents}
+          subtitle={`of ${incidents.length} total`}
           icon={<AlertTriangle className="h-5 w-5" />}
           variant="warning"
-          trend={{ value: 12, isPositive: false }}
         />
         <StatCard
           title="Critical Alerts"
-          value={dashboardStats.criticalAlerts}
+          value={criticalAlerts}
           subtitle="Requires immediate action"
           icon={<Shield className="h-5 w-5" />}
           variant="critical"
         />
         <StatCard
           title="False Positive Rate"
-          value={`${dashboardStats.falsePositiveRate}%`}
-          subtitle="Last 7 days"
+          value={`${falsePositiveRate}%`}
+          subtitle="AI classification accuracy"
           icon={<TrendingDown className="h-5 w-5" />}
           variant="success"
-          trend={{ value: 8, isPositive: true }}
         />
         <StatCard
-          title="Avg Response Time"
-          value={dashboardStats.avgResponseTime}
-          subtitle="SLA Compliance: 94%"
-          icon={<Clock className="h-5 w-5" />}
+          title="Total Incidents"
+          value={incidents.length}
+          subtitle="All time"
+          icon={<Activity className="h-5 w-5" />}
           variant="primary"
         />
       </div>
@@ -59,9 +67,15 @@ export default function Dashboard() {
           <div className="rounded-xl border border-border bg-card p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-foreground">Recent Incidents</h3>
-              <a href="/incidents" className="text-sm text-primary hover:underline">View all</a>
+              <Link to="/incidents" className="text-sm text-primary hover:underline">View all</Link>
             </div>
-            <IncidentTable incidents={mockIncidents} limit={5} />
+            {loading ? (
+              <p className="text-muted-foreground text-center py-8">Loading...</p>
+            ) : incidents.length === 0 ? (
+              <p className="text-muted-foreground text-center py-8">No incidents yet. Submit a log to get started.</p>
+            ) : (
+              <IncidentTable incidents={incidents} limit={5} />
+            )}
           </div>
         </div>
       </div>

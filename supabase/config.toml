@@ -1,1 +1,13 @@
 project_id = "kglmzurhiiuhxmzykkqv"
+
+[functions.analyze-log]
+verify_jwt = true
+
+[functions.ingest-log]
+verify_jwt = false
+
+[functions.execute-playbook]
+verify_jwt = true
+
+[functions.generate-report]
+verify_jwt = true

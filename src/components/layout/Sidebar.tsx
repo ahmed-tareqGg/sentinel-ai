@@ -6,20 +6,43 @@ import {
   Settings, 
   Shield,
   Activity,
-  FileText
+  FileText,
+  LogOut,
+  User,
+  Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
+import { Badge } from '@/components/ui/badge';
 
 const navItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-  { icon: AlertTriangle, label: 'Incidents', path: '/incidents' },
-  { icon: BarChart3, label: 'Analytics', path: '/analytics' },
-  { icon: FileText, label: 'Reports', path: '/reports' },
-  { icon: Settings, label: 'Settings', path: '/settings' },
+  { icon: LayoutDashboard, label: 'Dashboard', path: '/', roles: ['admin', 'soc_analyst', 'viewer'] },
+  { icon: AlertTriangle, label: 'Incidents', path: '/incidents', roles: ['admin', 'soc_analyst', 'viewer'] },
+  { icon: BarChart3, label: 'Analytics', path: '/analytics', roles: ['admin', 'soc_analyst', 'viewer'] },
+  { icon: FileText, label: 'Reports', path: '/reports', roles: ['admin', 'soc_analyst'] },
+  { icon: Zap, label: 'Playbooks', path: '/playbooks', roles: ['admin'] },
+  { icon: Settings, label: 'Settings', path: '/settings', roles: ['admin'] },
 ];
+
+const roleColors = {
+  admin: 'bg-destructive/20 text-destructive border-destructive/30',
+  soc_analyst: 'bg-warning/20 text-warning border-warning/30',
+  viewer: 'bg-muted text-muted-foreground border-border',
+};
+
+const roleLabels = {
+  admin: 'Admin',
+  soc_analyst: 'Analyst',
+  viewer: 'Viewer',
+};
 
 export function Sidebar() {
   const location = useLocation();
+  const { profile, role, signOut } = useAuth();
+
+  const filteredNavItems = navItems.filter(item => 
+    role && item.roles.includes(role)
+  );
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-border bg-sidebar">
@@ -35,9 +58,26 @@ export function Sidebar() {
           </div>
         </div>
 
+        {/* User Info */}
+        <div className="border-b border-border p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-primary">
+              <User className="h-5 w-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">
+                {profile?.full_name || profile?.email?.split('@')[0]}
+              </p>
+              <Badge variant="outline" className={cn('text-xs mt-1', roleColors[role || 'viewer'])}>
+                {roleLabels[role || 'viewer']}
+              </Badge>
+            </div>
+          </div>
+        </div>
+
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 px-3 py-4">
-          {navItems.map((item) => {
+        <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
+          {filteredNavItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <Link
@@ -57,8 +97,8 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* Status */}
-        <div className="border-t border-border p-4">
+        {/* Status & Logout */}
+        <div className="border-t border-border p-4 space-y-3">
           <div className="flex items-center gap-3 rounded-lg bg-secondary/50 p-3">
             <div className="relative">
               <Activity className="h-5 w-5 text-success" />
@@ -69,6 +109,14 @@ export function Sidebar() {
               <p className="text-xs text-muted-foreground">All services running</p>
             </div>
           </div>
+
+          <button
+            onClick={signOut}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+          >
+            <LogOut className="h-5 w-5" />
+            Sign Out
+          </button>
         </div>
       </div>
     </aside>
