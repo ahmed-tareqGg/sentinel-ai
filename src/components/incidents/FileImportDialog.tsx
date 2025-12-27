@@ -213,8 +213,26 @@ export function FileImportDialog({ onSuccess }: { onSuccess?: () => void }) {
       let data: any[];
 
       if (selectedFile.name.endsWith('.json')) {
-        const parsed = JSON.parse(text);
-        data = Array.isArray(parsed) ? parsed : parsed.logs || parsed.incidents || [parsed];
+        try {
+          const parsed = JSON.parse(text);
+          data = Array.isArray(parsed) ? parsed : parsed.logs || parsed.incidents || [parsed];
+        } catch (jsonError) {
+          // Try to fix common JSON issues
+          let fixedText = text
+            .replace(/,\s*}/g, '}')           // Remove trailing commas before }
+            .replace(/,\s*]/g, ']')           // Remove trailing commas before ]
+            .replace(/'/g, '"')               // Replace single quotes with double quotes
+            .replace(/(\w+):/g, '"$1":')      // Add quotes to unquoted keys
+            .replace(/""(\w+)""/g, '"$1"');   // Fix double-quoted keys
+          
+          try {
+            const parsed = JSON.parse(fixedText);
+            data = Array.isArray(parsed) ? parsed : parsed.logs || parsed.incidents || [parsed];
+            toast.info('Fixed minor JSON formatting issues');
+          } catch {
+            throw new Error('Invalid JSON format. Please ensure your JSON file has proper syntax (double quotes, no trailing commas).');
+          }
+        }
       } else if (selectedFile.name.endsWith('.csv')) {
         data = parseCSV(text);
       } else {
