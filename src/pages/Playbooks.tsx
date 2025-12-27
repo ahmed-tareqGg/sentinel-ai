@@ -1,0 +1,760 @@
+import { useState, useEffect } from 'react';
+import { AppLayout } from '@/components/layout/AppLayout';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { 
+  Zap, 
+  Plus, 
+  Edit, 
+  Trash2, 
+  Play, 
+  Pause, 
+  AlertTriangle, 
+  Shield, 
+  Bell, 
+  Ban, 
+  Server, 
+  Users, 
+  Ticket,
+  ChevronRight,
+  Clock,
+  CheckCircle2,
+  XCircle
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+interface PlaybookConditions {
+  risk_level?: string;
+  classification?: string;
+  min_severity?: number;
+  event_type?: string;
+}
+
+interface PlaybookAction {
+  type: string;
+  params?: Record<string, unknown>;
+}
+
+interface Playbook {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  conditions: PlaybookConditions;
+  actions: PlaybookAction[];
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
+interface PlaybookExecution {
+  id: string;
+  playbook_id: string;
+  incident_id: string;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  results: any;
+}
+
+const ACTION_TYPES = [
+  { value: 'notify_slack', label: 'Send Slack Notification', icon: Bell, color: 'text-blue-500' },
+  { value: 'block_ip', label: 'Block IP Address', icon: Ban, color: 'text-destructive' },
+  { value: 'isolate_host', label: 'Isolate Host', icon: Server, color: 'text-orange-500' },
+  { value: 'disable_user', label: 'Disable User Account', icon: Users, color: 'text-purple-500' },
+  { value: 'create_ticket', label: 'Create Support Ticket', icon: Ticket, color: 'text-green-500' },
+  { value: 'escalate', label: 'Escalate to Team', icon: AlertTriangle, color: 'text-warning' },
+];
+
+const RISK_LEVELS = ['Critical', 'High', 'Medium', 'Low'];
+const CLASSIFICATIONS = ['True Positive', 'False Positive', 'Pending'];
+
+export default function Playbooks() {
+  const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
+  const [executions, setExecutions] = useState<PlaybookExecution[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingPlaybook, setEditingPlaybook] = useState<Playbook | null>(null);
+  
+  // Form state
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    is_active: true,
+    conditions: {
+      risk_level: '',
+      classification: '',
+      min_severity: 0,
+      event_type: '',
+    } as PlaybookConditions,
+    actions: [] as PlaybookAction[],
+  });
+
+  useEffect(() => {
+    fetchPlaybooks();
+    fetchExecutions();
+  }, []);
+
+  const fetchPlaybooks = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('playbooks')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      
+      // Parse the conditions and actions from JSON
+      const parsedPlaybooks = (data || []).map(p => ({
+        ...p,
+        conditions: typeof p.conditions === 'string' ? JSON.parse(p.conditions) : p.conditions || {},
+        actions: typeof p.actions === 'string' ? JSON.parse(p.actions) : p.actions || [],
+      }));
+      
+      setPlaybooks(parsedPlaybooks);
+    } catch (error) {
+      console.error('Error fetching playbooks:', error);
+      toast.error('Failed to load playbooks');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchExecutions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('playbook_executions')
+        .select('*')
+        .order('started_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      setExecutions(data || []);
+    } catch (error) {
+      console.error('Error fetching executions:', error);
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      description: '',
+      is_active: true,
+      conditions: {
+        risk_level: '',
+        classification: '',
+        min_severity: 0,
+        event_type: '',
+      },
+      actions: [],
+    });
+    setEditingPlaybook(null);
+  };
+
+  const handleCreateOrUpdate = async () => {
+    if (!formData.name.trim()) {
+      toast.error('Playbook name is required');
+      return;
+    }
+
+    if (formData.actions.length === 0) {
+      toast.error('At least one action is required');
+      return;
+    }
+
+    // Clean up empty conditions
+    const cleanConditions: PlaybookConditions = {};
+    if (formData.conditions.risk_level) cleanConditions.risk_level = formData.conditions.risk_level;
+    if (formData.conditions.classification) cleanConditions.classification = formData.conditions.classification;
+    if (formData.conditions.min_severity && formData.conditions.min_severity > 0) cleanConditions.min_severity = formData.conditions.min_severity;
+    if (formData.conditions.event_type) cleanConditions.event_type = formData.conditions.event_type;
+
+    try {
+      const playbookData = {
+        name: formData.name,
+        description: formData.description || null,
+        is_active: formData.is_active,
+        conditions: cleanConditions,
+        actions: formData.actions,
+      };
+
+      if (editingPlaybook) {
+        const { error } = await supabase
+          .from('playbooks')
+          .update(playbookData as any)
+          .eq('id', editingPlaybook.id);
+
+        if (error) throw error;
+        toast.success('Playbook updated successfully');
+      } else {
+        const { error } = await supabase
+          .from('playbooks')
+          .insert(playbookData as any);
+
+        if (error) throw error;
+        toast.success('Playbook created successfully');
+      }
+
+      setIsCreateOpen(false);
+      resetForm();
+      fetchPlaybooks();
+    } catch (error) {
+      console.error('Error saving playbook:', error);
+      toast.error('Failed to save playbook');
+    }
+  };
+
+  const handleEdit = (playbook: Playbook) => {
+    setEditingPlaybook(playbook);
+    setFormData({
+      name: playbook.name,
+      description: playbook.description || '',
+      is_active: playbook.is_active,
+      conditions: playbook.conditions || {},
+      actions: playbook.actions || [],
+    });
+    setIsCreateOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('playbooks')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      toast.success('Playbook deleted successfully');
+      fetchPlaybooks();
+    } catch (error) {
+      console.error('Error deleting playbook:', error);
+      toast.error('Failed to delete playbook');
+    }
+  };
+
+  const handleToggleActive = async (playbook: Playbook) => {
+    try {
+      const { error } = await supabase
+        .from('playbooks')
+        .update({ is_active: !playbook.is_active })
+        .eq('id', playbook.id);
+
+      if (error) throw error;
+      toast.success(playbook.is_active ? 'Playbook deactivated' : 'Playbook activated');
+      fetchPlaybooks();
+    } catch (error) {
+      console.error('Error toggling playbook:', error);
+      toast.error('Failed to update playbook');
+    }
+  };
+
+  const addAction = (actionType: string) => {
+    const newAction: PlaybookAction = { type: actionType, params: {} };
+    
+    // Add default params based on action type
+    switch (actionType) {
+      case 'notify_slack':
+        newAction.params = { message: '' };
+        break;
+      case 'escalate':
+        newAction.params = { team: 'SOC Leadership' };
+        break;
+    }
+    
+    setFormData(prev => ({
+      ...prev,
+      actions: [...prev.actions, newAction],
+    }));
+  };
+
+  const removeAction = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      actions: prev.actions.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateActionParams = (index: number, key: string, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      actions: prev.actions.map((action, i) => 
+        i === index 
+          ? { ...action, params: { ...action.params, [key]: value } }
+          : action
+      ),
+    }));
+  };
+
+  const getActionInfo = (type: string) => {
+    return ACTION_TYPES.find(a => a.value === type) || { label: type, icon: Zap, color: 'text-muted-foreground' };
+  };
+
+  return (
+    <AppLayout title="Playbooks" subtitle="Configure automated SOAR response playbooks">
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Playbooks</h1>
+            <p className="text-muted-foreground">Configure automated SOAR response playbooks</p>
+          </div>
+          <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) resetForm(); }}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                Create Playbook
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editingPlaybook ? 'Edit Playbook' : 'Create New Playbook'}</DialogTitle>
+                <DialogDescription>
+                  Configure trigger conditions and automated response actions
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-6 py-4">
+                {/* Basic Info */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Playbook Name</Label>
+                    <Input
+                      id="name"
+                      placeholder="e.g., Critical Incident Response"
+                      value={formData.name}
+                      onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Description</Label>
+                    <Textarea
+                      id="description"
+                      placeholder="Describe what this playbook does..."
+                      value={formData.description}
+                      onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Active Status</Label>
+                      <p className="text-sm text-muted-foreground">Enable or disable this playbook</p>
+                    </div>
+                    <Switch
+                      checked={formData.is_active}
+                      onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_active: checked }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Trigger Conditions */}
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-medium text-foreground mb-1">Trigger Conditions</h4>
+                    <p className="text-xs text-muted-foreground">Define when this playbook should execute</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Risk Level</Label>
+                      <Select
+                        value={formData.conditions.risk_level || ''}
+                        onValueChange={(value) => setFormData(prev => ({
+                          ...prev,
+                          conditions: { ...prev.conditions, risk_level: value }
+                        }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Any risk level" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">Any</SelectItem>
+                          {RISK_LEVELS.map(level => (
+                            <SelectItem key={level} value={level}>{level}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Classification</Label>
+                      <Select
+                        value={formData.conditions.classification || ''}
+                        onValueChange={(value) => setFormData(prev => ({
+                          ...prev,
+                          conditions: { ...prev.conditions, classification: value }
+                        }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Any classification" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">Any</SelectItem>
+                          {CLASSIFICATIONS.map(c => (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Minimum Severity</Label>
+                      <Select
+                        value={String(formData.conditions.min_severity || 0)}
+                        onValueChange={(value) => setFormData(prev => ({
+                          ...prev,
+                          conditions: { ...prev.conditions, min_severity: parseInt(value) }
+                        }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Any severity" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">Any</SelectItem>
+                          <SelectItem value="1">1+</SelectItem>
+                          <SelectItem value="2">2+</SelectItem>
+                          <SelectItem value="3">3+</SelectItem>
+                          <SelectItem value="4">4+</SelectItem>
+                          <SelectItem value="5">5 only</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Event Type Contains</Label>
+                      <Input
+                        placeholder="e.g., malware, intrusion"
+                        value={formData.conditions.event_type || ''}
+                        onChange={(e) => setFormData(prev => ({
+                          ...prev,
+                          conditions: { ...prev.conditions, event_type: e.target.value }
+                        }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-medium text-foreground mb-1">Response Actions</h4>
+                      <p className="text-xs text-muted-foreground">Actions to execute when conditions match</p>
+                    </div>
+                  </div>
+                  
+                  {/* Action List */}
+                  <div className="space-y-2">
+                    {formData.actions.map((action, index) => {
+                      const actionInfo = getActionInfo(action.type);
+                      const ActionIcon = actionInfo.icon;
+                      return (
+                        <div key={index} className="flex items-start gap-3 p-3 rounded-lg border border-border bg-secondary/30">
+                          <div className={cn("mt-0.5", actionInfo.color)}>
+                            <ActionIcon className="h-5 w-5" />
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-sm">{actionInfo.label}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeAction(index)}
+                                className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            {action.type === 'notify_slack' && (
+                              <Input
+                                placeholder="Custom message (optional)"
+                                value={(action.params?.message as string) || ''}
+                                onChange={(e) => updateActionParams(index, 'message', e.target.value)}
+                                className="text-sm"
+                              />
+                            )}
+                            {action.type === 'escalate' && (
+                              <Input
+                                placeholder="Team to escalate to"
+                                value={(action.params?.team as string) || ''}
+                                onChange={(e) => updateActionParams(index, 'team', e.target.value)}
+                                className="text-sm"
+                              />
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Add Action Buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    {ACTION_TYPES.map(action => {
+                      const ActionIcon = action.icon;
+                      return (
+                        <Button
+                          key={action.value}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => addAction(action.value)}
+                          className="gap-1.5"
+                        >
+                          <ActionIcon className={cn("h-3.5 w-3.5", action.color)} />
+                          {action.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => { setIsCreateOpen(false); resetForm(); }}>
+                  Cancel
+                </Button>
+                <Button onClick={handleCreateOrUpdate}>
+                  {editingPlaybook ? 'Update Playbook' : 'Create Playbook'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {/* Tabs */}
+        <Tabs defaultValue="playbooks" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="playbooks">Playbooks</TabsTrigger>
+            <TabsTrigger value="executions">Execution History</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="playbooks" className="space-y-4">
+            {loading ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                {[1, 2, 3, 4].map(i => (
+                  <Card key={i} className="animate-pulse">
+                    <CardHeader className="space-y-2">
+                      <div className="h-5 w-1/3 bg-muted rounded" />
+                      <div className="h-4 w-2/3 bg-muted rounded" />
+                    </CardHeader>
+                  </Card>
+                ))}
+              </div>
+            ) : playbooks.length === 0 ? (
+              <Card className="border-dashed">
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-4">
+                    <Zap className="h-8 w-8 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">No Playbooks Yet</h3>
+                  <p className="text-muted-foreground text-center mb-4 max-w-sm">
+                    Create your first automated response playbook to streamline incident handling.
+                  </p>
+                  <Button onClick={() => setIsCreateOpen(true)} className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Create Playbook
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {playbooks.map(playbook => (
+                  <Card key={playbook.id} className={cn(
+                    "transition-all",
+                    !playbook.is_active && "opacity-60"
+                  )}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            "flex h-10 w-10 items-center justify-center rounded-lg",
+                            playbook.is_active ? "bg-primary/10" : "bg-muted"
+                          )}>
+                            <Zap className={cn(
+                              "h-5 w-5",
+                              playbook.is_active ? "text-primary" : "text-muted-foreground"
+                            )} />
+                          </div>
+                          <div>
+                            <CardTitle className="text-base">{playbook.name}</CardTitle>
+                            <Badge variant={playbook.is_active ? "default" : "secondary"} className="mt-1">
+                              {playbook.is_active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleToggleActive(playbook)}
+                            className="h-8 w-8"
+                          >
+                            {playbook.is_active ? (
+                              <Pause className="h-4 w-4 text-warning" />
+                            ) : (
+                              <Play className="h-4 w-4 text-success" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEdit(playbook)}
+                            className="h-8 w-8"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Playbook</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete "{playbook.name}"? This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction 
+                                  onClick={() => handleDelete(playbook.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </div>
+                      {playbook.description && (
+                        <CardDescription className="mt-2">{playbook.description}</CardDescription>
+                      )}
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Conditions */}
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">TRIGGER CONDITIONS</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {playbook.conditions.risk_level && (
+                            <Badge variant="outline" className="text-xs">
+                              Risk: {playbook.conditions.risk_level}
+                            </Badge>
+                          )}
+                          {playbook.conditions.classification && (
+                            <Badge variant="outline" className="text-xs">
+                              {playbook.conditions.classification}
+                            </Badge>
+                          )}
+                          {playbook.conditions.min_severity && playbook.conditions.min_severity > 0 && (
+                            <Badge variant="outline" className="text-xs">
+                              Severity ≥ {playbook.conditions.min_severity}
+                            </Badge>
+                          )}
+                          {playbook.conditions.event_type && (
+                            <Badge variant="outline" className="text-xs">
+                              Type: {playbook.conditions.event_type}
+                            </Badge>
+                          )}
+                          {Object.keys(playbook.conditions).length === 0 && (
+                            <span className="text-xs text-muted-foreground">No conditions (manual trigger only)</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">ACTIONS ({playbook.actions.length})</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {playbook.actions.map((action, i) => {
+                            const actionInfo = getActionInfo(action.type);
+                            const ActionIcon = actionInfo.icon;
+                            return (
+                              <Badge key={i} variant="secondary" className="gap-1 text-xs">
+                                <ActionIcon className={cn("h-3 w-3", actionInfo.color)} />
+                                {actionInfo.label}
+                              </Badge>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="executions" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Executions</CardTitle>
+                <CardDescription>History of playbook executions</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {executions.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No executions yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {executions.map(execution => {
+                      const playbook = playbooks.find(p => p.id === execution.playbook_id);
+                      return (
+                        <div 
+                          key={execution.id} 
+                          className="flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/30"
+                        >
+                          <div className="flex items-center gap-3">
+                            {execution.status === 'completed' ? (
+                              <CheckCircle2 className="h-5 w-5 text-success" />
+                            ) : execution.status === 'failed' ? (
+                              <XCircle className="h-5 w-5 text-destructive" />
+                            ) : (
+                              <Clock className="h-5 w-5 text-warning animate-pulse" />
+                            )}
+                            <div>
+                              <p className="font-medium text-sm">
+                                {playbook?.name || 'Default Playbook'}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Incident: {execution.incident_id.slice(0, 8)}...
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant={
+                              execution.status === 'completed' ? 'default' :
+                              execution.status === 'failed' ? 'destructive' : 'secondary'
+                            }>
+                              {execution.status}
+                            </Badge>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {new Date(execution.started_at).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </AppLayout>
+  );
+}
