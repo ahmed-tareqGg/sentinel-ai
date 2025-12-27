@@ -319,12 +319,12 @@ export default function Playbooks() {
               playbooks={playbooks} 
               incidents={incidents.map(i => ({
                 id: i.id,
-                incident_number: i.incidentNumber,
-                event_type: i.eventType,
+                incident_number: i.incident_number,
+                event_type: i.event_type,
                 severity: i.severity,
-                risk_level: i.riskLevel,
+                risk_level: i.risk_level,
                 classification: i.classification,
-                src_ip: i.srcIP,
+                src_ip: i.src_ip,
                 message: i.message,
               }))} 
             />
