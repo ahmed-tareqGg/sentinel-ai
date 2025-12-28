@@ -332,31 +332,21 @@ export default function IncidentDetail() {
       
       if (error) throw error;
       
-      // If PDF is returned, download it
+      // Decode base64 and download as text file (formatted like PDF)
       if (data?.pdf_base64) {
-        const pdfBytes = Uint8Array.from(atob(data.pdf_base64), c => c.charCodeAt(0));
-        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const content = atob(data.pdf_base64);
+        const blob = new Blob([content], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `Incident_Report_${incident.incident_number}.pdf`;
+        a.download = `Incident_Report_${incident.incident_number}.txt`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         toast.success('Report downloaded');
       } else {
-        // Fallback: download as JSON
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Incident_Report_${incident.incident_number}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        toast.success('Report generated');
+        toast.error('Failed to generate report');
       }
     } catch (error) {
       console.error('Report generation failed:', error);
