@@ -77,34 +77,27 @@ export default function MitreCoverage() {
     setRefreshing(true);
     
     try {
-      // Update coverage based on incidents
-      const { data: incidents } = await supabase
-        .from('incidents')
-        .select('mitre_technique, mitre_tactic')
-        .not('mitre_technique', 'is', null);
-      
-      if (incidents) {
-        const techniqueCounts: Record<string, number> = {};
-        incidents.forEach(inc => {
-          if (inc.mitre_technique) {
-            techniqueCounts[inc.mitre_technique] = (techniqueCounts[inc.mitre_technique] || 0) + 1;
-          }
-        });
-        
-        // Update detection counts
-        for (const [technique, count] of Object.entries(techniqueCounts)) {
-          await supabase
-            .from('mitre_coverage')
-            .update({ 
-              detection_count: count,
-              last_detected: new Date().toISOString(),
-              coverage_status: count >= 3 ? 'covered' : 'partial',
-            })
-            .eq('technique_id', technique);
+      // Call MITRE enrichment edge function for backfill
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mitre-enrichment`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ action: 'backfill' }),
         }
+      );
+      
+      if (response.ok) {
+        const result = await response.json();
+        toast.success(`Backfill complete: ${result.enriched} incidents mapped to ${result.techniques_found} techniques`);
+      } else {
+        throw new Error('Backfill failed');
       }
       
-      // Check playbook coverage
+      // Also check playbook coverage
       const { data: playbooks } = await supabase
         .from('playbooks')
         .select('id, conditions')
@@ -123,12 +116,11 @@ export default function MitreCoverage() {
         for (const technique of coveredByPlaybook) {
           await supabase
             .from('mitre_coverage')
-            .update({ has_playbook: true })
+            .update({ has_playbook: true, coverage_status: 'full' })
             .eq('technique_id', technique);
         }
       }
       
-      toast.success('Coverage analysis updated');
       fetchCoverage();
     } catch (error) {
       console.error('Error refreshing coverage:', error);

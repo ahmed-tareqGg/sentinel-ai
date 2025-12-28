@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.autonomous-soc]
 verify_jwt = false
+
+[functions.mitre-enrichment]
+verify_jwt = false

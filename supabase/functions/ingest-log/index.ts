@@ -193,6 +193,27 @@ serve(async (req) => {
         });
       }
 
+      // 🔥 MITRE Enrichment Hook - Auto update coverage
+      if (analysis?.mitre_techniques?.length > 0 || analysis?.mitre_technique) {
+        console.log('🎯 Triggering MITRE enrichment...');
+        try {
+          await fetch(`${supabaseUrl}/functions/v1/mitre-enrichment`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              action: 'enrich_incident',
+              incident_id: incident.id
+            }),
+          });
+          console.log('MITRE enrichment completed for incident:', incident.incident_number);
+        } catch (mitreError) {
+          console.error('MITRE enrichment failed:', mitreError);
+        }
+      }
+
       // Auto-generate playbook suggestion for new attack types
       const existingPlaybook = await supabase
         .from('playbooks')
