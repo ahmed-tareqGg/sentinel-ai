@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import socmindLogo from '@/assets/socmind-logo.png';
+import { AuthFooter } from '@/components/layout/AuthFooter';
 
 const emailSchema = z.string().email('Please enter a valid email address');
 
@@ -341,6 +342,8 @@ export default function Auth() {
           <br />
           Contact an admin for elevated permissions.
         </p>
+
+        <AuthFooter />
       </div>
     </div>
   );
