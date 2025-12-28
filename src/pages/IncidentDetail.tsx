@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { soarActions } from '@/lib/soarActions';
+import jsPDF from 'jspdf';
 
 interface Incident {
   id: string;
@@ -323,31 +324,159 @@ export default function IncidentDetail() {
     setGeneratingReport(true);
     
     try {
-      const { data, error } = await supabase.functions.invoke('generate-report', {
-        body: {
-          type: 'incident',
-          incident_id: incident.id,
-        },
+      // Create PDF using jsPDF
+      const pdf = new jsPDF();
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      let y = 20;
+
+      // Header
+      pdf.setFontSize(20);
+      pdf.setTextColor(0, 100, 200);
+      pdf.text('SOCMind INCIDENT REPORT', pageWidth / 2, y, { align: 'center' });
+      y += 15;
+
+      // Line separator
+      pdf.setDrawColor(0, 100, 200);
+      pdf.line(20, y, pageWidth - 20, y);
+      y += 15;
+
+      // Incident Number
+      pdf.setFontSize(14);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(`Incident: ${incident.incident_number}`, 20, y);
+      y += 10;
+
+      // Generated Date
+      pdf.setFontSize(10);
+      pdf.setTextColor(100, 100, 100);
+      pdf.text(`Generated: ${new Date().toLocaleString()}`, 20, y);
+      y += 15;
+
+      // Executive Summary Section
+      pdf.setFontSize(14);
+      pdf.setTextColor(0, 100, 200);
+      pdf.text('EXECUTIVE SUMMARY', 20, y);
+      y += 10;
+
+      pdf.setFontSize(10);
+      pdf.setTextColor(0, 0, 0);
+      const summaryItems = [
+        `Event Type: ${incident.event_type}`,
+        `Severity: ${incident.severity}/5`,
+        `Risk Level: ${incident.risk_level}`,
+        `Classification: ${incident.classification}`,
+        `AI Confidence: ${incident.confidence}%`,
+        `Status: ${incident.status}`,
+      ];
+      summaryItems.forEach(item => {
+        pdf.text(item, 25, y);
+        y += 7;
       });
-      
-      if (error) throw error;
-      
-      // Decode base64 and download as text file (formatted like PDF)
-      if (data?.pdf_base64) {
-        const content = atob(data.pdf_base64);
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Incident_Report_${incident.incident_number}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        toast.success('Report downloaded');
-      } else {
-        toast.error('Failed to generate report');
+      y += 5;
+
+      // Incident Details Section
+      pdf.setFontSize(14);
+      pdf.setTextColor(0, 100, 200);
+      pdf.text('INCIDENT DETAILS', 20, y);
+      y += 10;
+
+      pdf.setFontSize(10);
+      pdf.setTextColor(0, 0, 0);
+      const detailItems = [
+        `Timestamp: ${new Date(incident.created_at).toLocaleString()}`,
+        `Source IP: ${incident.src_ip || 'N/A'}`,
+        `Destination IP: ${incident.dst_ip || 'N/A'}`,
+        `File Hash: ${incident.file_hash || 'N/A'}`,
+      ];
+      detailItems.forEach(item => {
+        pdf.text(item, 25, y);
+        y += 7;
+      });
+      y += 5;
+
+      // Description
+      if (incident.message) {
+        pdf.setFontSize(14);
+        pdf.setTextColor(0, 100, 200);
+        pdf.text('DESCRIPTION', 20, y);
+        y += 10;
+        pdf.setFontSize(10);
+        pdf.setTextColor(0, 0, 0);
+        const lines = pdf.splitTextToSize(incident.message, pageWidth - 50);
+        pdf.text(lines, 25, y);
+        y += lines.length * 5 + 10;
       }
+
+      // MITRE ATT&CK
+      pdf.setFontSize(14);
+      pdf.setTextColor(0, 100, 200);
+      pdf.text('MITRE ATT&CK MAPPING', 20, y);
+      y += 10;
+      pdf.setFontSize(10);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(`Technique: ${incident.mitre_technique || 'Not mapped'}`, 25, y);
+      y += 7;
+      pdf.text(`Tactic: ${incident.mitre_tactic || 'Not mapped'}`, 25, y);
+      y += 15;
+
+      // Recommended Actions
+      if (incident.recommended_actions && incident.recommended_actions.length > 0) {
+        pdf.setFontSize(14);
+        pdf.setTextColor(0, 100, 200);
+        pdf.text('RECOMMENDED ACTIONS', 20, y);
+        y += 10;
+        pdf.setFontSize(10);
+        pdf.setTextColor(0, 0, 0);
+        incident.recommended_actions.forEach((action, i) => {
+          if (y > 270) {
+            pdf.addPage();
+            y = 20;
+          }
+          pdf.text(`${i + 1}. ${action}`, 25, y);
+          y += 7;
+        });
+        y += 10;
+      }
+
+      // Timeline
+      if (timeline.length > 0) {
+        if (y > 230) {
+          pdf.addPage();
+          y = 20;
+        }
+        pdf.setFontSize(14);
+        pdf.setTextColor(0, 100, 200);
+        pdf.text('INCIDENT TIMELINE', 20, y);
+        y += 10;
+        pdf.setFontSize(9);
+        pdf.setTextColor(0, 0, 0);
+        timeline.slice(0, 10).forEach(entry => {
+          if (y > 270) {
+            pdf.addPage();
+            y = 20;
+          }
+          const time = new Date(entry.timestamp).toLocaleTimeString();
+          pdf.text(`[${time}] ${entry.stage}`, 25, y);
+          y += 5;
+          if (entry.details) {
+            pdf.setTextColor(100, 100, 100);
+            const detailLines = pdf.splitTextToSize(entry.details, pageWidth - 60);
+            pdf.text(detailLines, 30, y);
+            y += detailLines.length * 4 + 3;
+            pdf.setTextColor(0, 0, 0);
+          }
+        });
+      }
+
+      // Footer
+      pdf.setFontSize(8);
+      pdf.setTextColor(150, 150, 150);
+      pdf.text('Generated by SOCMind Autonomous SOC Platform', pageWidth / 2, 285, { align: 'center' });
+
+      // Save PDF
+      pdf.save(`Incident_Report_${incident.incident_number}.pdf`);
+      toast.success('PDF Report downloaded');
+      
     } catch (error) {
       console.error('Report generation failed:', error);
       toast.error('Failed to generate report');
