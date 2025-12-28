@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2 } from 'lucide-react';
+import { ArrowLeft, Clock, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -69,13 +69,35 @@ export default function IncidentDetail() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [executingAction, setExecutingAction] = useState<string | null>(null);
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [creatingTicket, setCreatingTicket] = useState(false);
+  const [jiraTicketUrl, setJiraTicketUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
       fetchIncident();
       fetchTimeline();
+      checkForJiraTicket();
     }
   }, [id]);
+
+  const checkForJiraTicket = async () => {
+    // Check timeline for Jira ticket creation
+    const { data } = await supabase
+      .from('incident_timeline')
+      .select('details')
+      .eq('incident_id', id)
+      .ilike('stage', '%Jira%')
+      .order('timestamp', { ascending: false })
+      .limit(1);
+    
+    if (data && data.length > 0) {
+      const match = data[0].details?.match(/Ticket (KAN-\d+)/);
+      if (match) {
+        setJiraTicketUrl(`https://socmind.atlassian.net/browse/${match[1]}`);
+      }
+    }
+  };
 
   const fetchIncident = async () => {
     const { data, error } = await supabase
@@ -296,6 +318,80 @@ export default function IncidentDetail() {
     toast.success('Incident exported successfully');
   };
 
+  const generateReport = async () => {
+    if (!incident) return;
+    setGeneratingReport(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-report', {
+        body: {
+          type: 'incident',
+          incident_id: incident.id,
+        },
+      });
+      
+      if (error) throw error;
+      
+      // If PDF is returned, download it
+      if (data?.pdf_base64) {
+        const pdfBytes = Uint8Array.from(atob(data.pdf_base64), c => c.charCodeAt(0));
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Incident_Report_${incident.incident_number}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success('Report downloaded');
+      } else {
+        // Fallback: download as JSON
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Incident_Report_${incident.incident_number}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success('Report generated');
+      }
+    } catch (error) {
+      console.error('Report generation failed:', error);
+      toast.error('Failed to generate report');
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
+
+  const createJiraTicket = async () => {
+    if (!incident) return;
+    setCreatingTicket(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('create-jira-ticket', {
+        body: {
+          incident_id: incident.id,
+        },
+      });
+      
+      if (error) throw error;
+      
+      if (data?.jira_url) {
+        setJiraTicketUrl(data.jira_url);
+        toast.success(`Jira ticket ${data.jira_key} created`);
+        fetchTimeline();
+      }
+    } catch (error) {
+      console.error('Jira ticket creation failed:', error);
+      toast.error('Failed to create Jira ticket');
+    } finally {
+      setCreatingTicket(false);
+    }
+  };
+
   if (loading) {
     return (
       <AppLayout title="Loading...">
@@ -333,6 +429,51 @@ export default function IncidentDetail() {
           Back to Incidents
         </Button>
         <div className="flex items-center gap-2">
+          {/* Jira Ticket Button */}
+          {jiraTicketUrl ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(jiraTicketUrl, '_blank')}
+              className="border-green-500/30 text-green-500 hover:bg-green-500/10"
+            >
+              <Ticket className="h-4 w-4 mr-2" />
+              View Jira Ticket
+              <ExternalLink className="h-3 w-3 ml-1" />
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={createJiraTicket}
+              disabled={creatingTicket}
+              className="border-blue-500/30 text-blue-500 hover:bg-blue-500/10"
+            >
+              {creatingTicket ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Ticket className="h-4 w-4 mr-2" />
+              )}
+              Create Jira Ticket
+            </Button>
+          )}
+          
+          {/* Generate Report Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={generateReport}
+            disabled={generatingReport}
+            className="border-purple-500/30 text-purple-500 hover:bg-purple-500/10"
+          >
+            {generatingReport ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <FileText className="h-4 w-4 mr-2" />
+            )}
+            Generate Report
+          </Button>
+          
           <Button variant="outline" size="sm" onClick={() => toast.info('Advanced filtering coming soon')}>
             <Filter className="h-4 w-4 mr-2" />
             Advanced Filter
