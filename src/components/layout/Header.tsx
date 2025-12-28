@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Bell, Search, User, LogOut, Settings, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Bell, Search, User, LogOut, Settings, ChevronDown, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
@@ -16,7 +16,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { useAuth } from '@/hooks/useAuth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -38,8 +38,42 @@ interface Notification {
 export function Header({ title, subtitle }: HeaderProps) {
   const { profile, role, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+
+  // Debounce search for real-time filtering
+  const debounce = useCallback((func: Function, delay: number) => {
+    let timeoutId: NodeJS.Timeout;
+    return (...args: any[]) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => func(...args), delay);
+    };
+  }, []);
+
+  // Real-time search as user types
+  const performSearch = useCallback((query: string) => {
+    if (query.trim()) {
+      navigate(`/incidents?search=${encodeURIComponent(query.trim())}`, { replace: location.pathname === '/incidents' });
+    } else if (location.pathname === '/incidents') {
+      navigate('/incidents', { replace: true });
+    }
+  }, [navigate, location.pathname]);
+
+  const debouncedSearch = useCallback(debounce(performSearch, 300), [performSearch]);
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    debouncedSearch(value);
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    if (location.pathname === '/incidents') {
+      navigate('/incidents', { replace: true });
+    }
+  };
 
   useEffect(() => {
     // Fetch recent critical incidents as notifications
@@ -106,9 +140,7 @@ export function Header({ title, subtitle }: HeaderProps) {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/incidents?search=${encodeURIComponent(searchQuery.trim())}`);
-    }
+    performSearch(searchQuery);
   };
 
   const handleNotificationClick = (notification: Notification) => {
@@ -135,10 +167,19 @@ export function Header({ title, subtitle }: HeaderProps) {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input 
             placeholder="Search incidents..." 
-            className="w-64 bg-secondary/50 border-border pl-9 focus:bg-secondary"
+            className="w-64 bg-secondary/50 border-border pl-9 pr-9 focus:bg-secondary"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </form>
 
         {/* Notifications */}
