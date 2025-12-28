@@ -229,9 +229,75 @@ serve(async (req) => {
     // If no playbooks exist, use default actions based on risk level
     let actionsToExecute: PlaybookAction[] = [];
     let matchedPlaybook = null;
+    let bestMatchScore = 0;
 
-    if (!playbooks || playbooks.length === 0) {
-      console.log('No playbooks found, using default actions');
+    if (playbooks && playbooks.length > 0) {
+      // Find best matching playbook based on conditions with scoring
+      for (const playbook of playbooks) {
+        const conditions = playbook.conditions || {};
+        let matchScore = 0;
+        let isDisqualified = false;
+
+        // Check each condition - build a score for partial matches
+        if (conditions.risk_level) {
+          if (conditions.risk_level === risk_level) {
+            matchScore += 3;
+          } else if (conditions.risk_level === 'Critical' && risk_level === 'High') {
+            // High can match Critical playbooks with lower score
+            matchScore += 1;
+          } else if (conditions.risk_level === 'High' && risk_level === 'Critical') {
+            matchScore += 2;
+          }
+        }
+
+        if (conditions.classification) {
+          if (conditions.classification === classification) {
+            matchScore += 3;
+          }
+        }
+
+        if (conditions.min_severity) {
+          if (incident.severity >= conditions.min_severity) {
+            matchScore += 2;
+          }
+          // Don't disqualify based on severity alone - it's a soft match
+        }
+
+        if (conditions.event_type) {
+          const eventTypeCondition = conditions.event_type.toLowerCase();
+          const incidentEventType = incident.event_type.toLowerCase();
+          
+          if (incidentEventType.includes(eventTypeCondition) || eventTypeCondition.includes(incidentEventType)) {
+            matchScore += 4;
+          } else {
+            // Check for related event types
+            const relatedTypes: Record<string, string[]> = {
+              'network_activity': ['lateral', 'movement', 'network', 'remote', 'connection'],
+              'malware': ['malicious', 'virus', 'trojan', 'ransomware'],
+              'authentication': ['login', 'brute', 'password', 'credential'],
+              'exfiltration': ['data', 'transfer', 'upload', 'leak'],
+            };
+            
+            const relatedTerms = relatedTypes[incidentEventType] || [];
+            if (relatedTerms.some(term => eventTypeCondition.includes(term))) {
+              matchScore += 2;
+            }
+          }
+        }
+
+        console.log(`Playbook ${playbook.name} score: ${matchScore}`);
+
+        if (!isDisqualified && matchScore > bestMatchScore) {
+          bestMatchScore = matchScore;
+          matchedPlaybook = playbook;
+          actionsToExecute = playbook.actions || [];
+        }
+      }
+    }
+
+    // If no playbook matched well enough (score < 3), use intelligent default actions
+    if (bestMatchScore < 3 || actionsToExecute.length === 0) {
+      console.log(`No well-matching playbook found (best score: ${bestMatchScore}), using intelligent defaults`);
       
       if (risk_level === 'Critical') {
         actionsToExecute = [
@@ -239,37 +305,29 @@ serve(async (req) => {
           { type: 'block_ip', params: { ip: incident.src_ip } },
           { type: 'isolate_host', params: { host: incident.src_ip } },
           { type: 'escalate', params: { team: 'SOC Leadership' } },
-        ];
-      } else if (risk_level === 'High' || classification === 'True Positive') {
-        actionsToExecute = [
-          { type: 'notify_slack', params: { message: `⚠️ HIGH: ${incident.message}` } },
           { type: 'create_ticket' },
         ];
-      }
-    } else {
-      // Find matching playbook based on conditions
-      for (const playbook of playbooks) {
-        const conditions = playbook.conditions || {};
-        let matches = true;
-
-        if (conditions.risk_level && conditions.risk_level !== risk_level) {
-          matches = false;
-        }
-        if (conditions.classification && conditions.classification !== classification) {
-          matches = false;
-        }
-        if (conditions.min_severity && incident.severity < conditions.min_severity) {
-          matches = false;
-        }
-        if (conditions.event_type && !incident.event_type.toLowerCase().includes(conditions.event_type.toLowerCase())) {
-          matches = false;
-        }
-
-        if (matches) {
-          matchedPlaybook = playbook;
-          actionsToExecute = playbook.actions || [];
-          break;
-        }
+        matchedPlaybook = { name: 'Critical Auto-Response' };
+      } else if (risk_level === 'High' || classification === 'True Positive') {
+        actionsToExecute = [
+          { type: 'notify_slack', params: { message: `⚠️ HIGH RISK: ${incident.message || incident.event_type}` } },
+          { type: 'block_ip', params: { ip: incident.src_ip } },
+          { type: 'create_ticket' },
+          { type: 'escalate', params: { team: 'SOC Analysts' } },
+        ];
+        matchedPlaybook = { name: 'High Risk Auto-Response' };
+      } else if (risk_level === 'Medium') {
+        actionsToExecute = [
+          { type: 'create_ticket' },
+          { type: 'notify_slack', params: { message: `📋 MEDIUM: ${incident.message || incident.event_type}` } },
+        ];
+        matchedPlaybook = { name: 'Medium Risk Auto-Response' };
+      } else {
+        // Low risk - just create ticket
+        actionsToExecute = [
+          { type: 'create_ticket' },
+        ];
+        matchedPlaybook = { name: 'Low Risk Auto-Response' };
       }
     }
 
