@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Slider } from '@/components/ui/slider';
 import { 
   MessageSquare, 
   Shield, 
@@ -21,7 +22,11 @@ import {
   Settings,
   Loader2,
   Zap,
-  Eye
+  Eye,
+  Bot,
+  Brain,
+  Rocket,
+  ShieldAlert
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -66,6 +71,9 @@ export default function Integrations() {
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState<string | null>(null);
   const [configuring, setConfiguring] = useState<Integration | null>(null);
+  const [autonomousMode, setAutonomousMode] = useState(false);
+  const [confidenceThreshold, setConfidenceThreshold] = useState(75);
+  const [savingAutonomous, setSavingAutonomous] = useState(false);
   const [jiraConfig, setJiraConfig] = useState({
     base_url: '',
     project_key: '',
@@ -75,7 +83,69 @@ export default function Integrations() {
 
   useEffect(() => {
     fetchIntegrations();
+    loadAutonomousSettings();
   }, []);
+
+  const loadAutonomousSettings = async () => {
+    try {
+      const { data } = await supabase
+        .from('integrations')
+        .select('autonomous_mode_enabled, auto_execution_threshold')
+        .eq('name', 'autonomous_soc')
+        .single();
+      
+      if (data) {
+        setAutonomousMode(data.autonomous_mode_enabled || false);
+        setConfidenceThreshold(data.auto_execution_threshold || 75);
+      }
+    } catch (error) {
+      console.error('Error loading autonomous settings:', error);
+    }
+  };
+
+  const saveAutonomousSettings = async () => {
+    setSavingAutonomous(true);
+    try {
+      // Check if autonomous_soc integration exists
+      const { data: existing } = await supabase
+        .from('integrations')
+        .select('id')
+        .eq('name', 'autonomous_soc')
+        .single();
+
+      if (existing) {
+        await supabase
+          .from('integrations')
+          .update({
+            autonomous_mode_enabled: autonomousMode,
+            auto_execution_threshold: confidenceThreshold,
+            is_enabled: autonomousMode,
+            execution_mode: autonomousMode ? 'real' : 'disabled',
+          })
+          .eq('id', existing.id);
+      } else {
+        await supabase
+          .from('integrations')
+          .insert({
+            name: 'autonomous_soc',
+            display_name: 'Autonomous SOC',
+            type: 'automation',
+            is_enabled: autonomousMode,
+            is_configured: true,
+            autonomous_mode_enabled: autonomousMode,
+            auto_execution_threshold: confidenceThreshold,
+            execution_mode: autonomousMode ? 'real' : 'disabled',
+          });
+      }
+
+      toast.success(`Autonomous SOC ${autonomousMode ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      console.error('Error saving autonomous settings:', error);
+      toast.error('Failed to save settings');
+    } finally {
+      setSavingAutonomous(false);
+    }
+  };
 
   const fetchIntegrations = async () => {
     try {
@@ -196,6 +266,104 @@ export default function Integrations() {
   return (
     <AppLayout title="Integrations" subtitle="Manage external service connections and execution modes">
       <div className="space-y-6">
+        {/* Autonomous SOC Mode Card */}
+        <Card className={cn(
+          "border-2 transition-all",
+          autonomousMode 
+            ? "border-primary bg-primary/5" 
+            : "border-border"
+        )}>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "p-3 rounded-xl",
+                  autonomousMode ? "bg-primary text-primary-foreground" : "bg-muted"
+                )}>
+                  <Bot className="h-6 w-6" />
+                </div>
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    Autonomous SOC Mode
+                    {autonomousMode && (
+                      <Badge className="bg-primary text-primary-foreground animate-pulse">
+                        ACTIVE
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    AI-driven automatic incident response - no human approval required
+                  </CardDescription>
+                </div>
+              </div>
+              <Switch
+                checked={autonomousMode}
+                onCheckedChange={setAutonomousMode}
+                className="scale-125"
+              />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-background border">
+                <Brain className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">AI Analysis</p>
+                  <p className="text-xs text-muted-foreground">Auto-classify incidents</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-background border">
+                <Rocket className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Auto Playbooks</p>
+                  <p className="text-xs text-muted-foreground">Execute without approval</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-background border">
+                <ShieldAlert className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Auto Escalation</p>
+                  <p className="text-xs text-muted-foreground">Tier 1 → 2 → 3</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-background border">
+                <Ticket className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Auto Tickets</p>
+                  <p className="text-xs text-muted-foreground">Jira + PDF Reports</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Confidence Threshold for Auto-Execution</Label>
+                <Badge variant="outline" className="font-mono">{confidenceThreshold}%</Badge>
+              </div>
+              <Slider
+                value={[confidenceThreshold]}
+                onValueChange={([value]) => setConfidenceThreshold(value)}
+                min={50}
+                max={95}
+                step={5}
+                className="w-full"
+              />
+              <p className="text-xs text-muted-foreground">
+                Playbooks will only auto-execute when AI confidence is above this threshold
+              </p>
+            </div>
+
+            <div className="flex justify-end">
+              <Button onClick={saveAutonomousSettings} disabled={savingAutonomous}>
+                {savingAutonomous ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : null}
+                Save Autonomous Settings
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Overview Cards */}
         <div className="grid gap-4 md:grid-cols-4">
           <Card>

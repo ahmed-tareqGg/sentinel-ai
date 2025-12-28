@@ -250,12 +250,10 @@ serve(async (req) => {
         }
       }
 
-      // Check if we need to trigger a playbook (for critical incidents)
-      if (analysis?.risk_level === 'Critical' || (analysis?.classification === 'True Positive' && normalizedLog.severity >= 4)) {
-        console.log('Triggering SOAR playbook for critical incident');
-        
-        // Call execute-playbook function (internal call)
-        await fetch(`${supabaseUrl}/functions/v1/execute-playbook`, {
+      // Trigger Autonomous SOC Pipeline for all incidents
+      console.log('🤖 Triggering Autonomous SOC Pipeline...');
+      try {
+        const autonomousResponse = await fetch(`${supabaseUrl}/functions/v1/autonomous-soc`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${supabaseKey}`,
@@ -263,18 +261,38 @@ serve(async (req) => {
           },
           body: JSON.stringify({ 
             incident_id: incident.id,
-            risk_level: analysis.risk_level,
-            classification: analysis.classification,
-            internal: true
+            mode: (analysis?.risk_level === 'Critical' || analysis?.classification === 'True Positive') 
+              ? 'autonomous' 
+              : 'supervised',
           }),
         });
-      }
 
-      results.push({
-        incident_number: incident.incident_number,
-        classification: analysis?.classification,
-        risk_level: analysis?.risk_level,
-      });
+        if (autonomousResponse.ok) {
+          const pipelineResult = await autonomousResponse.json();
+          console.log('Autonomous SOC Pipeline result:', pipelineResult.summary);
+          results.push({
+            incident_number: incident.incident_number,
+            classification: analysis?.classification,
+            risk_level: analysis?.risk_level,
+            jira_ticket: pipelineResult.jira_ticket?.jira_key,
+            pipeline_status: pipelineResult.summary,
+          });
+        } else {
+          console.error('Autonomous SOC Pipeline failed:', await autonomousResponse.text());
+          results.push({
+            incident_number: incident.incident_number,
+            classification: analysis?.classification,
+            risk_level: analysis?.risk_level,
+          });
+        }
+      } catch (pipelineError) {
+        console.error('Pipeline error:', pipelineError);
+        results.push({
+          incident_number: incident.incident_number,
+          classification: analysis?.classification,
+          risk_level: analysis?.risk_level,
+        });
+      }
     }
 
     return new Response(JSON.stringify({ 
