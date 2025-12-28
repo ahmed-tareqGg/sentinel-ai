@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Filter, Download, Plus, RefreshCw } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { IncidentTable } from '@/components/dashboard/IncidentTable';
@@ -16,6 +17,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 export default function Incidents() {
+  const [searchParams] = useSearchParams();
+  const searchQuery = searchParams.get('search') || '';
   const [filter, setFilter] = useState<string>('all');
   const { incidents, loading, refetch } = useIncidents();
   const { canModifyIncidents } = useAuth();
@@ -31,9 +34,21 @@ export default function Incidents() {
     fileHash: '',
   });
 
+  // Apply search filter first, then status filter
+  const searchFiltered = searchQuery
+    ? incidents.filter(i => 
+        i.incident_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        i.event_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        i.classification.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (i.message && i.message.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (i.src_ip && i.src_ip.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (i.dst_ip && i.dst_ip.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    : incidents;
+
   const filteredIncidents = filter === 'all' 
-    ? incidents 
-    : incidents.filter(i => i.status.toLowerCase().replace(' ', '-') === filter);
+    ? searchFiltered 
+    : searchFiltered.filter(i => i.status.toLowerCase().replace(' ', '-') === filter);
 
   const filters = [
     { key: 'all', label: 'All', count: incidents.length },
