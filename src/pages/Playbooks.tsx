@@ -69,6 +69,9 @@ interface PlaybookExecution {
   started_at: string;
   completed_at: string | null;
   results: any;
+  ai_explanation?: string;
+  decision_factors?: any;
+  execution_mode?: string;
 }
 
 const ACTION_TYPES = [
@@ -89,6 +92,8 @@ export default function Playbooks() {
   const [loading, setLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingPlaybook, setEditingPlaybook] = useState<Playbook | null>(null);
+  const [selectedExecution, setSelectedExecution] = useState<PlaybookExecution | null>(null);
+  const [executionIncident, setExecutionIncident] = useState<any>(null);
   const { incidents } = useIncidents();
   
   // Form state
@@ -302,6 +307,33 @@ export default function Playbooks() {
 
   const getActionInfo = (type: string) => {
     return ACTION_TYPES.find(a => a.value === type) || { label: type, icon: Zap, color: 'text-muted-foreground' };
+  };
+
+  const handleViewExecution = async (execution: PlaybookExecution) => {
+    setSelectedExecution(execution);
+    // Fetch the incident details
+    try {
+      const { data, error } = await supabase
+        .from('incidents')
+        .select('*')
+        .eq('id', execution.incident_id)
+        .single();
+      
+      if (!error && data) {
+        setExecutionIncident(data);
+      }
+    } catch (e) {
+      console.error('Error fetching incident:', e);
+    }
+  };
+
+  const getExecutionDuration = (execution: PlaybookExecution) => {
+    if (!execution.completed_at) return 'In progress...';
+    const start = new Date(execution.started_at).getTime();
+    const end = new Date(execution.completed_at).getTime();
+    const duration = end - start;
+    if (duration < 1000) return `${duration}ms`;
+    return `${(duration / 1000).toFixed(1)}s`;
   };
 
   return (
@@ -733,9 +765,10 @@ export default function Playbooks() {
                     {executions.map(execution => {
                       const playbook = playbooks.find(p => p.id === execution.playbook_id);
                       return (
-                        <div 
+                        <button 
                           key={execution.id} 
-                          className="flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/30"
+                          onClick={() => handleViewExecution(execution)}
+                          className="w-full flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-all cursor-pointer text-left"
                         >
                           <div className="flex items-center gap-3">
                             {execution.status === 'completed' ? (
@@ -754,18 +787,21 @@ export default function Playbooks() {
                               </p>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <Badge variant={
-                              execution.status === 'completed' ? 'default' :
-                              execution.status === 'failed' ? 'destructive' : 'secondary'
-                            }>
-                              {execution.status}
-                            </Badge>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {new Date(execution.started_at).toLocaleString()}
-                            </p>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <Badge variant={
+                                execution.status === 'completed' ? 'default' :
+                                execution.status === 'failed' ? 'destructive' : 'secondary'
+                              }>
+                                {execution.status}
+                              </Badge>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {new Date(execution.started_at).toLocaleString()}
+                              </p>
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
                           </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -774,6 +810,233 @@ export default function Playbooks() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Execution Details Dialog */}
+        <Dialog open={!!selectedExecution} onOpenChange={(open) => { if (!open) { setSelectedExecution(null); setExecutionIncident(null); } }}>
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {selectedExecution?.status === 'completed' ? (
+                  <CheckCircle2 className="h-5 w-5 text-success" />
+                ) : selectedExecution?.status === 'failed' ? (
+                  <XCircle className="h-5 w-5 text-destructive" />
+                ) : (
+                  <Clock className="h-5 w-5 text-warning" />
+                )}
+                Execution Details
+              </DialogTitle>
+              <DialogDescription>
+                {playbooks.find(p => p.id === selectedExecution?.playbook_id)?.name || 'Playbook Execution'}
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedExecution && (
+              <div className="space-y-6 py-4">
+                {/* Execution Summary */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-3 rounded-lg bg-secondary/50 border">
+                    <p className="text-xs text-muted-foreground">Status</p>
+                    <Badge variant={
+                      selectedExecution.status === 'completed' ? 'default' :
+                      selectedExecution.status === 'failed' ? 'destructive' : 'secondary'
+                    } className="mt-1">
+                      {selectedExecution.status}
+                    </Badge>
+                  </div>
+                  <div className="p-3 rounded-lg bg-secondary/50 border">
+                    <p className="text-xs text-muted-foreground">Duration</p>
+                    <p className="font-semibold text-sm mt-1">{getExecutionDuration(selectedExecution)}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-secondary/50 border">
+                    <p className="text-xs text-muted-foreground">Mode</p>
+                    <Badge variant="outline" className="mt-1">
+                      {selectedExecution.execution_mode || 'real'}
+                    </Badge>
+                  </div>
+                  <div className="p-3 rounded-lg bg-secondary/50 border">
+                    <p className="text-xs text-muted-foreground">Started</p>
+                    <p className="font-semibold text-xs mt-1">
+                      {new Date(selectedExecution.started_at).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Incident Info */}
+                {executionIncident && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Shield className="h-4 w-4 text-primary" />
+                        Incident Details
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Incident:</span>
+                          <span className="ml-2 font-medium">{executionIncident.incident_number}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Type:</span>
+                          <span className="ml-2 font-medium">{executionIncident.event_type}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Risk Level:</span>
+                          <Badge variant={
+                            executionIncident.risk_level === 'Critical' ? 'destructive' :
+                            executionIncident.risk_level === 'High' ? 'secondary' : 'outline'
+                          } className="ml-2">
+                            {executionIncident.risk_level}
+                          </Badge>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Classification:</span>
+                          <span className="ml-2 font-medium">{executionIncident.classification}</span>
+                        </div>
+                        {executionIncident.src_ip && (
+                          <div>
+                            <span className="text-muted-foreground">Source IP:</span>
+                            <span className="ml-2 font-mono text-xs">{executionIncident.src_ip}</span>
+                          </div>
+                        )}
+                        {executionIncident.dst_ip && (
+                          <div>
+                            <span className="text-muted-foreground">Dest IP:</span>
+                            <span className="ml-2 font-mono text-xs">{executionIncident.dst_ip}</span>
+                          </div>
+                        )}
+                      </div>
+                      {executionIncident.message && (
+                        <div className="mt-2 p-2 rounded bg-muted/50 text-xs">
+                          {executionIncident.message}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* AI Explanation */}
+                {selectedExecution.ai_explanation && (
+                  <Card className="border-primary/30">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Zap className="h-4 w-4 text-primary" />
+                        AI Explanation
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm leading-relaxed">{selectedExecution.ai_explanation}</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Decision Factors */}
+                {selectedExecution.decision_factors && Object.keys(selectedExecution.decision_factors).length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Decision Factors</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {Object.entries(selectedExecution.decision_factors).map(([key, value]) => (
+                          <div key={key} className="flex items-center justify-between p-2 rounded bg-secondary/50 text-sm">
+                            <span className="text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</span>
+                            <span className="font-medium">{String(value)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Executed Actions */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Executed Actions</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {(() => {
+                        const playbook = playbooks.find(p => p.id === selectedExecution.playbook_id);
+                        const actions = playbook?.actions || [];
+                        const results = selectedExecution.results || {};
+                        
+                        if (actions.length === 0) {
+                          return (
+                            <p className="text-sm text-muted-foreground">No actions recorded</p>
+                          );
+                        }
+
+                        return actions.map((action: PlaybookAction, idx: number) => {
+                          const actionInfo = getActionInfo(action.type);
+                          const ActionIcon = actionInfo.icon;
+                          const actionResult = results[action.type] || results[`action_${idx}`];
+                          const isSuccess = actionResult?.success !== false;
+                          
+                          return (
+                            <div key={idx} className={cn(
+                              "p-3 rounded-lg border",
+                              isSuccess ? "bg-green-500/10 border-green-500/30" : "bg-destructive/10 border-destructive/30"
+                            )}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  {isSuccess ? (
+                                    <CheckCircle2 className="h-4 w-4 text-success" />
+                                  ) : (
+                                    <XCircle className="h-4 w-4 text-destructive" />
+                                  )}
+                                  <ActionIcon className={cn("h-4 w-4", actionInfo.color)} />
+                                  <span className="font-medium text-sm">{actionInfo.label}</span>
+                                </div>
+                                <Badge variant={isSuccess ? 'default' : 'destructive'} className="text-xs">
+                                  {isSuccess ? 'Success' : 'Failed'}
+                                </Badge>
+                              </div>
+                              {action.params && Object.keys(action.params).length > 0 && (
+                                <div className="mt-2 pl-6 text-xs text-muted-foreground">
+                                  {Object.entries(action.params).map(([k, v]) => (
+                                    <div key={k}>
+                                      <span className="capitalize">{k}:</span> <span className="font-mono">{String(v)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {actionResult?.message && (
+                                <div className="mt-2 pl-6 text-xs">
+                                  {actionResult.message}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Raw Results */}
+                {selectedExecution.results && Object.keys(selectedExecution.results).length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Raw Results</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <pre className="text-xs bg-secondary/50 p-3 rounded-lg overflow-auto max-h-48">
+                        {JSON.stringify(selectedExecution.results, null, 2)}
+                      </pre>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setSelectedExecution(null); setExecutionIncident(null); }}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );
