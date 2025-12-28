@@ -662,18 +662,13 @@ Without automated response:
               <Card 
                 key={step.id}
                 className={cn(
-                  "transition-all duration-300 relative",
+                  "transition-all duration-300",
                   step.status === 'running' && "border-primary shadow-lg shadow-primary/20 scale-[1.02]",
                   step.status === 'completed' && "border-green-500/50",
                   step.status === 'error' && "border-destructive"
                 )}
               >
-                {showInvestorTips && step.investorTip && step.status === 'completed' && (
-                  <div className="absolute -top-2 left-2 right-2 px-2 py-1 bg-yellow-500/20 border border-yellow-500/30 rounded text-[10px] text-yellow-600 dark:text-yellow-400 z-10">
-                    {step.investorTip}
-                  </div>
-                )}
-                <CardHeader className={cn("pb-2", showInvestorTips && step.status === 'completed' && "pt-6")}>
+                <CardHeader className="pb-2">
                   <div className="flex items-center gap-2">
                     <div className={cn(
                       "p-2 rounded-lg transition-all",
@@ -704,6 +699,27 @@ Without automated response:
                     <Badge variant="secondary" className="text-xs">
                       {step.duration}ms
                     </Badge>
+                  )}
+                  
+                  {/* Investor Tip - Inside Card */}
+                  {showInvestorTips && step.investorTip && step.status === 'completed' && (
+                    <div className="mt-2 px-2 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded text-[10px] text-yellow-600 dark:text-yellow-400">
+                      {step.investorTip}
+                    </div>
+                  )}
+
+                  {/* Log Ingestion Details */}
+                  {step.id === 'ingest' && step.status === 'completed' && step.result && (
+                    <div className="mt-2 p-2 rounded bg-green-500/10 border border-green-500/30 space-y-1 text-[10px]">
+                      <div className="flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3 text-green-500" />
+                        <span>Log parsed successfully</span>
+                      </div>
+                      <div><span className="text-muted-foreground">Incident:</span> <strong>{step.result.incident_number}</strong></div>
+                      <div><span className="text-muted-foreground">Source IP:</span> 192.168.1.100</div>
+                      <div><span className="text-muted-foreground">Destination:</span> 185.234.247.10</div>
+                      <div><span className="text-muted-foreground">Threat:</span> Emotet Banking Trojan</div>
+                    </div>
                   )}
                   
                   {/* AI Analysis Decision Details */}
