@@ -157,12 +157,52 @@ serve(async (req) => {
     const decisions: any[] = [];
     const executedPlaybooks: string[] = [];
 
+    // Extract MITRE techniques from incident
+    const incidentMitreTechnique = incident.mitre_technique;
+    const incidentMitreTactic = incident.mitre_tactic;
+    const aiMitreTechniques = (incident.ai_analysis as any)?.mitre_techniques || [];
+    
+    console.log(`🎯 MITRE Techniques detected: ${incidentMitreTechnique}, AI detected: ${aiMitreTechniques.length}`);
+
     // Evaluate each playbook
     for (const playbook of playbooks) {
       const conditions = playbook.conditions || {};
       let matches = true;
+      let matchReason = '';
 
-      // Check conditions
+      // 🔥 NEW: MITRE-based matching (highest priority)
+      if (conditions.mitre_technique) {
+        const conditionTechnique = conditions.mitre_technique.toLowerCase();
+        const matchesPrimary = incidentMitreTechnique?.toLowerCase().includes(conditionTechnique);
+        const matchesAI = aiMitreTechniques.some((t: any) => 
+          t.technique_id?.toLowerCase().includes(conditionTechnique)
+        );
+        
+        if (matchesPrimary || matchesAI) {
+          matches = true;
+          matchReason = `MITRE technique match: ${conditions.mitre_technique}`;
+          console.log(`✅ Playbook "${playbook.name}" matches MITRE technique ${conditions.mitre_technique}`);
+        } else {
+          matches = false;
+        }
+      }
+
+      // MITRE Tactic matching
+      if (matches && conditions.mitre_tactic) {
+        const conditionTactic = conditions.mitre_tactic.toLowerCase();
+        const matchesTactic = incidentMitreTactic?.toLowerCase().includes(conditionTactic) ||
+          aiMitreTechniques.some((t: any) => 
+            t.tactic?.toLowerCase().includes(conditionTactic)
+          );
+        
+        if (!matchesTactic) {
+          matches = false;
+        } else {
+          matchReason += matchReason ? ` + Tactic: ${conditions.mitre_tactic}` : `MITRE tactic match: ${conditions.mitre_tactic}`;
+        }
+      }
+
+      // Standard condition matching
       if (conditions.risk_level && conditions.risk_level !== incident.risk_level) {
         matches = false;
       }

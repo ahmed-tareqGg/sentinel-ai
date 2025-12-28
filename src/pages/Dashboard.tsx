@@ -5,6 +5,7 @@ import { IncidentTable } from '@/components/dashboard/IncidentTable';
 import { ClassificationChart } from '@/components/dashboard/ClassificationChart';
 import { TrendChart } from '@/components/dashboard/TrendChart';
 import { MitreChart } from '@/components/dashboard/MitreChart';
+import { MitreHeatmap } from '@/components/dashboard/MitreHeatmap';
 import { useIncidents } from '@/hooks/useIncidents';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { Link } from 'react-router-dom';
@@ -58,6 +59,11 @@ export default function Dashboard() {
           <TrendChart data={metrics.incidentsPerDay} />
         </div>
         <ClassificationChart truePositives={truePositives} falsePositives={falsePositives} />
+      </div>
+
+      {/* MITRE Heatmap - Full Width for Investors WOW */}
+      <div className="mb-6">
+        <MitreHeatmap incidents={incidents} />
       </div>
 
       {/* MITRE & Recent Incidents */}
