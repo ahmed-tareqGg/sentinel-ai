@@ -1,5 +1,6 @@
 import { GlobalFooter } from '@/components/layout/GlobalFooter';
-import { Shield, Target, Zap, BarChart3, Server, Brain, Database, AlertTriangle, Play, FileText, Linkedin, Github, Mail, MessageCircle, User } from 'lucide-react';
+import { Shield, Target, Zap, BarChart3, Server, Brain, Database, AlertTriangle, Play, FileText, Linkedin, Github, Mail, MessageCircle } from 'lucide-react';
+import founderImage from '@/assets/founder-ahmed-tarek.png';
 
 const features = [
   { icon: Brain, title: 'AI-Driven Triage', description: 'Automated threat classification using advanced AI models' },
@@ -103,8 +104,12 @@ export default function About() {
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl font-bold text-foreground mb-12">Meet the Founder</h2>
           <div className="flex flex-col items-center">
-            <div className="w-40 h-40 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center border-4 border-primary/30 mb-6">
-              <User className="h-20 w-20 text-primary/50" />
+            <div className="w-40 h-40 rounded-full overflow-hidden border-4 border-primary/30 mb-6">
+              <img 
+                src={founderImage} 
+                alt="Ahmed Tarek - Founder" 
+                className="w-full h-full object-cover"
+              />
             </div>
             <h3 className="text-2xl font-bold text-foreground mb-2">Ahmed Tarek</h3>
             <p className="text-primary font-medium mb-4">Security Engineer & SOC Automation Architect</p>
