@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/popover';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/backend/client';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 

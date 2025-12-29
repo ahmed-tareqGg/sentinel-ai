@@ -36,7 +36,7 @@ import {
   ChevronRight,
   Activity
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
