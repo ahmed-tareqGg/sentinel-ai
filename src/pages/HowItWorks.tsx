@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { PublicNavbar } from '@/components/layout/PublicNavbar';
 import { GlobalFooter } from '@/components/layout/GlobalFooter';
 import { Server, Brain, AlertTriangle, Database, Play, BarChart3, ChevronRight } from 'lucide-react';
 
@@ -50,6 +51,7 @@ const steps = [
 export default function HowItWorks() {
   return (
     <div className="min-h-screen bg-background">
+      <PublicNavbar />
       {/* Hero */}
       <section className="py-24 px-6 text-center bg-gradient-to-b from-primary/10 to-background">
         <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-6">

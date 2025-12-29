@@ -1,9 +1,11 @@
+import { PublicNavbar } from '@/components/layout/PublicNavbar';
 import { GlobalFooter } from '@/components/layout/GlobalFooter';
 import { Shield } from 'lucide-react';
 
 export default function Privacy() {
   return (
     <div className="min-h-screen bg-background">
+      <PublicNavbar />
       {/* Header */}
       <section className="py-16 px-6 bg-gradient-to-b from-primary/10 to-background">
         <div className="max-w-4xl mx-auto text-center">

@@ -1,3 +1,4 @@
+import { PublicNavbar } from '@/components/layout/PublicNavbar';
 import { GlobalFooter } from '@/components/layout/GlobalFooter';
 import { Shield, Lock, Target, FileText, Users, CheckCircle2 } from 'lucide-react';
 
@@ -43,6 +44,7 @@ const trustFeatures = [
 export default function Trust() {
   return (
     <div className="min-h-screen bg-background">
+      <PublicNavbar />
       {/* Hero */}
       <section className="py-24 px-6 bg-gradient-to-b from-primary/10 to-background">
         <div className="max-w-4xl mx-auto text-center">
