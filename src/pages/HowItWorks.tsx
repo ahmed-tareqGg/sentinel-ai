@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { GlobalFooter } from '@/components/layout/GlobalFooter';
 import { Server, Brain, AlertTriangle, Database, Play, BarChart3, ChevronRight } from 'lucide-react';
 
@@ -113,13 +114,13 @@ export default function HowItWorks() {
           <p className="text-muted-foreground mb-8">
             Experience autonomous security operations with SOCMind
           </p>
-          <a 
-            href="/auth" 
+          <Link 
+            to="/auth" 
             className="inline-flex items-center gap-2 px-8 py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors"
           >
             Get Started
             <ChevronRight className="h-4 w-4" />
-          </a>
+          </Link>
         </div>
       </section>
 
