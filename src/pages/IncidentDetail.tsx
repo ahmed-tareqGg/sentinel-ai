@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Clock, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

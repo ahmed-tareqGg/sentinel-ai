@@ -16,7 +16,7 @@ import {
   Loader2,
   Lightbulb
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, backendUrl, publishableKey } from '@/integrations/backend/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -79,12 +79,12 @@ export default function MitreCoverage() {
     try {
       // Call MITRE enrichment edge function for backfill
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mitre-enrichment`,
+        `${backendUrl}/functions/v1/mitre-enrichment`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            'Authorization': `Bearer ${publishableKey}`,
           },
           body: JSON.stringify({ action: 'backfill' }),
         }
