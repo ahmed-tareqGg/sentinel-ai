@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, User, Eye, EyeOff, Check, X } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Mail, Lock, User, Eye, EyeOff, Check, X, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 import socmindLogo from '@/assets/socmind-logo.png';
 import { AuthFooter } from '@/components/layout/AuthFooter';
+import { useAuth } from '@/hooks/useAuth';
 
 const emailSchema = z.string().email('Please enter a valid email address');
 
@@ -68,6 +69,14 @@ export default function Auth() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard');
+    }
+  }, [user, navigate]);
 
   // Password strength calculation
   const passwordStrength = useMemo(() => calculatePasswordStrength(password), [password]);
@@ -145,7 +154,7 @@ export default function Auth() {
         }
 
         toast.success('Welcome back!');
-        navigate('/');
+        navigate('/dashboard');
       } else {
         const redirectUrl = `${window.location.origin}/`;
         
@@ -170,7 +179,7 @@ export default function Auth() {
         }
 
         toast.success('Account created successfully!');
-        navigate('/');
+        navigate('/dashboard');
       }
     } catch (error) {
       console.error('Auth error:', error);
@@ -181,7 +190,18 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-background bg-grid flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background bg-grid flex flex-col items-center justify-center p-4">
+      {/* Back to Home Button */}
+      <div className="w-full max-w-md mb-4">
+        <Link 
+          to="/" 
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Home
+        </Link>
+      </div>
+      
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-8">

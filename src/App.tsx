@@ -2,9 +2,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { PublicLayout } from "@/components/layout/PublicLayout";
 import Dashboard from "./pages/Dashboard";
 import Incidents from "./pages/Incidents";
 import IncidentDetail from "./pages/IncidentDetail";
@@ -22,7 +23,9 @@ import HowItWorks from "./pages/HowItWorks";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import Trust from "./pages/Trust";
+import Landing from "./pages/Landing";
 import NotFound from "./pages/NotFound";
+import MitreCoverage from "./pages/MitreCoverage";
 
 const queryClient = new QueryClient();
 
@@ -34,13 +37,21 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
+            {/* Public Routes with PublicLayout */}
+            <Route element={<PublicLayout />}>
+              <Route path="/" element={<Landing />} />
+              <Route path="/about" element={<About />} />
+              <Route path="/how-it-works" element={<HowItWorks />} />
+              <Route path="/trust" element={<Trust />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route path="/privacy" element={<Privacy />} />
+            </Route>
+            
+            {/* Auth Route (standalone) */}
             <Route path="/auth" element={<Auth />} />
-            <Route path="/about" element={<About />} />
-            <Route path="/how-it-works" element={<HowItWorks />} />
-            <Route path="/terms" element={<Terms />} />
-            <Route path="/privacy" element={<Privacy />} />
-            <Route path="/trust" element={<Trust />} />
-            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            
+            {/* Protected Routes */}
+            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
             <Route path="/incidents/:id" element={<ProtectedRoute><IncidentDetail /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
@@ -49,8 +60,11 @@ const App = () => (
             <Route path="/integrations" element={<ProtectedRoute requiredRole="admin"><Integrations /></ProtectedRoute>} />
             <Route path="/approvals" element={<ProtectedRoute requiredRole="soc_analyst"><Approvals /></ProtectedRoute>} />
             <Route path="/compliance" element={<ProtectedRoute requiredRole="admin"><Compliance /></ProtectedRoute>} />
+            <Route path="/mitre-coverage" element={<ProtectedRoute><MitreCoverage /></ProtectedRoute>} />
             <Route path="/demo" element={<ProtectedRoute><Demo /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
+            
+            {/* Fallback */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

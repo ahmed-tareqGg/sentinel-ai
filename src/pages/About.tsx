@@ -1,5 +1,3 @@
-import { PublicNavbar } from '@/components/layout/PublicNavbar';
-import { GlobalFooter } from '@/components/layout/GlobalFooter';
 import { Shield, Target, Zap, BarChart3, Server, Brain, Database, AlertTriangle, Play, Linkedin, Github, Mail, MessageCircle, Award, GraduationCap, BadgeCheck, Trophy } from 'lucide-react';
 import founderImage from '@/assets/founder-ahmed-tarek.png';
 
@@ -34,8 +32,7 @@ const socialLinks = [
 
 export default function About() {
   return (
-    <div className="min-h-screen bg-background">
-      <PublicNavbar />
+    <div className="bg-background">
       {/* Hero Section */}
       <section className="relative py-24 px-6 bg-gradient-to-b from-primary/10 to-background">
         <div className="max-w-4xl mx-auto text-center">
@@ -167,8 +164,6 @@ export default function About() {
           </div>
         </div>
       </section>
-
-      <GlobalFooter />
     </div>
   );
 }
