@@ -1,6 +1,13 @@
 import { GlobalFooter } from '@/components/layout/GlobalFooter';
-import { Shield, Target, Zap, BarChart3, Server, Brain, Database, AlertTriangle, Play, FileText, Linkedin, Github, Mail, MessageCircle } from 'lucide-react';
+import { Shield, Target, Zap, BarChart3, Server, Brain, Database, AlertTriangle, Play, Linkedin, Github, Mail, MessageCircle, Award, GraduationCap, BadgeCheck, Trophy } from 'lucide-react';
 import founderImage from '@/assets/founder-ahmed-tarek.png';
+
+const achievements = [
+  { icon: GraduationCap, title: 'Cybersecurity Specialist', description: 'Advanced certification in threat detection and incident response' },
+  { icon: Award, title: 'SOC Automation Expert', description: 'Specialized in SOAR platform development and integration' },
+  { icon: BadgeCheck, title: 'MITRE ATT&CK Certified', description: 'Proficient in adversary tactics and techniques mapping' },
+  { icon: Trophy, title: 'Security Innovation', description: 'Building next-gen AI-driven security operations tools' },
+];
 
 const features = [
   { icon: Brain, title: 'AI-Driven Triage', description: 'Automated threat classification using advanced AI models' },
@@ -104,11 +111,11 @@ export default function About() {
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl font-bold text-foreground mb-12">Meet the Founder</h2>
           <div className="flex flex-col items-center">
-            <div className="w-40 h-40 rounded-full overflow-hidden border-4 border-primary/30 mb-6">
+            <div className="w-40 h-40 rounded-full overflow-hidden border-4 border-primary/30 mb-6 group cursor-pointer transition-all duration-500 hover:border-primary hover:shadow-[0_0_30px_hsl(var(--primary)/0.4)] hover:scale-110">
               <img 
                 src={founderImage} 
                 alt="Ahmed Tarek - Founder" 
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
               />
             </div>
             <h3 className="text-2xl font-bold text-foreground mb-2">Ahmed Tarek</h3>
@@ -130,6 +137,31 @@ export default function About() {
                 </a>
               ))}
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Achievements Section */}
+      <section className="py-20 px-6">
+        <div className="max-w-6xl mx-auto">
+          <h2 className="text-3xl font-bold text-foreground text-center mb-4">Achievements & Certifications</h2>
+          <p className="text-muted-foreground text-center mb-12 max-w-2xl mx-auto">
+            Continuous learning and professional development in cybersecurity
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {achievements.map((achievement, index) => (
+              <div 
+                key={achievement.title} 
+                className="p-6 rounded-xl bg-card border border-border hover:border-primary/50 transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1 group"
+                style={{ animationDelay: `${index * 100}ms` }}
+              >
+                <div className="p-3 rounded-lg bg-primary/10 w-fit mb-4 group-hover:bg-primary/20 transition-colors">
+                  <achievement.icon className="h-6 w-6 text-primary" />
+                </div>
+                <h3 className="text-lg font-semibold text-foreground mb-2">{achievement.title}</h3>
+                <p className="text-sm text-muted-foreground">{achievement.description}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
