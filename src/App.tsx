@@ -63,6 +63,7 @@ const App = () => (
             <Route path="/mitre-coverage" element={<ProtectedRoute><MitreCoverage /></ProtectedRoute>} />
             <Route path="/demo" element={<ProtectedRoute><Demo /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
+            <Route path="/admin/cloud" element={<ProtectedRoute requiredRole="admin"><CloudAdmin /></ProtectedRoute>} />
             
             {/* Fallback */}
             <Route path="*" element={<NotFound />} />

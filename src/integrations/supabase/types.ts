@@ -206,6 +206,8 @@ export type Database = {
           classification: string | null
           confidence: number | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
           dst_ip: string | null
           event_type: string
           evidence: string[] | null
@@ -231,6 +233,8 @@ export type Database = {
           classification?: string | null
           confidence?: number | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           dst_ip?: string | null
           event_type: string
           evidence?: string[] | null
@@ -256,6 +260,8 @@ export type Database = {
           classification?: string | null
           confidence?: number | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           dst_ip?: string | null
           event_type?: string
           evidence?: string[] | null
@@ -645,6 +651,30 @@ export type Database = {
           full_name?: string | null
           id?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      system_settings: {
+        Row: {
+          id: string
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          id?: string
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Update: {
+          id?: string
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
         }
         Relationships: []
       }
