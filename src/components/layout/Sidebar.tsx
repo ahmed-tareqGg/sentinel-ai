@@ -10,6 +10,7 @@ import {
   User,
   Zap,
   Play,
+  Cloud,
   Plug,
   ClipboardCheck,
   FileCheck
@@ -30,6 +31,7 @@ const navItems = [
   { icon: FileCheck, label: 'Compliance', path: '/compliance', roles: ['admin'] },
   { icon: Play, label: 'Demo', path: '/demo', roles: ['admin', 'soc_analyst', 'viewer'] },
   { icon: Settings, label: 'Settings', path: '/settings', roles: ['admin'] },
+  { icon: Cloud, label: 'Cloud Admin', path: '/admin/cloud', roles: ['admin'] },
 ];
 
 const roleColors = {
