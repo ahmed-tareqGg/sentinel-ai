@@ -26,6 +26,7 @@ import Trust from "./pages/Trust";
 import Landing from "./pages/Landing";
 import NotFound from "./pages/NotFound";
 import MitreCoverage from "./pages/MitreCoverage";
+import CloudAdmin from "./pages/CloudAdmin";
 
 const queryClient = new QueryClient();
 
