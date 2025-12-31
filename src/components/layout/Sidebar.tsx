@@ -1,9 +1,9 @@
 import { Link, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  AlertTriangle, 
-  BarChart3, 
-  Settings, 
+import {
+  LayoutDashboard,
+  AlertTriangle,
+  BarChart3,
+  Settings,
   Activity,
   FileText,
   LogOut,
@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import socmindLogo from '@/assets/socmind-logo.png';
 
 const navItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/', roles: ['admin', 'soc_analyst', 'viewer'] },
+  { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: ['admin', 'soc_analyst', 'viewer'] },
   { icon: AlertTriangle, label: 'Incidents', path: '/incidents', roles: ['admin', 'soc_analyst', 'viewer'] },
   { icon: BarChart3, label: 'Analytics', path: '/analytics', roles: ['admin', 'soc_analyst', 'viewer'] },
   { icon: FileText, label: 'Reports', path: '/reports', roles: ['admin', 'soc_analyst'] },
@@ -50,7 +50,7 @@ export function Sidebar() {
   const location = useLocation();
   const { profile, role, signOut } = useAuth();
 
-  const filteredNavItems = navItems.filter(item => 
+  const filteredNavItems = navItems.filter(item =>
     role && item.roles.includes(role)
   );
 
