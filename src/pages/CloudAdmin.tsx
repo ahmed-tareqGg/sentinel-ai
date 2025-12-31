@@ -6,11 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Database, 
-  Cloud, 
-  Shield, 
-  Activity, 
+import {
+  Database,
+  Cloud,
+  Shield,
+  Activity,
   AlertTriangle,
   Server,
   ExternalLink,
@@ -62,7 +62,7 @@ export default function CloudAdmin() {
       const newValue = !safeMode;
       const { error } = await supabase
         .from('system_settings')
-        .update({ 
+        .update({
           value: newValue,
           updated_at: new Date().toISOString(),
           updated_by: user?.id
@@ -72,7 +72,7 @@ export default function CloudAdmin() {
       if (error) throw error;
 
       setSafeMode(newValue);
-      
+
       // Log the action
       await supabase.from('audit_logs').insert({
         user_id: user?.id,
@@ -124,30 +124,20 @@ export default function CloudAdmin() {
               Manage backend infrastructure, database, and edge functions
             </p>
           </div>
-          
+
           <div className="flex items-center gap-4">
             {/* Safe Mode Toggle */}
             <div className="flex items-center gap-3 bg-card border border-border rounded-lg px-4 py-2">
               <Shield className={`h-5 w-5 ${safeMode ? 'text-success' : 'text-destructive'}`} />
               <span className="text-sm font-medium">Safe Mode</span>
-              <Switch 
-                checked={safeMode} 
+              <Switch
+                checked={safeMode}
                 onCheckedChange={toggleSafeMode}
                 disabled={loading}
               />
             </div>
-            
-            <Button variant="outline" asChild>
-              <a 
-                href="https://lovable.dev/projects" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center gap-2"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Open Lovable Cloud
-              </a>
-            </Button>
+
+
           </div>
         </div>
 
@@ -156,8 +146,8 @@ export default function CloudAdmin() {
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Production Environment</AlertTitle>
           <AlertDescription>
-            Changes here affect live production data. {safeMode ? 
-              'Safe Mode is ON - destructive actions are disabled.' : 
+            Changes here affect live production data. {safeMode ?
+              'Safe Mode is ON - destructive actions are disabled.' :
               'Safe Mode is OFF - proceed with caution.'}
           </AlertDescription>
         </Alert>
