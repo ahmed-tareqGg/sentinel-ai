@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Server, RefreshCw, Play, CheckCircle, AlertCircle, Clock } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
