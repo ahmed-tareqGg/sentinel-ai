@@ -18,7 +18,8 @@ import {
   Trash2,
   RotateCcw,
   Eye,
-  Lock
+  Lock,
+  Users
 } from 'lucide-react';
 import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -28,6 +29,7 @@ import { CloudDatabase } from '@/components/admin/CloudDatabase';
 import { CloudFunctions } from '@/components/admin/CloudFunctions';
 import { CloudLogs } from '@/components/admin/CloudLogs';
 import { IncidentManagement } from '@/components/admin/IncidentManagement';
+import { UserManagement } from '@/components/admin/UserManagement';
 
 export default function CloudAdmin() {
   const { role, user } = useAuth();
@@ -183,6 +185,10 @@ export default function CloudAdmin() {
               <Eye className="h-4 w-4" />
               Logs
             </TabsTrigger>
+            <TabsTrigger value="users" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Users
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview">
@@ -203,6 +209,10 @@ export default function CloudAdmin() {
 
           <TabsContent value="logs">
             <CloudLogs />
+          </TabsContent>
+
+          <TabsContent value="users">
+            <UserManagement safeMode={safeMode} />
           </TabsContent>
         </Tabs>
       </div>
