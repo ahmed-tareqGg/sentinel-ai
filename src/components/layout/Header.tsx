@@ -2,13 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { Bell, Search, User, LogOut, Settings, ChevronDown, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuLabel, 
+  DropdownMenuSeparator, 
+  DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
 import {
   Popover,
@@ -76,57 +76,56 @@ export function Header({ title, subtitle }: HeaderProps) {
   };
 
   useEffect(() => {
-    if (!profile?.id) return;
-
-    // Fetch initial notifications
+    // Fetch recent critical incidents as notifications
     const fetchNotifications = async () => {
       const { data } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', profile.id)
+        .from('incidents')
+        .select('id, incident_number, message, risk_level, created_at')
+        .in('risk_level', ['Critical', 'High'])
+        .eq('status', 'Open')
         .order('created_at', { ascending: false })
-        .limit(20);
+        .limit(5);
 
       if (data) {
-        setNotifications(data.map(n => ({
-          ...n,
-          time: new Date(n.created_at).toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit'
+        setNotifications(data.map(incident => ({
+          id: incident.id,
+          title: `${incident.incident_number} - ${incident.risk_level}`,
+          message: incident.message || 'New security incident detected',
+          time: new Date(incident.created_at).toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
           }),
-          read: !!n.read_at
+          read: false,
+          type: incident.risk_level === 'Critical' ? 'critical' : 'warning',
         })));
       }
     };
 
     fetchNotifications();
 
-    // Subscribe to real-time updates for THIS user
+    // Subscribe to real-time updates
     const channel = supabase
-      .channel('header-notifications')
+      .channel('header-incidents')
       .on(
         'postgres_changes',
         {
-          event: '*', // Listen for INSERT and UPDATE
+          event: 'INSERT',
           schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${profile.id}`
+          table: 'incidents',
         },
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const newNotification = payload.new as any;
+          const incident = payload.new as any;
+          if (incident.risk_level === 'Critical' || incident.risk_level === 'High') {
+            const notificationType: 'critical' | 'warning' | 'info' = 
+              incident.risk_level === 'Critical' ? 'critical' : 'warning';
             setNotifications(prev => [{
-              ...newNotification,
+              id: incident.id,
+              title: `${incident.incident_number} - ${incident.risk_level}`,
+              message: incident.message || 'New security incident detected',
               time: 'Just now',
-              read: false
-            }, ...prev].slice(0, 20));
-          } else if (payload.eventType === 'UPDATE') {
-            const updatedNotification = payload.new as any;
-            setNotifications(prev => prev.map(n =>
-              n.id === updatedNotification.id
-                ? { ...n, read: !!updatedNotification.read_at }
-                : n
-            ));
+              read: false,
+              type: notificationType,
+            }, ...prev].slice(0, 5));
           }
         }
       )
@@ -135,7 +134,7 @@ export function Header({ title, subtitle }: HeaderProps) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [profile?.id]);
+  }, []);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -144,44 +143,15 @@ export function Header({ title, subtitle }: HeaderProps) {
     performSearch(searchQuery);
   };
 
-  const handleNotificationClick = async (notification: Notification) => {
-    if (!notification.read) {
-      // Optimistic update
-      setNotifications(prev =>
-        prev.map(n => n.id === notification.id ? { ...n, read: true } : n)
-      );
-
-      // DB Update
-      await supabase
-        .from('notifications')
-        .update({ read_at: new Date().toISOString() })
-        .eq('id', notification.id);
-    }
-
-    if (notification.id) {
-      // Only navigate if it's linked to an incident (which it should be mostly)
-      // The type definition might need adjustment if incident_id isn't always there,
-      // but based on migration it is nullable. 
-      // For now, let's assume we navigate to incidents list or specific if we had the ID.
-      // The current notification struct doesn't have incident_id in the frontend interface yet.
-      // Let's fix that interface too in a separate block or generic approach.
-      // Actually, I'll redirect to incidents page for now or assume incident_id is available if I fetch star.
-      navigate('/incidents');
-    }
+  const handleNotificationClick = (notification: Notification) => {
+    setNotifications(prev => 
+      prev.map(n => n.id === notification.id ? { ...n, read: true } : n)
+    );
+    navigate(`/incidents/${notification.id}`);
   };
 
-  const markAllAsRead = async () => {
-    // Optimistic update
+  const markAllAsRead = () => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-
-    // DB Update
-    if (profile?.id) {
-      await supabase
-        .from('notifications')
-        .update({ read_at: new Date().toISOString() })
-        .eq('user_id', profile.id)
-        .is('read_at', null);
-    }
   };
 
   return (
@@ -195,8 +165,8 @@ export function Header({ title, subtitle }: HeaderProps) {
         {/* Search */}
         <form onSubmit={handleSearch} className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search incidents..."
+          <Input 
+            placeholder="Search incidents..." 
             className="w-64 bg-secondary/50 border-border pl-9 pr-9 focus:bg-secondary"
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
@@ -228,9 +198,9 @@ export function Header({ title, subtitle }: HeaderProps) {
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h4 className="font-semibold text-foreground">Notifications</h4>
               {unreadCount > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
                   className="text-xs text-muted-foreground"
                   onClick={markAllAsRead}
                 >
@@ -281,8 +251,8 @@ export function Header({ title, subtitle }: HeaderProps) {
             </div>
             {notifications.length > 0 && (
               <div className="p-2 border-t border-border">
-                <Button
-                  variant="ghost"
+                <Button 
+                  variant="ghost" 
                   className="w-full text-sm"
                   onClick={() => navigate('/incidents')}
                 >
@@ -315,19 +285,19 @@ export function Header({ title, subtitle }: HeaderProps) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {role === 'admin' && (
-              <DropdownMenuItem
-                onSelect={() => navigate('/settings')}
+              <DropdownMenuItem 
+                onSelect={() => navigate('/settings')} 
                 className="cursor-pointer"
               >
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem
+            <DropdownMenuItem 
               onSelect={async () => {
                 await signOut();
                 navigate('/auth');
-              }}
+              }} 
               className="cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
             >
               <LogOut className="h-4 w-4 mr-2" />
