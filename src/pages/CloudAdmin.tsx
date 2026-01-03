@@ -89,7 +89,7 @@ export default function CloudAdmin() {
     }
   };
 
-  if (role !== 'admin') {
+  if (role !== 'ciso') {
     return (
       <AppLayout title="Access Denied">
         <div className="flex items-center justify-center h-full">

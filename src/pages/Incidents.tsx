@@ -21,7 +21,8 @@ export default function Incidents() {
   const searchQuery = searchParams.get('search') || '';
   const [filter, setFilter] = useState<string>('all');
   const { incidents, loading, refetch } = useIncidents();
-  const { canModifyIncidents } = useAuth();
+  const { role } = useAuth();
+  const canModifyIncidents = role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(role);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 

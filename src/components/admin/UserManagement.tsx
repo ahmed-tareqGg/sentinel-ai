@@ -7,10 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Users, Search, RefreshCw, UserPlus, Shield, Edit2, Trash2, Mail, Calendar, Globe } from 'lucide-react';
+import { Users, Search, RefreshCw, Shield, Edit2, Mail, Calendar } from 'lucide-react';
 import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
+import { ROLE_METADATA, SOCRole } from '@/hooks/usePermissions';
 
 interface UserProfile {
   id: string;
@@ -21,23 +22,16 @@ interface UserProfile {
   updated_at: string;
 }
 
-interface UserRole {
-  id: string;
-  user_id: string;
-  role: 'admin' | 'soc_analyst' | 'viewer';
-  created_at: string;
-}
-
 interface UserWithRole extends UserProfile {
-  role: 'admin' | 'soc_analyst' | 'viewer';
+  role: SOCRole;
   role_created_at: string;
-  last_sign_in?: string;
-  sign_in_ip?: string;
 }
 
 interface UserManagementProps {
   safeMode: boolean;
 }
+
+const ALL_ROLES: SOCRole[] = ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso'];
 
 export function UserManagement({ safeMode }: UserManagementProps) {
   const { user: currentUser } = useAuth();
@@ -73,10 +67,10 @@ export function UserManagement({ safeMode }: UserManagementProps) {
 
       // Combine profiles with roles
       const usersWithRoles: UserWithRole[] = (profiles || []).map((profile: UserProfile) => {
-        const userRole = roles?.find((r: UserRole) => r.user_id === profile.id);
+        const userRole = roles?.find((r: { user_id: string; role: string }) => r.user_id === profile.id);
         return {
           ...profile,
-          role: userRole?.role || 'viewer',
+          role: (userRole?.role as SOCRole) || 'soc_tier_1',
           role_created_at: userRole?.created_at || profile.created_at,
         };
       });
@@ -112,7 +106,7 @@ export function UserManagement({ safeMode }: UserManagementProps) {
         // Update existing role
         const { error } = await supabase
           .from('user_roles')
-          .update({ role: newRole as 'admin' | 'soc_analyst' | 'viewer' })
+          .update({ role: newRole as SOCRole })
           .eq('user_id', editingUser.id);
 
         if (error) throw error;
@@ -120,7 +114,7 @@ export function UserManagement({ safeMode }: UserManagementProps) {
         // Insert new role
         const { error } = await supabase
           .from('user_roles')
-          .insert([{ user_id: editingUser.id, role: newRole as 'admin' | 'soc_analyst' | 'viewer' }]);
+          .insert([{ user_id: editingUser.id, role: newRole as SOCRole }]);
 
         if (error) throw error;
       }
@@ -138,7 +132,7 @@ export function UserManagement({ safeMode }: UserManagementProps) {
         }
       });
 
-      toast.success(`Updated ${editingUser.email} to ${newRole}`);
+      toast.success(`Updated ${editingUser.email} to ${ROLE_METADATA[newRole as SOCRole]?.label || newRole}`);
       setIsDialogOpen(false);
       setEditingUser(null);
       setNewRole('');
@@ -149,17 +143,17 @@ export function UserManagement({ safeMode }: UserManagementProps) {
     }
   };
 
-  const getRoleBadge = (role: string) => {
-    switch (role) {
-      case 'admin':
-        return <Badge variant="destructive" className="flex items-center gap-1"><Shield className="h-3 w-3" />Admin</Badge>;
-      case 'soc_analyst':
-        return <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 flex items-center gap-1"><Shield className="h-3 w-3" />SOC Analyst</Badge>;
-      case 'viewer':
-        return <Badge variant="secondary" className="flex items-center gap-1"><Shield className="h-3 w-3" />Viewer</Badge>;
-      default:
-        return <Badge variant="secondary">{role}</Badge>;
+  const getRoleBadge = (role: SOCRole) => {
+    const meta = ROLE_METADATA[role];
+    if (!meta) {
+      return <Badge variant="secondary">{role}</Badge>;
     }
+    return (
+      <Badge variant="outline" className={`flex items-center gap-1 ${meta.badgeClass}`}>
+        <Shield className="h-3 w-3" />
+        {meta.label}
+      </Badge>
+    );
   };
 
   const filteredUsers = users.filter(user => {
@@ -170,67 +164,33 @@ export function UserManagement({ safeMode }: UserManagementProps) {
     return matchesSearch && matchesRole;
   });
 
+  // Count users by role
+  const roleCounts = ALL_ROLES.reduce((acc, role) => {
+    acc[role] = users.filter(u => u.role === role).length;
+    return acc;
+  }, {} as Record<SOCRole, number>);
+
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="border-border">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Users</p>
-                <p className="text-2xl font-bold">{users.length}</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {ALL_ROLES.map(role => (
+          <Card key={role} className="border-border">
+            <CardContent className="pt-4 pb-4">
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground mb-1">{ROLE_METADATA[role].label}</p>
+                <p className="text-2xl font-bold">{roleCounts[role]}</p>
               </div>
-              <Users className="h-8 w-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Admins</p>
-                <p className="text-2xl font-bold text-destructive">
-                  {users.filter(u => u.role === 'admin').length}
-                </p>
-              </div>
-              <Shield className="h-8 w-8 text-destructive" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">SOC Analysts</p>
-                <p className="text-2xl font-bold text-primary">
-                  {users.filter(u => u.role === 'soc_analyst').length}
-                </p>
-              </div>
-              <Shield className="h-8 w-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Viewers</p>
-                <p className="text-2xl font-bold text-muted-foreground">
-                  {users.filter(u => u.role === 'viewer').length}
-                </p>
-              </div>
-              <Shield className="h-8 w-8 text-muted-foreground" />
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* Filters */}
       <Card className="border-border">
         <CardContent className="pt-6">
-          <div className="flex gap-4">
-            <div className="relative flex-1">
+          <div className="flex gap-4 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search by email or name..."
@@ -246,9 +206,9 @@ export function UserManagement({ safeMode }: UserManagementProps) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Roles</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
-                <SelectItem value="soc_analyst">SOC Analyst</SelectItem>
-                <SelectItem value="viewer">Viewer</SelectItem>
+                {ALL_ROLES.map(role => (
+                  <SelectItem key={role} value={role}>{ROLE_METADATA[role].label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -268,7 +228,7 @@ export function UserManagement({ safeMode }: UserManagementProps) {
             User Management
           </CardTitle>
           <CardDescription>
-            Manage user accounts and role assignments
+            Manage user accounts and SOC role assignments
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -280,8 +240,8 @@ export function UserManagement({ safeMode }: UserManagementProps) {
                 <TableRow>
                   <TableHead>User</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead>Description</TableHead>
                   <TableHead>Registered</TableHead>
-                  <TableHead>Last Updated</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -306,13 +266,13 @@ export function UserManagement({ safeMode }: UserManagementProps) {
                       </TableCell>
                       <TableCell>{getRoleBadge(user.role)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
+                        {ROLE_METADATA[user.role]?.description || '-'}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
                         <div className="flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
                           {new Date(user.created_at).toLocaleDateString()}
                         </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {new Date(user.updated_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
                         <Dialog open={isDialogOpen && editingUser?.id === user.id} onOpenChange={(open) => {
@@ -347,6 +307,7 @@ export function UserManagement({ safeMode }: UserManagementProps) {
                               <div className="space-y-2">
                                 <Label>Current Role</Label>
                                 <div>{getRoleBadge(user.role)}</div>
+                                <p className="text-xs text-muted-foreground">{ROLE_METADATA[user.role]?.description}</p>
                               </div>
                               <div className="space-y-2">
                                 <Label>New Role</Label>
@@ -355,9 +316,14 @@ export function UserManagement({ safeMode }: UserManagementProps) {
                                     <SelectValue placeholder="Select role" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="admin">Admin</SelectItem>
-                                    <SelectItem value="soc_analyst">SOC Analyst</SelectItem>
-                                    <SelectItem value="viewer">Viewer</SelectItem>
+                                    {ALL_ROLES.map(role => (
+                                      <SelectItem key={role} value={role}>
+                                        <div className="flex flex-col">
+                                          <span>{ROLE_METADATA[role].label}</span>
+                                          <span className="text-xs text-muted-foreground">{ROLE_METADATA[role].description}</span>
+                                        </div>
+                                      </SelectItem>
+                                    ))}
                                   </SelectContent>
                                 </Select>
                               </div>

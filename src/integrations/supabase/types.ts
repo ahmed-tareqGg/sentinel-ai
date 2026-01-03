@@ -654,6 +654,27 @@ export type Database = {
         }
         Relationships: []
       }
+      role_permissions: {
+        Row: {
+          created_at: string | null
+          id: string
+          permission: string
+          role: Database["public"]["Enums"]["app_role"]
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          permission: string
+          role: Database["public"]["Enums"]["app_role"]
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          permission?: string
+          role?: Database["public"]["Enums"]["app_role"]
+        }
+        Relationships: []
+      }
       system_settings: {
         Row: {
           id: string
@@ -704,9 +725,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_user_permissions: { Args: { _user_id: string }; Returns: string[] }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
+      }
+      has_permission: {
+        Args: { _permission: string; _user_id: string }
+        Returns: boolean
       }
       has_role: {
         Args: {
@@ -717,7 +743,16 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "soc_analyst" | "viewer"
+      app_role:
+        | "admin"
+        | "soc_analyst"
+        | "viewer"
+        | "soc_tier_1"
+        | "soc_tier_2"
+        | "soc_tier_3"
+        | "soc_manager"
+        | "grc_engineer"
+        | "ciso"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -845,7 +880,17 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "soc_analyst", "viewer"],
+      app_role: [
+        "admin",
+        "soc_analyst",
+        "viewer",
+        "soc_tier_1",
+        "soc_tier_2",
+        "soc_tier_3",
+        "soc_manager",
+        "grc_engineer",
+        "ciso",
+      ],
     },
   },
 } as const

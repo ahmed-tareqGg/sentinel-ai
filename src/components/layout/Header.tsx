@@ -284,7 +284,7 @@ export function Header({ title, subtitle }: HeaderProps) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {role === 'admin' && (
+            {(role === 'ciso' || role === 'soc_manager') && (
               <DropdownMenuItem 
                 onSelect={() => navigate('/settings')} 
                 className="cursor-pointer"

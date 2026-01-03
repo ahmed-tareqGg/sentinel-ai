@@ -64,7 +64,8 @@ const riskColors: Record<string, string> = {
 export default function IncidentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { canModifyIncidents } = useAuth();
+  const { role } = useAuth();
+  const canModifyIncidents = role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(role);
   const [incident, setIncident] = useState<Incident | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [loading, setLoading] = useState(true);
