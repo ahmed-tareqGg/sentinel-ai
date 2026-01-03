@@ -13,46 +13,41 @@ import {
   Cloud,
   Plug,
   ClipboardCheck,
-  FileCheck
+  FileCheck,
+  Target
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth, AppRole } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
+import { ROLE_METADATA, SOCRole, NAV_ACCESS } from '@/hooks/usePermissions';
 import socmindLogo from '@/assets/socmind-logo.png';
 
 const navItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: ['admin', 'soc_analyst', 'viewer'] },
-  { icon: AlertTriangle, label: 'Incidents', path: '/incidents', roles: ['admin', 'soc_analyst', 'viewer'] },
-  { icon: BarChart3, label: 'Analytics', path: '/analytics', roles: ['admin', 'soc_analyst', 'viewer'] },
-  { icon: FileText, label: 'Reports', path: '/reports', roles: ['admin', 'soc_analyst'] },
-  { icon: Zap, label: 'Playbooks', path: '/playbooks', roles: ['admin'] },
-  { icon: ClipboardCheck, label: 'Approvals', path: '/approvals', roles: ['admin', 'soc_analyst'] },
-  { icon: Plug, label: 'Integrations', path: '/integrations', roles: ['admin'] },
-  { icon: FileCheck, label: 'Compliance', path: '/compliance', roles: ['admin'] },
-  { icon: Play, label: 'Demo', path: '/demo', roles: ['admin', 'soc_analyst', 'viewer'] },
-  { icon: Settings, label: 'Settings', path: '/settings', roles: ['admin'] },
-  { icon: Cloud, label: 'Cloud Admin', path: '/admin/cloud', roles: ['admin'] },
+  { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+  { icon: AlertTriangle, label: 'Incidents', path: '/incidents' },
+  { icon: BarChart3, label: 'Analytics', path: '/analytics' },
+  { icon: FileText, label: 'Reports', path: '/reports' },
+  { icon: Zap, label: 'Playbooks', path: '/playbooks' },
+  { icon: ClipboardCheck, label: 'Approvals', path: '/approvals' },
+  { icon: Plug, label: 'Integrations', path: '/integrations' },
+  { icon: FileCheck, label: 'Compliance', path: '/compliance' },
+  { icon: Target, label: 'MITRE Coverage', path: '/mitre-coverage' },
+  { icon: Play, label: 'Demo', path: '/demo' },
+  { icon: Settings, label: 'Settings', path: '/settings' },
+  { icon: Cloud, label: 'Cloud Admin', path: '/admin/cloud' },
 ];
-
-const roleColors = {
-  admin: 'bg-destructive/20 text-destructive border-destructive/30',
-  soc_analyst: 'bg-warning/20 text-warning border-warning/30',
-  viewer: 'bg-muted text-muted-foreground border-border',
-};
-
-const roleLabels = {
-  admin: 'Admin',
-  soc_analyst: 'Analyst',
-  viewer: 'Viewer',
-};
 
 export function Sidebar() {
   const location = useLocation();
   const { profile, role, signOut } = useAuth();
 
-  const filteredNavItems = navItems.filter(item =>
-    role && item.roles.includes(role)
-  );
+  const filteredNavItems = navItems.filter(item => {
+    const allowedRoles = NAV_ACCESS[item.path];
+    if (!allowedRoles) return true;
+    return role ? allowedRoles.includes(role as SOCRole) : false;
+  });
+
+  const roleMeta = role ? ROLE_METADATA[role as SOCRole] : null;
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-border bg-sidebar">
@@ -76,11 +71,16 @@ export function Sidebar() {
               <p className="text-sm font-medium text-foreground truncate">
                 {profile?.full_name || profile?.email?.split('@')[0]}
               </p>
-              <Badge variant="outline" className={cn('text-xs mt-1', roleColors[role || 'viewer'])}>
-                {roleLabels[role || 'viewer']}
-              </Badge>
+              {roleMeta && (
+                <Badge variant="outline" className={cn('text-xs mt-1', roleMeta.badgeClass)}>
+                  {roleMeta.label}
+                </Badge>
+              )}
             </div>
           </div>
+          {roleMeta && (
+            <p className="text-xs text-muted-foreground mt-2 pl-13">{roleMeta.description}</p>
+          )}
         </div>
 
         {/* Navigation */}

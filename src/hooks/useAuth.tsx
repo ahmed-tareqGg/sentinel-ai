@@ -2,7 +2,14 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/backend/client';
 
-type AppRole = 'admin' | 'soc_analyst' | 'viewer';
+// SOC Role Types - new enterprise RBAC
+export type AppRole = 
+  | 'soc_tier_1' 
+  | 'soc_tier_2' 
+  | 'soc_tier_3' 
+  | 'soc_manager' 
+  | 'grc_engineer' 
+  | 'ciso';
 
 interface Profile {
   id: string;
@@ -18,9 +25,15 @@ interface AuthContextType {
   role: AppRole | null;
   loading: boolean;
   signOut: () => Promise<void>;
-  isAdmin: boolean;
-  isAnalyst: boolean;
-  canModifyIncidents: boolean;
+  // Role checks
+  isCISO: boolean;
+  isManager: boolean;
+  isTier3: boolean;
+  isTier2: boolean;
+  isTier1: boolean;
+  isGRC: boolean;
+  canManageUsers: boolean;
+  canExecutePlaybooks: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -104,9 +117,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRole(null);
   };
 
-  const isAdmin = role === 'admin';
-  const isAnalyst = role === 'soc_analyst';
-  const canModifyIncidents = isAdmin || isAnalyst;
+  // Role hierarchy checks
+  const isCISO = role === 'ciso';
+  const isManager = role === 'soc_manager';
+  const isTier3 = role === 'soc_tier_3';
+  const isTier2 = role === 'soc_tier_2';
+  const isTier1 = role === 'soc_tier_1';
+  const isGRC = role === 'grc_engineer';
+  
+  // Permission-based checks
+  const canManageUsers = isCISO || isManager;
+  const canExecutePlaybooks = isCISO || isManager || isTier3;
 
   return (
     <AuthContext.Provider value={{
@@ -116,9 +137,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role,
       loading,
       signOut,
-      isAdmin,
-      isAnalyst,
-      canModifyIncidents,
+      isCISO,
+      isManager,
+      isTier3,
+      isTier2,
+      isTier1,
+      isGRC,
+      canManageUsers,
+      canExecutePlaybooks,
     }}>
       {children}
     </AuthContext.Provider>

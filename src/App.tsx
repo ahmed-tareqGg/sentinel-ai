@@ -56,15 +56,15 @@ const App = () => (
             <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
             <Route path="/incidents/:id" element={<ProtectedRoute><IncidentDetail /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-            <Route path="/reports" element={<ProtectedRoute requiredRole="soc_analyst"><Reports /></ProtectedRoute>} />
-            <Route path="/playbooks" element={<ProtectedRoute requiredRole="admin"><Playbooks /></ProtectedRoute>} />
-            <Route path="/integrations" element={<ProtectedRoute requiredRole="admin"><Integrations /></ProtectedRoute>} />
-            <Route path="/approvals" element={<ProtectedRoute requiredRole="soc_analyst"><Approvals /></ProtectedRoute>} />
-            <Route path="/compliance" element={<ProtectedRoute requiredRole="admin"><Compliance /></ProtectedRoute>} />
+            <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+            <Route path="/playbooks" element={<ProtectedRoute><Playbooks /></ProtectedRoute>} />
+            <Route path="/integrations" element={<ProtectedRoute><Integrations /></ProtectedRoute>} />
+            <Route path="/approvals" element={<ProtectedRoute><Approvals /></ProtectedRoute>} />
+            <Route path="/compliance" element={<ProtectedRoute><Compliance /></ProtectedRoute>} />
             <Route path="/mitre-coverage" element={<ProtectedRoute><MitreCoverage /></ProtectedRoute>} />
             <Route path="/demo" element={<ProtectedRoute><Demo /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
-            <Route path="/admin/cloud" element={<ProtectedRoute requiredRole="admin"><CloudAdmin /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/admin/cloud" element={<ProtectedRoute requiredRole="ciso"><CloudAdmin /></ProtectedRoute>} />
             
             {/* Fallback */}
             <Route path="*" element={<NotFound />} />

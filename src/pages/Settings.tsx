@@ -21,7 +21,8 @@ interface UserWithRole {
 }
 
 export default function Settings() {
-  const { isAdmin } = useAuth();
+  const { role, isCISO, isManager } = useAuth();
+  const canManageSettings = isCISO || isManager;
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [addUserOpen, setAddUserOpen] = useState(false);
@@ -73,7 +74,7 @@ export default function Settings() {
             
             return {
               ...profile,
-              role: roleData?.role || 'viewer',
+              role: roleData?.role || 'soc_tier_1',
             };
           })
         );
@@ -86,11 +87,11 @@ export default function Settings() {
     }
   };
 
-  const updateUserRole = async (userId: string, newRole: 'admin' | 'soc_analyst' | 'viewer') => {
+  const updateUserRole = async (userId: string, newRole: string) => {
     try {
       const { error } = await supabase
         .from('user_roles')
-        .update({ role: newRole })
+        .update({ role: newRole as any })
         .eq('user_id', userId);
 
       if (error) throw error;
@@ -395,18 +396,21 @@ export default function Settings() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      {isAdmin && (
+                      {canManageSettings && (
                         <Select 
                           value={user.role} 
-                          onValueChange={(value) => updateUserRole(user.id, value as 'admin' | 'soc_analyst' | 'viewer')}
+                          onValueChange={(value) => updateUserRole(user.id, value)}
                         >
-                          <SelectTrigger className="w-32 bg-secondary/50">
+                          <SelectTrigger className="w-40 bg-secondary/50">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="viewer">Viewer</SelectItem>
-                            <SelectItem value="soc_analyst">SOC Analyst</SelectItem>
-                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="soc_tier_1">SOC Tier 1</SelectItem>
+                            <SelectItem value="soc_tier_2">SOC Tier 2</SelectItem>
+                            <SelectItem value="soc_tier_3">SOC Tier 3</SelectItem>
+                            <SelectItem value="soc_manager">SOC Manager</SelectItem>
+                            <SelectItem value="grc_engineer">GRC Engineer</SelectItem>
+                            <SelectItem value="ciso">CISO</SelectItem>
                           </SelectContent>
                         </Select>
                       )}
