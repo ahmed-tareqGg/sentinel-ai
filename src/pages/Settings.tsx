@@ -21,13 +21,13 @@ interface UserWithRole {
 }
 
 export default function Settings() {
-  const { role, isCISO, isManager } = useAuth();
+  const { user: currentUser, isCISO, isManager } = useAuth();
   const canManageSettings = isCISO || isManager;
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [addUserOpen, setAddUserOpen] = useState(false);
   const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserRole, setNewUserRole] = useState('viewer');
+  const [newUserRole, setNewUserRole] = useState('soc_tier_1');
   const [submitting, setSubmitting] = useState(false);
 
   // Integration states
@@ -89,11 +89,11 @@ export default function Settings() {
 
   const updateUserRole = async (userId: string, newRole: string) => {
     try {
-      const { error } = await supabase
-        .from('user_roles')
-        .update({ role: newRole as any })
-        .eq('user_id', userId);
-
+      if (currentUser?.id === userId) {
+        toast.error('لا يمكن تغيير صلاحيتك لنفسك');
+        return;
+      }
+      const { error } = await supabase.rpc('set_user_role', { _target_user: userId, _new_role: newRole as any });
       if (error) throw error;
       
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
@@ -146,7 +146,7 @@ export default function Settings() {
     toast.success(`Invitation sent to ${newUserEmail}`);
     setAddUserOpen(false);
     setNewUserEmail('');
-    setNewUserRole('viewer');
+    setNewUserRole('soc_tier_1');
     setSubmitting(false);
   };
 
@@ -361,9 +361,9 @@ export default function Settings() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="viewer">Viewer</SelectItem>
-                          <SelectItem value="soc_analyst">SOC Analyst</SelectItem>
-                          <SelectItem value="admin">Admin</SelectItem>
+                          <SelectItem value="soc_tier_1">SOC Tier 1</SelectItem><SelectItem value="soc_tier_2">SOC Tier 2</SelectItem>
+                          <SelectItem value="soc_tier_3">SOC Tier 3</SelectItem><SelectItem value="soc_manager">SOC Manager</SelectItem>
+                          <SelectItem value="grc_engineer">GRC Engineer</SelectItem><SelectItem value="ciso">CISO</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -398,7 +398,7 @@ export default function Settings() {
                     <div className="flex items-center gap-3">
                       {canManageSettings && (
                         <Select 
-                          value={user.role} 
+                          value={user.role} disabled={user.id === currentUser?.id}
                           onValueChange={(value) => updateUserRole(user.id, value)}
                         >
                           <SelectTrigger className="w-40 bg-secondary/50">
