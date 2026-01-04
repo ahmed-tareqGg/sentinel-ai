@@ -93,44 +93,12 @@ export function UserManagement({ safeMode }: UserManagementProps) {
     }
 
     try {
-      // Check if role exists
-      const { data: existingRole, error: checkError } = await supabase
-        .from('user_roles')
-        .select('id')
-        .eq('user_id', editingUser.id)
-        .single();
-
-      if (checkError && checkError.code !== 'PGRST116') throw checkError;
-
-      if (existingRole) {
-        // Update existing role
-        const { error } = await supabase
-          .from('user_roles')
-          .update({ role: newRole as SOCRole })
-          .eq('user_id', editingUser.id);
-
-        if (error) throw error;
-      } else {
-        // Insert new role
-        const { error } = await supabase
-          .from('user_roles')
-          .insert([{ user_id: editingUser.id, role: newRole as SOCRole }]);
-
-        if (error) throw error;
-      }
-
-      // Log the action
-      await supabase.from('audit_logs').insert({
-        user_id: currentUser?.id,
-        action: 'update_user_role',
-        resource_type: 'user_roles',
-        resource_id: editingUser.id,
-        details: { 
-          target_user: editingUser.email,
-          previous_role: editingUser.role,
-          new_role: newRole 
-        }
+      const { error } = await supabase.rpc('set_user_role', {
+        _target_user: editingUser.id,
+        _new_role: newRole as SOCRole,
       });
+
+      if (error) throw error;
 
       toast.success(`Updated ${editingUser.email} to ${ROLE_METADATA[newRole as SOCRole]?.label || newRole}`);
       setIsDialogOpen(false);
