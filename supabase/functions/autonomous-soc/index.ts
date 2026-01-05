@@ -29,6 +29,48 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    // Authentication check
+    const authHeader = req.headers.get('Authorization');
+    const isInternalCall = authHeader === `Bearer ${supabaseKey}`;
+    
+    if (!isInternalCall) {
+      // Verify user authentication for external calls
+      const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+      const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: authHeader || '' } }
+      });
+      
+      const { data: { user }, error: authError } = await authClient.auth.getUser();
+      if (authError || !user) {
+        console.log('🚫 Unauthorized access attempt to autonomous-soc');
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // Check user role - only allow analysts and higher
+      const { data: roleData } = await authClient
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+      
+      const allowedRoles = ['admin', 'soc_analyst', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'];
+      if (!roleData || !allowedRoles.includes(roleData.role)) {
+        console.log(`🚫 Insufficient permissions for user ${user.id} with role ${roleData?.role}`);
+        return new Response(JSON.stringify({ error: 'Insufficient permissions' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      console.log(`✅ Authenticated user ${user.id} with role ${roleData.role}`);
+    } else {
+      console.log('✅ Internal service call authenticated');
+    }
+    
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { incident_id, mode = 'autonomous' } = await req.json() as AutonomousSOCRequest;

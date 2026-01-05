@@ -215,36 +215,28 @@ export function FileImportDialog({ onSuccess }: { onSuccess?: () => void }) {
       if (selectedFile.name.endsWith('.json')) {
         let parsed: any;
         
-        // First try standard JSON parse
+        // Strict JSON parsing only - no code execution
         try {
           parsed = JSON.parse(text);
         } catch (jsonError) {
-          // Try progressive fixes
-          let fixedText = text;
+          // Try fixing common JSON issues safely (no code execution)
+          let fixedText = text
+            .replace(/,(\s*[}\]])/g, '$1')       // Remove trailing commas
+            .replace(/\/\/.*$/gm, '')             // Remove line comments
+            .replace(/\/\*[\s\S]*?\*\//g, '');    // Remove block comments
           
-          // Fix 1: Remove trailing commas
-          fixedText = fixedText.replace(/,(\s*[}\]])/g, '$1');
-          
-          // Fix 2: Try parsing after trailing comma fix
           try {
             parsed = JSON.parse(fixedText);
-            toast.info('Fixed trailing comma issues in JSON');
+            toast.info('Fixed JSON formatting issues');
           } catch {
-            // Fix 3: More aggressive - handle JavaScript object notation
-            try {
-              // Remove comments
-              fixedText = fixedText.replace(/\/\/.*$/gm, '');
-              fixedText = fixedText.replace(/\/\*[\s\S]*?\*\//g, '');
-              
-              // Use Function to parse JS object literal (safer than eval)
-              const fn = new Function('return ' + fixedText);
-              parsed = fn();
-              toast.info('Parsed JavaScript object notation');
-            } catch {
-              const errorMsg = jsonError instanceof Error ? jsonError.message : 'Unknown error';
-              throw new Error(`Invalid JSON: ${errorMsg}. Tip: Use a JSON validator to check your file.`);
-            }
+            const errorMsg = jsonError instanceof Error ? jsonError.message : 'Unknown error';
+            throw new Error(`Invalid JSON: ${errorMsg}. Please ensure your file contains valid JSON format.`);
           }
+        }
+        
+        // Validate parsed data structure
+        if (typeof parsed !== 'object' || parsed === null) {
+          throw new Error('Invalid data format: expected an object or array');
         }
         
         data = Array.isArray(parsed) ? parsed : parsed.logs || parsed.incidents || parsed.data || [parsed];
