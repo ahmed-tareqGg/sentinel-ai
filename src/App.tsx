@@ -27,6 +27,7 @@ import Landing from "./pages/Landing";
 import NotFound from "./pages/NotFound";
 import MitreCoverage from "./pages/MitreCoverage";
 import CloudAdmin from "./pages/CloudAdmin";
+import DataSources from "./pages/DataSources";
 
 const queryClient = new QueryClient();
 
@@ -64,6 +65,7 @@ const App = () => (
             <Route path="/mitre-coverage" element={<ProtectedRoute><MitreCoverage /></ProtectedRoute>} />
             <Route path="/demo" element={<ProtectedRoute><Demo /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/data-sources" element={<ProtectedRoute><DataSources /></ProtectedRoute>} />
             <Route path="/admin/cloud" element={<ProtectedRoute requiredRole="ciso"><CloudAdmin /></ProtectedRoute>} />
             
             {/* Fallback */}

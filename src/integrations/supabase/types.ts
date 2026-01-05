@@ -14,6 +14,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_api_keys: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          data_source_id: string | null
+          expires_at: string | null
+          id: string
+          is_active: boolean | null
+          key_hash: string
+          key_prefix: string
+          last_used: string | null
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          data_source_id?: string | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          key_hash: string
+          key_prefix: string
+          last_used?: string | null
+          name: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          data_source_id?: string | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          key_hash?: string
+          key_prefix?: string
+          last_used?: string | null
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_api_keys_data_source_id_fkey"
+            columns: ["data_source_id"]
+            isOneToOne: false
+            referencedRelation: "data_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       approval_requests: {
         Row: {
           action_params: Json | null
@@ -164,6 +211,72 @@ export type Database = {
           result?: string
           tenant_id?: string | null
           timestamp?: string
+        }
+        Relationships: []
+      }
+      data_sources: {
+        Row: {
+          agent_version: string | null
+          api_key_hash: string | null
+          config: Json | null
+          created_at: string
+          created_by: string | null
+          hostname: string | null
+          id: string
+          ip_address: string | null
+          last_heartbeat: string | null
+          last_log_received: string | null
+          log_types: string[] | null
+          logs_received_today: number | null
+          logs_received_total: number | null
+          name: string
+          os_type: string | null
+          os_version: string | null
+          status: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          agent_version?: string | null
+          api_key_hash?: string | null
+          config?: Json | null
+          created_at?: string
+          created_by?: string | null
+          hostname?: string | null
+          id?: string
+          ip_address?: string | null
+          last_heartbeat?: string | null
+          last_log_received?: string | null
+          log_types?: string[] | null
+          logs_received_today?: number | null
+          logs_received_total?: number | null
+          name: string
+          os_type?: string | null
+          os_version?: string | null
+          status?: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          agent_version?: string | null
+          api_key_hash?: string | null
+          config?: Json | null
+          created_at?: string
+          created_by?: string | null
+          hostname?: string | null
+          id?: string
+          ip_address?: string | null
+          last_heartbeat?: string | null
+          last_log_received?: string | null
+          log_types?: string[] | null
+          logs_received_today?: number | null
+          logs_received_total?: number | null
+          name?: string
+          os_type?: string | null
+          os_version?: string | null
+          status?: string
+          type?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -333,6 +446,47 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      log_ingestion_stats: {
+        Row: {
+          bytes_received: number | null
+          count: number | null
+          data_source_id: string | null
+          date: string
+          hour: number | null
+          id: string
+          incidents_created: number | null
+          log_type: string
+        }
+        Insert: {
+          bytes_received?: number | null
+          count?: number | null
+          data_source_id?: string | null
+          date?: string
+          hour?: number | null
+          id?: string
+          incidents_created?: number | null
+          log_type: string
+        }
+        Update: {
+          bytes_received?: number | null
+          count?: number | null
+          data_source_id?: string | null
+          date?: string
+          hour?: number | null
+          id?: string
+          incidents_created?: number | null
+          log_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "log_ingestion_stats_data_source_id_fkey"
+            columns: ["data_source_id"]
+            isOneToOne: false
+            referencedRelation: "data_sources"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       mitre_coverage: {
         Row: {
@@ -798,6 +952,13 @@ export type Database = {
         }
         Returns: undefined
       }
+      generate_agent_api_key: {
+        Args: { _data_source_id: string; _expires_days?: number; _name: string }
+        Returns: {
+          api_key: string
+          key_id: string
+        }[]
+      }
       get_user_permissions: { Args: { _user_id: string }; Returns: string[] }
       get_user_role: {
         Args: { _user_id: string }
@@ -821,6 +982,15 @@ export type Database = {
           _target_user: string
         }
         Returns: undefined
+      }
+      verify_agent_api_key: {
+        Args: { _api_key: string }
+        Returns: {
+          data_source_id: string
+          data_source_name: string
+          is_valid: boolean
+          key_id: string
+        }[]
       }
     }
     Enums: {
