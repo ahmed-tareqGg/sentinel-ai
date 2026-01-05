@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.mitre-enrichment]
 verify_jwt = false
+
+[functions.agent-gateway]
+verify_jwt = false
