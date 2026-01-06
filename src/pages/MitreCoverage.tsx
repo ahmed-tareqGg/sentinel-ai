@@ -14,7 +14,8 @@ import {
   TrendingUp,
   RefreshCw,
   Loader2,
-  Lightbulb
+  Lightbulb,
+  ExternalLink
 } from 'lucide-react';
 import { supabase, backendUrl, publishableKey } from '@/integrations/backend/client';
 import { toast } from 'sonner';
@@ -32,20 +33,81 @@ interface MitreTechnique {
   coverage_status: string;
 }
 
-const TACTICS_ORDER = [
-  'Initial Access',
-  'Execution',
-  'Persistence',
-  'Privilege Escalation',
-  'Defense Evasion',
-  'Credential Access',
-  'Discovery',
-  'Lateral Movement',
-  'Collection',
-  'Command and Control',
-  'Exfiltration',
-  'Impact',
+// MITRE ATT&CK Enterprise Tactics with IDs for linking
+const TACTICS_DATA = [
+  { id: 'TA0001', name: 'Initial Access' },
+  { id: 'TA0002', name: 'Execution' },
+  { id: 'TA0003', name: 'Persistence' },
+  { id: 'TA0004', name: 'Privilege Escalation' },
+  { id: 'TA0005', name: 'Defense Evasion' },
+  { id: 'TA0006', name: 'Credential Access' },
+  { id: 'TA0007', name: 'Discovery' },
+  { id: 'TA0008', name: 'Lateral Movement' },
+  { id: 'TA0009', name: 'Collection' },
+  { id: 'TA0011', name: 'Command and Control' },
+  { id: 'TA0010', name: 'Exfiltration' },
+  { id: 'TA0040', name: 'Impact' },
 ];
+
+// Technique map matching MitreHeatmap
+const TECHNIQUE_MAP: Record<string, { id: string; name: string }[]> = {
+  'Initial Access': [
+    { id: 'T1133', name: 'External Remote Services' },
+    { id: 'T1566', name: 'Phishing' },
+    { id: 'T1190', name: 'Exploit Public-Facing Application' },
+  ],
+  'Execution': [
+    { id: 'T1053', name: 'Scheduled Task/Job' },
+    { id: 'T1204', name: 'User Execution' },
+    { id: 'T1059', name: 'Command and Scripting Interpreter' },
+    { id: 'T1203', name: 'Exploitation for Client Execution' },
+  ],
+  'Persistence': [
+    { id: 'T1547', name: 'Boot or Logon Autostart Execution' },
+  ],
+  'Privilege Escalation': [
+    { id: 'T1548', name: 'Abuse Elevation Control' },
+    { id: 'T1134', name: 'Access Token Manipulation' },
+  ],
+  'Defense Evasion': [
+    { id: 'T1078', name: 'Valid Accounts' },
+    { id: 'T1140', name: 'Deobfuscate/Decode Files or Information' },
+    { id: 'T1036', name: 'Masquerading' },
+    { id: 'T1027', name: 'Obfuscated Files or Information' },
+    { id: 'T1055', name: 'Process Injection' },
+  ],
+  'Credential Access': [
+    { id: 'T1110', name: 'Brute Force' },
+  ],
+  'Discovery': [
+    { id: 'T1082', name: 'System Information Discovery' },
+    { id: 'T1046', name: 'Network Service Scanning' },
+    { id: 'T1087', name: 'Account Discovery' },
+  ],
+  'Lateral Movement': [
+    { id: 'T1021', name: 'Remote Services' },
+    { id: 'T1091', name: 'Replication Through Removable Media' },
+  ],
+  'Collection': [
+    { id: 'T1005', name: 'Data from Local System' },
+    { id: 'T1114', name: 'Email Collection' },
+  ],
+  'Command and Control': [
+    { id: 'T1105', name: 'Ingress Tool Transfer' },
+    { id: 'T1071', name: 'Application Layer Protocol' },
+    { id: 'T1132', name: 'Data Encoding' },
+  ],
+  'Exfiltration': [
+    { id: 'T1567', name: 'Exfiltration Over Web Service' },
+    { id: 'T1048', name: 'Exfiltration Over Alternative Protocol' },
+    { id: 'T1041', name: 'Exfiltration Over C2 Channel' },
+  ],
+  'Impact': [
+    { id: 'T1486', name: 'Data Encrypted for Impact' },
+  ],
+};
+
+const TACTICS_ORDER = TACTICS_DATA.map(t => t.name);
 
 export default function MitreCoverage() {
   const [techniques, setTechniques] = useState<MitreTechnique[]>([]);
@@ -130,40 +192,57 @@ export default function MitreCoverage() {
     }
   };
   
-  // Calculate stats
-  const totalTechniques = techniques.length;
-  const coveredTechniques = techniques.filter(t => t.coverage_status === 'covered').length;
-  const partialTechniques = techniques.filter(t => t.coverage_status === 'partial').length;
-  const notCoveredTechniques = techniques.filter(t => t.coverage_status === 'not_covered').length;
-  const withPlaybooks = techniques.filter(t => t.has_playbook).length;
-  
-  const coveragePercent = totalTechniques > 0 ? Math.round(((coveredTechniques + partialTechniques * 0.5) / totalTechniques) * 100) : 0;
-  const playbookPercent = totalTechniques > 0 ? Math.round((withPlaybooks / totalTechniques) * 100) : 0;
-  
-  // Group by tactic
-  const byTactic = techniques.reduce((acc, t) => {
-    if (!acc[t.tactic]) acc[t.tactic] = [];
-    acc[t.tactic].push(t);
+  // Group by tactic from TECHNIQUE_MAP merged with DB data
+  const byTactic = TACTICS_ORDER.reduce((acc, tacticName) => {
+    const mapTechniques = TECHNIQUE_MAP[tacticName] || [];
+    acc[tacticName] = mapTechniques.map(tech => {
+      const dbData = techniques.find(t => t.technique_id === tech.id);
+      return {
+        id: dbData?.id || tech.id,
+        technique_id: tech.id,
+        technique_name: tech.name,
+        tactic: tacticName,
+        detection_count: dbData?.detection_count || 0,
+        last_detected: dbData?.last_detected || null,
+        has_playbook: dbData?.has_playbook || false,
+        playbook_ids: dbData?.playbook_ids || null,
+        coverage_status: dbData?.coverage_status || 'not_covered',
+      };
+    });
     return acc;
   }, {} as Record<string, MitreTechnique[]>);
+
+  // Recalculate stats based on merged data
+  const allTechniques = Object.values(byTactic).flat();
+  const totalTechniquesCalc = allTechniques.length;
+  const coveredTechniquesCalc = allTechniques.filter(t => t.detection_count > 0).length;
+  const withPlaybooksCalc = allTechniques.filter(t => t.has_playbook).length;
+  const notCoveredTechniquesCalc = allTechniques.filter(t => t.detection_count === 0).length;
+  const coveragePercentCalc = totalTechniquesCalc > 0 ? Math.round((coveredTechniquesCalc / totalTechniquesCalc) * 100) : 0;
+  const playbookPercentCalc = totalTechniquesCalc > 0 ? Math.round((withPlaybooksCalc / totalTechniquesCalc) * 100) : 0;
   
-  const getCoverageColor = (status: string) => {
-    switch (status) {
-      case 'covered': return 'bg-green-500';
-      case 'partial': return 'bg-warning';
-      default: return 'bg-muted';
-    }
+  const getCoverageColor = (count: number) => {
+    if (count === 0) return 'bg-muted';
+    if (count <= 2) return 'bg-cyan-500/50';
+    if (count <= 5) return 'bg-cyan-500';
+    if (count <= 10) return 'bg-orange-500';
+    return 'bg-red-500';
   };
   
-  const getCoverageBadge = (status: string) => {
-    switch (status) {
-      case 'covered': 
-        return <Badge className="bg-green-500/20 text-green-500 border-green-500/30">Covered</Badge>;
-      case 'partial': 
-        return <Badge className="bg-warning/20 text-warning border-warning/30">Partial</Badge>;
-      default: 
-        return <Badge variant="secondary">Not Covered</Badge>;
+  const getCoverageBadge = (count: number) => {
+    if (count > 0) {
+      return <Badge className="bg-green-500/20 text-green-500 border-green-500/30">Detected</Badge>;
     }
+    return <Badge variant="secondary">Not Detected</Badge>;
+  };
+
+  const openTacticPage = (tacticId: string) => {
+    window.open(`https://attack.mitre.org/tactics/${tacticId}/`, '_blank');
+  };
+
+  const openTechniquePage = (techniqueId: string) => {
+    const id = techniqueId.replace('.', '/');
+    window.open(`https://attack.mitre.org/techniques/${id}/`, '_blank');
   };
 
   return (
@@ -176,11 +255,11 @@ export default function MitreCoverage() {
               <div className="flex items-center gap-3">
                 <Target className="h-8 w-8 text-primary" />
                 <div>
-                  <p className="text-2xl font-bold">{coveragePercent}%</p>
+                  <p className="text-2xl font-bold">{coveragePercentCalc}%</p>
                   <p className="text-xs text-muted-foreground">Detection Coverage</p>
                 </div>
               </div>
-              <Progress value={coveragePercent} className="mt-3 h-2" />
+              <Progress value={coveragePercentCalc} className="mt-3 h-2" />
             </CardContent>
           </Card>
           
@@ -189,11 +268,11 @@ export default function MitreCoverage() {
               <div className="flex items-center gap-3">
                 <Shield className="h-8 w-8 text-green-500" />
                 <div>
-                  <p className="text-2xl font-bold">{playbookPercent}%</p>
+                  <p className="text-2xl font-bold">{playbookPercentCalc}%</p>
                   <p className="text-xs text-muted-foreground">Playbook Coverage</p>
                 </div>
               </div>
-              <Progress value={playbookPercent} className="mt-3 h-2" />
+              <Progress value={playbookPercentCalc} className="mt-3 h-2" />
             </CardContent>
           </Card>
           
@@ -202,8 +281,8 @@ export default function MitreCoverage() {
               <div className="flex items-center gap-3">
                 <CheckCircle2 className="h-8 w-8 text-green-500" />
                 <div>
-                  <p className="text-2xl font-bold">{coveredTechniques}</p>
-                  <p className="text-xs text-muted-foreground">Fully Covered</p>
+                  <p className="text-2xl font-bold">{coveredTechniquesCalc}</p>
+                  <p className="text-xs text-muted-foreground">Detected Techniques</p>
                 </div>
               </div>
             </CardContent>
@@ -214,7 +293,7 @@ export default function MitreCoverage() {
               <div className="flex items-center gap-3">
                 <AlertTriangle className="h-8 w-8 text-destructive" />
                 <div>
-                  <p className="text-2xl font-bold">{notCoveredTechniques}</p>
+                  <p className="text-2xl font-bold">{notCoveredTechniquesCalc}</p>
                   <p className="text-xs text-muted-foreground">Coverage Gaps</p>
                 </div>
               </div>
@@ -261,14 +340,21 @@ export default function MitreCoverage() {
                   const tacticTechniques = byTactic[tactic] || [];
                   if (tacticTechniques.length === 0) return null;
                   
-                  const tacticCovered = tacticTechniques.filter(t => t.coverage_status !== 'not_covered').length;
-                  const tacticPercent = Math.round((tacticCovered / tacticTechniques.length) * 100);
+                  const tacticDetected = tacticTechniques.filter(t => t.detection_count > 0).length;
+                  const tacticPercent = Math.round((tacticDetected / tacticTechniques.length) * 100);
+                  const tacticData = TACTICS_DATA.find(td => td.name === tactic);
                   
                   return (
                     <Card key={tactic}>
                       <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
-                          <CardTitle className="text-sm">{tactic}</CardTitle>
+                          <CardTitle 
+                            className="text-sm flex items-center gap-2 cursor-pointer hover:text-primary transition-colors"
+                            onClick={() => tacticData && openTacticPage(tacticData.id)}
+                          >
+                            {tactic}
+                            <ExternalLink className="h-3 w-3 opacity-50" />
+                          </CardTitle>
                           <Badge variant="outline">{tacticPercent}%</Badge>
                         </div>
                         <Progress value={tacticPercent} className="h-1" />
@@ -277,11 +363,12 @@ export default function MitreCoverage() {
                         <div className="space-y-1">
                           {tacticTechniques.map(tech => (
                             <div 
-                              key={tech.id}
-                              className="flex items-center justify-between py-1.5 border-b border-border/50 last:border-0"
+                              key={tech.technique_id}
+                              className="flex items-center justify-between py-1.5 border-b border-border/50 last:border-0 cursor-pointer hover:bg-secondary/30 px-1 rounded transition-colors"
+                              onClick={() => openTechniquePage(tech.technique_id)}
                             >
                               <div className="flex items-center gap-2">
-                                <div className={cn("w-2 h-2 rounded-full", getCoverageColor(tech.coverage_status))} />
+                                <div className={cn("w-2 h-2 rounded-full", getCoverageColor(tech.detection_count))} />
                                 <span className="text-xs">
                                   <span className="font-mono text-muted-foreground">{tech.technique_id}</span>
                                   {' '}{tech.technique_name}
@@ -321,20 +408,22 @@ export default function MitreCoverage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {techniques.filter(t => t.coverage_status !== 'covered').map(tech => (
+                  {allTechniques.filter(t => t.detection_count === 0).map(tech => (
                     <div 
-                      key={tech.id}
-                      className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-secondary/30"
+                      key={tech.technique_id}
+                      className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-secondary/30 cursor-pointer hover:bg-secondary/50 transition-colors"
+                      onClick={() => openTechniquePage(tech.technique_id)}
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm">{tech.technique_id}</span>
                           <span className="text-sm font-medium">{tech.technique_name}</span>
+                          <ExternalLink className="h-3 w-3 opacity-50" />
                         </div>
                         <p className="text-xs text-muted-foreground">{tech.tactic}</p>
                       </div>
                       <div className="flex items-center gap-3">
-                        {getCoverageBadge(tech.coverage_status)}
+                        {getCoverageBadge(tech.detection_count)}
                         {!tech.has_playbook && (
                           <Badge variant="outline" className="text-xs">No Playbook</Badge>
                         )}
@@ -342,10 +431,10 @@ export default function MitreCoverage() {
                     </div>
                   ))}
                   
-                  {techniques.filter(t => t.coverage_status !== 'covered').length === 0 && (
+                  {allTechniques.filter(t => t.detection_count === 0).length === 0 && (
                     <div className="text-center py-8 text-muted-foreground">
                       <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-green-500" />
-                      <p>All techniques are covered!</p>
+                      <p>All techniques are detected!</p>
                     </div>
                   )}
                 </div>
@@ -365,18 +454,25 @@ export default function MitreCoverage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {notCoveredTechniques > 0 && (
+                {notCoveredTechniquesCalc > 0 && (
                   <div className="p-4 rounded-lg border border-warning/30 bg-warning/10">
                     <div className="flex items-start gap-3">
                       <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
                       <div>
                         <h4 className="font-medium">Detection Rules Needed</h4>
                         <p className="text-sm text-muted-foreground mt-1">
-                          {notCoveredTechniques} techniques have no detection coverage. Consider implementing detection rules for:
+                          {notCoveredTechniquesCalc} techniques have no detection coverage. Consider implementing detection rules for:
                         </p>
                         <div className="flex flex-wrap gap-2 mt-2">
-                          {techniques.filter(t => t.coverage_status === 'not_covered').slice(0, 5).map(t => (
-                            <Badge key={t.id} variant="outline">{t.technique_id}</Badge>
+                          {allTechniques.filter(t => t.detection_count === 0).slice(0, 5).map(t => (
+                            <Badge 
+                              key={t.technique_id} 
+                              variant="outline"
+                              className="cursor-pointer hover:bg-secondary"
+                              onClick={() => openTechniquePage(t.technique_id)}
+                            >
+                              {t.technique_id}
+                            </Badge>
                           ))}
                         </div>
                       </div>
@@ -384,7 +480,7 @@ export default function MitreCoverage() {
                   </div>
                 )}
                 
-                {techniques.filter(t => !t.has_playbook && t.detection_count > 0).length > 0 && (
+                {allTechniques.filter(t => !t.has_playbook && t.detection_count > 0).length > 0 && (
                   <div className="p-4 rounded-lg border border-primary/30 bg-primary/10">
                     <div className="flex items-start gap-3">
                       <Shield className="h-5 w-5 text-primary mt-0.5" />
@@ -394,8 +490,15 @@ export default function MitreCoverage() {
                           These techniques are detected but lack automated response playbooks:
                         </p>
                         <div className="flex flex-wrap gap-2 mt-2">
-                          {techniques.filter(t => !t.has_playbook && t.detection_count > 0).slice(0, 5).map(t => (
-                            <Badge key={t.id} variant="secondary">{t.technique_id} ({t.detection_count} detections)</Badge>
+                          {allTechniques.filter(t => !t.has_playbook && t.detection_count > 0).slice(0, 5).map(t => (
+                            <Badge 
+                              key={t.technique_id} 
+                              variant="secondary"
+                              className="cursor-pointer hover:bg-secondary/80"
+                              onClick={() => openTechniquePage(t.technique_id)}
+                            >
+                              {t.technique_id} ({t.detection_count} detections)
+                            </Badge>
                           ))}
                         </div>
                       </div>
@@ -409,10 +512,10 @@ export default function MitreCoverage() {
                     <div>
                       <h4 className="font-medium">Coverage Trend</h4>
                       <p className="text-sm text-muted-foreground mt-1">
-                        Current detection coverage is at {coveragePercent}%. 
-                        {coveragePercent < 50 && " Focus on high-impact techniques like T1071, T1059, and T1078."}
-                        {coveragePercent >= 50 && coveragePercent < 80 && " Good progress! Continue expanding to lateral movement and exfiltration tactics."}
-                        {coveragePercent >= 80 && " Excellent coverage! Consider advanced persistence and impact techniques next."}
+                        Current detection coverage is at {coveragePercentCalc}%. 
+                        {coveragePercentCalc < 50 && " Focus on high-impact techniques like T1071, T1059, and T1078."}
+                        {coveragePercentCalc >= 50 && coveragePercentCalc < 80 && " Good progress! Continue expanding to lateral movement and exfiltration tactics."}
+                        {coveragePercentCalc >= 80 && " Excellent coverage! Consider advanced persistence and impact techniques next."}
                       </p>
                     </div>
                   </div>
