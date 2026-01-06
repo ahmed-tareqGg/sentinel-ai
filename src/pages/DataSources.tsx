@@ -97,6 +97,17 @@ export default function DataSources() {
     log_types: ['auth', 'system', 'security'],
   });
   
+  const [manualFormData, setManualFormData] = useState({
+    name: '',
+    type: 'syslog',
+    hostname: '',
+    port: '514',
+    protocol: 'udp',
+    log_types: ['security'],
+  });
+  
+  const [addDialogTab, setAddDialogTab] = useState('agent');
+  
   const [simulateData, setSimulateData] = useState({
     log_type: 'security',
     count: 5,
@@ -141,6 +152,51 @@ export default function DataSources() {
     },
     onError: (error) => {
       toast.error('Failed to register agent: ' + (error as Error).message);
+    },
+  });
+
+  // Register manual data source
+  const registerManualMutation = useMutation({
+    mutationFn: async (data: typeof manualFormData) => {
+      // Insert directly into data_sources table
+      const { data: result, error } = await supabase
+        .from('data_sources')
+        .insert({
+          name: data.name,
+          type: data.type,
+          hostname: data.hostname || null,
+          ip_address: null,
+          os_type: null,
+          os_version: null,
+          agent_version: null,
+          status: 'pending',
+          log_types: data.log_types,
+          config: {
+            port: parseInt(data.port) || 514,
+            protocol: data.protocol,
+          },
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => {
+      setAddDialogOpen(false);
+      setManualFormData({
+        name: '',
+        type: 'syslog',
+        hostname: '',
+        port: '514',
+        protocol: 'udp',
+        log_types: ['security'],
+      });
+      queryClient.invalidateQueries({ queryKey: ['data-sources'] });
+      toast.success('Data source added successfully');
+    },
+    onError: (error) => {
+      toast.error('Failed to add data source: ' + (error as Error).message);
     },
   });
 
@@ -430,7 +486,7 @@ export default function DataSources() {
             </DialogDescription>
           </DialogHeader>
 
-          <Tabs defaultValue="agent" className="mt-4">
+          <Tabs value={addDialogTab} onValueChange={setAddDialogTab} className="mt-4">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="agent">VM Agent</TabsTrigger>
               <TabsTrigger value="manual">Manual</TabsTrigger>
@@ -496,10 +552,93 @@ export default function DataSources() {
               </div>
             </TabsContent>
 
-            <TabsContent value="manual" className="mt-4">
-              <div className="text-center py-8 text-muted-foreground">
-                <p>Manual configuration coming soon.</p>
-                <p className="text-sm mt-2">Use the VM Agent tab to register agents.</p>
+            <TabsContent value="manual" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>Source Name</Label>
+                <Input
+                  placeholder="Corporate SIEM"
+                  value={manualFormData.name}
+                  onChange={(e) => setManualFormData(prev => ({ ...prev, name: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Source Type</Label>
+                <Select
+                  value={manualFormData.type}
+                  onValueChange={(value) => setManualFormData(prev => ({ ...prev, type: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="syslog">Syslog</SelectItem>
+                    <SelectItem value="siem">SIEM Integration</SelectItem>
+                    <SelectItem value="api">API Endpoint</SelectItem>
+                    <SelectItem value="cloud">Cloud Service</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Hostname / Endpoint</Label>
+                <Input
+                  placeholder={manualFormData.type === 'api' ? 'https://api.example.com/logs' : 'siem.example.com'}
+                  value={manualFormData.hostname}
+                  onChange={(e) => setManualFormData(prev => ({ ...prev, hostname: e.target.value }))}
+                />
+              </div>
+
+              {manualFormData.type === 'syslog' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Port</Label>
+                    <Input
+                      placeholder="514"
+                      value={manualFormData.port}
+                      onChange={(e) => setManualFormData(prev => ({ ...prev, port: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Protocol</Label>
+                    <Select
+                      value={manualFormData.protocol}
+                      onValueChange={(value) => setManualFormData(prev => ({ ...prev, protocol: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="udp">UDP</SelectItem>
+                        <SelectItem value="tcp">TCP</SelectItem>
+                        <SelectItem value="tls">TLS</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label>Log Types</Label>
+                <div className="flex flex-wrap gap-4">
+                  {['auth', 'system', 'security', 'application', 'network', 'firewall'].map((type) => (
+                    <div key={`manual-${type}`} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`manual-${type}`}
+                        checked={manualFormData.log_types.includes(type)}
+                        onCheckedChange={(checked) => {
+                          setManualFormData(prev => ({
+                            ...prev,
+                            log_types: checked
+                              ? [...prev.log_types, type]
+                              : prev.log_types.filter(t => t !== type),
+                          }));
+                        }}
+                      />
+                      <label htmlFor={`manual-${type}`} className="text-sm capitalize">{type}</label>
+                    </div>
+                  ))}
+                </div>
               </div>
             </TabsContent>
           </Tabs>
@@ -508,12 +647,21 @@ export default function DataSources() {
             <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
               Cancel
             </Button>
-            <Button 
-              onClick={() => registerMutation.mutate(formData)}
-              disabled={!formData.hostname || registerMutation.isPending}
-            >
-              {registerMutation.isPending ? 'Registering...' : 'Register Agent'}
-            </Button>
+            {addDialogTab === 'agent' ? (
+              <Button 
+                onClick={() => registerMutation.mutate(formData)}
+                disabled={!formData.hostname || registerMutation.isPending}
+              >
+                {registerMutation.isPending ? 'Registering...' : 'Register Agent'}
+              </Button>
+            ) : (
+              <Button 
+                onClick={() => registerManualMutation.mutate(manualFormData)}
+                disabled={!manualFormData.name || registerManualMutation.isPending}
+              >
+                {registerManualMutation.isPending ? 'Adding...' : 'Add Source'}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
