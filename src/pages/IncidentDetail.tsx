@@ -130,25 +130,37 @@ export default function IncidentDetail() {
   const updateStatus = async (newStatus: string) => {
     if (!incident) return;
     setUpdating(true);
-    
-    const { error } = await supabase
+
+    const { data, error } = await supabase
       .from('incidents')
       .update({ status: newStatus })
-      .eq('id', incident.id);
+      .eq('id', incident.id)
+      // Ask PostgREST to return the updated row so we can detect “0 rows updated”
+      .select('id,status')
+      .maybeSingle();
 
-    if (error) {
-      toast.error('Failed to update status');
+    if (error || !data) {
+      const isNoRow = (error as any)?.code === 'PGRST116';
+      toast.error(isNoRow ? 'مفيش صلاحية لتحديث الـ Status.' : 'Failed to update status');
+      setUpdating(false);
+      return;
+    }
+
+    setIncident((prev) => (prev ? { ...prev, status: data.status } : null));
+    toast.success(`Status updated to ${data.status}`);
+
+    const { error: timelineError } = await supabase.from('incident_timeline').insert({
+      incident_id: incident.id,
+      stage: `Status Changed to ${data.status}`,
+      details: 'Manual status update by analyst',
+    });
+
+    if (timelineError) {
+      console.warn('Failed to write timeline entry:', timelineError);
     } else {
-      setIncident(prev => prev ? { ...prev, status: newStatus } : null);
-      toast.success(`Status updated to ${newStatus}`);
-      
-      await supabase.from('incident_timeline').insert({
-        incident_id: incident.id,
-        stage: `Status Changed to ${newStatus}`,
-        details: 'Manual status update by analyst',
-      });
       fetchTimeline();
     }
+
     setUpdating(false);
   };
 
