@@ -101,6 +101,7 @@ export const ROLE_METADATA: Record<SOCRole, {
 export const NAV_ACCESS: Record<string, SOCRole[]> = {
   '/dashboard': ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso'],
   '/incidents': ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso'],
+  '/data-sources': ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
   '/analytics': ['soc_manager', 'ciso'],
   '/reports': ['soc_manager', 'grc_engineer', 'ciso'],
   '/playbooks': ['soc_tier_2', 'soc_tier_3', 'soc_manager'],
@@ -108,9 +109,9 @@ export const NAV_ACCESS: Record<string, SOCRole[]> = {
   '/integrations': ['soc_manager', 'ciso'],
   '/compliance': ['grc_engineer', 'ciso'],
   '/mitre-coverage': ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
-  '/demo': ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso'],
+  '/demo': ['soc_manager', 'ciso'],  // Restricted: Demo for leadership only
   '/settings': ['soc_manager', 'ciso'],
-  '/admin/cloud': ['ciso'],
+  '/admin/cloud': ['ciso', 'soc_manager'],
 };
 
 export function usePermissions() {

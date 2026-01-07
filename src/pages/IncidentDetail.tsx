@@ -65,7 +65,13 @@ export default function IncidentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { role } = useAuth();
+
+  // Permission checks based on role
+  const isTier1 = role === 'soc_tier_1';
   const canModifyIncidents = role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(role);
+  const canCloseIncident = role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(role);
+  const canRunPlaybook = role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(role);
+
   const [incident, setIncident] = useState<Incident | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -652,7 +658,10 @@ export default function IncidentDetail() {
                   <SelectContent>
                     <SelectItem value="Open">Open</SelectItem>
                     <SelectItem value="In Progress">In Progress</SelectItem>
-                    <SelectItem value="Closed">Closed</SelectItem>
+                    {/* Tier 1 cannot close incidents */}
+                    {canCloseIncident && (
+                      <SelectItem value="Closed">Closed</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
                 <div className="flex items-center gap-2">
@@ -665,15 +674,18 @@ export default function IncidentDetail() {
                     {updating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Shield className="h-4 w-4 mr-2" />}
                     Run Analysis
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={executePlaybook} 
-                    disabled={updating}
-                    className="border-primary/30 text-primary hover:bg-primary/10"
-                  >
-                    {updating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
-                    Run Playbook
-                  </Button>
+                  {/* Tier 1 cannot execute playbooks */}
+                  {canRunPlaybook && (
+                    <Button 
+                      variant="outline" 
+                      onClick={executePlaybook} 
+                      disabled={updating}
+                      className="border-primary/30 text-primary hover:bg-primary/10"
+                    >
+                      {updating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
+                      Run Playbook
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
