@@ -38,15 +38,16 @@ async function verifyAuthAndRole(req: Request, isInternal: boolean): Promise<{ u
     return { user: null, error: 'Invalid or expired token' };
   }
 
-  // Check if user has required role (admin or soc_analyst)
+  // Check if user has required role (any SOC role or admin)
   const { data: roleData } = await supabase
     .from('user_roles')
     .select('role')
     .eq('user_id', user.id)
     .single();
 
-  if (!roleData || !['admin', 'soc_analyst'].includes(roleData.role)) {
-    return { user: null, error: 'Insufficient permissions. Admin or SOC Analyst role required.' };
+  const allowedRoles = ['admin', 'soc_analyst', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso'];
+  if (!roleData || !allowedRoles.includes(roleData.role)) {
+    return { user: null, error: 'Insufficient permissions. SOC role required.' };
   }
 
   return { user };
