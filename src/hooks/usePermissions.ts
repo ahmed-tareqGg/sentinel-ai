@@ -109,6 +109,7 @@ export const NAV_ACCESS: Record<string, SOCRole[]> = {
   '/integrations': ['soc_manager', 'ciso'],
   '/compliance': ['grc_engineer', 'ciso'],
   '/mitre-coverage': ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
+  '/threat-hunting': ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
   '/demo': ['soc_manager', 'ciso'],  // Restricted: Demo for leadership only
   '/settings': ['soc_manager', 'ciso'],
   '/admin/cloud': ['ciso', 'soc_manager'],

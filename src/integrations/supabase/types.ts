@@ -829,6 +829,47 @@ export type Database = {
         }
         Relationships: []
       }
+      soar_actions: {
+        Row: {
+          action_type: string
+          created_at: string
+          details: Json | null
+          execution_mode: string | null
+          id: string
+          incident_id: string | null
+          status: string | null
+          target: string | null
+        }
+        Insert: {
+          action_type: string
+          created_at?: string
+          details?: Json | null
+          execution_mode?: string | null
+          id?: string
+          incident_id?: string | null
+          status?: string | null
+          target?: string | null
+        }
+        Update: {
+          action_type?: string
+          created_at?: string
+          details?: Json | null
+          execution_mode?: string | null
+          id?: string
+          incident_id?: string | null
+          status?: string | null
+          target?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "soar_actions_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_settings: {
         Row: {
           id: string
