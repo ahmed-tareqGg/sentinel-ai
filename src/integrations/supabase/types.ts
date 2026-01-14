@@ -808,6 +808,78 @@ export type Database = {
         }
         Relationships: []
       }
+      raw_logs: {
+        Row: {
+          analyzed_at: string | null
+          created_at: string
+          data_source_id: string | null
+          error_message: string | null
+          hostname: string | null
+          id: string
+          incident_id: string | null
+          ip_address: string | null
+          log_type: string
+          mitre_technique: string | null
+          parsed_message: string | null
+          processing_status: string | null
+          raw_payload: Json
+          received_at: string
+          severity: string | null
+          timestamp: string
+        }
+        Insert: {
+          analyzed_at?: string | null
+          created_at?: string
+          data_source_id?: string | null
+          error_message?: string | null
+          hostname?: string | null
+          id?: string
+          incident_id?: string | null
+          ip_address?: string | null
+          log_type: string
+          mitre_technique?: string | null
+          parsed_message?: string | null
+          processing_status?: string | null
+          raw_payload: Json
+          received_at?: string
+          severity?: string | null
+          timestamp?: string
+        }
+        Update: {
+          analyzed_at?: string | null
+          created_at?: string
+          data_source_id?: string | null
+          error_message?: string | null
+          hostname?: string | null
+          id?: string
+          incident_id?: string | null
+          ip_address?: string | null
+          log_type?: string
+          mitre_technique?: string | null
+          parsed_message?: string | null
+          processing_status?: string | null
+          raw_payload?: Json
+          received_at?: string
+          severity?: string | null
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "raw_logs_data_source_id_fkey"
+            columns: ["data_source_id"]
+            isOneToOne: false
+            referencedRelation: "data_sources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "raw_logs_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       role_permissions: {
         Row: {
           created_at: string | null
