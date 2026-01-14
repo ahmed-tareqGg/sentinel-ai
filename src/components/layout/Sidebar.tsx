@@ -15,7 +15,8 @@ import {
   ClipboardCheck,
   FileCheck,
   Target,
-  Server
+  Server,
+  ScrollText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth, AppRole } from '@/hooks/useAuth';
@@ -27,6 +28,7 @@ const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
   { icon: AlertTriangle, label: 'Incidents', path: '/incidents' },
   { icon: Server, label: 'Data Sources', path: '/data-sources' },
+  { icon: ScrollText, label: 'Live Logs', path: '/live-logs' },
   { icon: BarChart3, label: 'Analytics', path: '/analytics' },
   { icon: FileText, label: 'Reports', path: '/reports' },
   { icon: Zap, label: 'Playbooks', path: '/playbooks' },

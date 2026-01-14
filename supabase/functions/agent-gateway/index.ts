@@ -252,21 +252,52 @@ serve(async (req) => {
 
         const logPool = SIMULATED_LOGS[log_type as keyof typeof SIMULATED_LOGS] || SIMULATED_LOGS.security;
         const simulatedLogs = [];
+        const rawLogsToInsert = [];
 
         for (let i = 0; i < Math.min(count, 10); i++) {
           const baseLog = logPool[Math.floor(Math.random() * logPool.length)];
+          const timestamp = new Date().toISOString();
+          const srcIP = dataSource.ip_address || '10.0.0.' + Math.floor(Math.random() * 255);
+          
           simulatedLogs.push({
             eventType: baseLog.event_type,
             severity: baseLog.severity,
-            srcIP: dataSource.ip_address || '10.0.0.' + Math.floor(Math.random() * 255),
+            srcIP: srcIP,
             dstIP: '192.168.1.' + Math.floor(Math.random() * 255),
             msg: baseLog.message,
             fileHash: 'file_hash' in baseLog ? baseLog.file_hash : undefined,
-            time: new Date().toISOString(),
+            time: timestamp,
+          });
+
+          // Prepare raw log entry
+          rawLogsToInsert.push({
+            data_source_id: data_source_id,
+            timestamp: timestamp,
+            log_type: log_type,
+            severity: baseLog.severity >= 4 ? 'high' : baseLog.severity >= 3 ? 'medium' : 'low',
+            hostname: dataSource.hostname,
+            ip_address: srcIP,
+            raw_payload: { ...baseLog, timestamp },
+            parsed_message: baseLog.message,
+            processing_status: 'pending',
           });
         }
 
-        // Send to ingest-log
+        // Insert raw logs first
+        if (rawLogsToInsert.length > 0) {
+          const { data: insertedLogs, error: rawError } = await supabase
+            .from('raw_logs')
+            .insert(rawLogsToInsert)
+            .select('id');
+          
+          if (rawError) {
+            console.error('Failed to insert raw logs:', rawError);
+          } else {
+            console.log(`📝 Stored ${insertedLogs?.length || 0} raw logs`);
+          }
+        }
+
+        // Send to ingest-log for analysis
         const ingestResponse = await fetch(`${supabaseUrl}/functions/v1/ingest-log`, {
           method: 'POST',
           headers: {
@@ -284,6 +315,17 @@ serve(async (req) => {
         }
 
         const ingestResult = await ingestResponse.json();
+
+        // Update raw logs status
+        if (ingestResult.incidents?.length > 0) {
+          await supabase
+            .from('raw_logs')
+            .update({ processing_status: 'incident_created', analyzed_at: new Date().toISOString() })
+            .eq('data_source_id', data_source_id)
+            .eq('processing_status', 'pending')
+            .order('created_at', { ascending: false })
+            .limit(rawLogsToInsert.length);
+        }
 
         // Update data source stats
         await supabase
@@ -343,6 +385,35 @@ serve(async (req) => {
       if (action === 'ingest') {
         const body = await req.json() as LogBatch;
 
+        // Store raw logs first
+        const rawLogsToInsert = body.logs.map(log => ({
+          data_source_id: auth.dataSourceId,
+          timestamp: log.timestamp,
+          log_type: log.log_type,
+          severity: log.severity >= 4 ? 'high' : log.severity >= 3 ? 'medium' : log.severity >= 2 ? 'low' : 'info',
+          hostname: auth.dataSourceName,
+          ip_address: log.source_ip,
+          raw_payload: log.raw_log || log,
+          parsed_message: log.message,
+          processing_status: 'pending' as const,
+        }));
+
+        // Insert raw logs
+        let insertedLogIds: string[] = [];
+        if (rawLogsToInsert.length > 0) {
+          const { data: insertedLogs, error: rawError } = await supabase
+            .from('raw_logs')
+            .insert(rawLogsToInsert)
+            .select('id');
+          
+          if (rawError) {
+            console.error('Failed to insert raw logs:', rawError);
+          } else {
+            insertedLogIds = insertedLogs?.map(l => l.id) || [];
+            console.log(`📝 Stored ${insertedLogIds.length} raw logs`);
+          }
+        }
+
         // Transform logs to ingest-log format
         const transformedLogs = body.logs.map(log => ({
           eventType: log.log_type,
@@ -371,10 +442,32 @@ serve(async (req) => {
         if (!ingestResponse.ok) {
           const errorText = await ingestResponse.text();
           console.error('Ingest failed:', errorText);
+          
+          // Update raw logs with error status
+          if (insertedLogIds.length > 0) {
+            await supabase
+              .from('raw_logs')
+              .update({ processing_status: 'error', error_message: 'Analysis failed', analyzed_at: new Date().toISOString() })
+              .in('id', insertedLogIds);
+          }
+          
           throw new Error('Failed to process logs');
         }
 
         const ingestResult = await ingestResponse.json();
+
+        // Update raw logs status based on results
+        if (insertedLogIds.length > 0) {
+          const status = ingestResult.incidents?.length > 0 ? 'incident_created' : 'analyzed';
+          await supabase
+            .from('raw_logs')
+            .update({ 
+              processing_status: status, 
+              analyzed_at: new Date().toISOString(),
+              incident_id: ingestResult.incidents?.[0]?.id || null,
+            })
+            .in('id', insertedLogIds);
+        }
 
         // Update data source stats
         const { data: currentSource } = await supabase
@@ -404,7 +497,7 @@ serve(async (req) => {
               hour: currentHour,
               log_type: log.log_type,
               count: 1,
-              incidents_created: 1,
+              incidents_created: ingestResult.incidents?.length > 0 ? 1 : 0,
             }, {
               onConflict: 'data_source_id,date,hour,log_type',
             });
