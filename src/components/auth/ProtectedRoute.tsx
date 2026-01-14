@@ -31,6 +31,7 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
   // Check role requirements using the role hierarchy
   if (requiredRole && role) {
     const roleHierarchy: Record<SOCRole, number> = {
+      admin: 6,
       soc_tier_1: 1,
       soc_tier_2: 2,
       soc_tier_3: 3,
