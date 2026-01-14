@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/backend/client';
 
 // SOC Role Types
 export type SOCRole = 
+  | 'admin'
   | 'soc_tier_1' 
   | 'soc_tier_2' 
   | 'soc_tier_3' 
@@ -59,6 +60,12 @@ export const ROLE_METADATA: Record<SOCRole, {
   color: string;
   badgeClass: string;
 }> = {
+  admin: {
+    label: 'Admin',
+    description: 'System Administrator',
+    color: 'red',
+    badgeClass: 'bg-red-500/20 text-red-400 border-red-500/30',
+  },
   soc_tier_1: {
     label: 'SOC Tier 1',
     description: 'Alert Triage Analyst',
@@ -99,21 +106,21 @@ export const ROLE_METADATA: Record<SOCRole, {
 
 // Navigation access by role
 export const NAV_ACCESS: Record<string, SOCRole[]> = {
-  '/dashboard': ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso'],
-  '/incidents': ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso'],
-  '/data-sources': ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
-  '/live-logs': ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
-  '/analytics': ['soc_manager', 'ciso'],
-  '/reports': ['soc_manager', 'grc_engineer', 'ciso'],
-  '/playbooks': ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager'],
-  '/approvals': ['soc_tier_3', 'soc_manager', 'ciso'],
-  '/integrations': ['soc_manager', 'ciso'],
-  '/compliance': ['grc_engineer', 'ciso'],
-  '/mitre-coverage': ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
-  '/threat-hunting': ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
-  '/demo': ['soc_manager', 'ciso'],  // Restricted: Demo for leadership only
-  '/settings': ['soc_manager', 'ciso'],
-  '/admin/cloud': ['ciso', 'soc_manager'],
+  '/dashboard': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso'],
+  '/incidents': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso'],
+  '/data-sources': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
+  '/live-logs': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
+  '/analytics': ['admin', 'soc_manager', 'ciso'],
+  '/reports': ['admin', 'soc_manager', 'grc_engineer', 'ciso'],
+  '/playbooks': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager'],
+  '/approvals': ['admin', 'soc_tier_3', 'soc_manager', 'ciso'],
+  '/integrations': ['admin', 'soc_manager', 'ciso'],
+  '/compliance': ['admin', 'grc_engineer', 'ciso'],
+  '/mitre-coverage': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
+  '/threat-hunting': ['admin', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
+  '/demo': ['admin', 'soc_manager', 'ciso'],
+  '/settings': ['admin', 'soc_manager', 'ciso'],
+  '/admin/cloud': ['admin', 'ciso', 'soc_manager'],
 };
 
 export function usePermissions() {

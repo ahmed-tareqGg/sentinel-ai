@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/backend/client';
 
 // SOC Role Types - new enterprise RBAC
 export type AppRole = 
+  | 'admin'
   | 'soc_tier_1' 
   | 'soc_tier_2' 
   | 'soc_tier_3' 
@@ -26,6 +27,7 @@ interface AuthContextType {
   loading: boolean;
   signOut: () => Promise<void>;
   // Role checks
+  isAdmin: boolean;
   isCISO: boolean;
   isManager: boolean;
   isTier3: boolean;
@@ -118,16 +120,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // Role hierarchy checks
-  const isCISO = role === 'ciso';
-  const isManager = role === 'soc_manager';
-  const isTier3 = role === 'soc_tier_3';
-  const isTier2 = role === 'soc_tier_2';
-  const isTier1 = role === 'soc_tier_1';
+  const isAdmin = role === 'admin';
+  const isCISO = role === 'ciso' || isAdmin;
+  const isManager = role === 'soc_manager' || isCISO;
+  const isTier3 = role === 'soc_tier_3' || isManager;
+  const isTier2 = role === 'soc_tier_2' || isTier3;
+  const isTier1 = role === 'soc_tier_1' || isTier2;
   const isGRC = role === 'grc_engineer';
   
   // Permission-based checks
-  const canManageUsers = isCISO || isManager;
-  const canExecutePlaybooks = isCISO || isManager || isTier3;
+  const canManageUsers = isCISO || isManager || isAdmin;
+  const canExecutePlaybooks = isCISO || isManager || isTier3 || isAdmin;
 
   return (
     <AuthContext.Provider value={{
@@ -137,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role,
       loading,
       signOut,
+      isAdmin,
       isCISO,
       isManager,
       isTier3,
