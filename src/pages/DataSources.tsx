@@ -77,8 +77,8 @@ const STATUS_CONFIG: Record<string, { color: string; icon: React.ReactNode }> = 
 };
 
 export default function DataSources() {
-  const { isManager, isCISO } = useAuth();
-  const canManage = isManager || isCISO;
+  const { isManager, isCISO, isAdmin } = useAuth();
+  const canManage = isManager || isCISO || isAdmin;
   const queryClient = useQueryClient();
   
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -699,14 +699,18 @@ export default function DataSources() {
             </Button>
 
             <div className="text-sm text-muted-foreground">
+              <p className="font-medium mb-2">API Endpoint:</p>
+              <pre className="p-2 bg-secondary rounded text-xs overflow-x-auto mb-3">
+https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
+              </pre>
               <p className="font-medium mb-2">Usage:</p>
               <p>Include this key in the X-Agent-Key header when sending logs:</p>
               <pre className="mt-2 p-2 bg-secondary rounded text-xs overflow-x-auto">
 {`curl -X POST \\
-  -H "X-Agent-Key: ${newApiKey?.slice(0, 20)}..." \\
+  -H "X-Agent-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"logs": [...]}' \\
-  https://api.socmind.io/agent-gateway/ingest`}
+  https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway/ingest`}
               </pre>
             </div>
           </div>
@@ -784,59 +788,128 @@ export default function DataSources() {
 
       {/* Agent Download Dialog */}
       <Dialog open={agentDownloadOpen} onOpenChange={setAgentDownloadOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Download SOCMind Agent</DialogTitle>
             <DialogDescription>
-              Choose your operating system to download the lightweight log collection agent
+              Download the agent and configure it with your API credentials
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <a
-              href="/agents/socmind-agent-linux.sh"
-              download="socmind-agent-linux.sh"
-              className="flex items-center gap-4 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer"
-            >
-              <Terminal className="h-10 w-10 text-orange-500" />
-              <div className="flex-1">
-                <p className="font-medium">Linux Agent</p>
-                <p className="text-sm text-muted-foreground">
-                  Bash script for Ubuntu, Debian, RHEL, CentOS
-                </p>
+          <div className="space-y-6 py-4">
+            {/* API Endpoint Section */}
+            <div className="rounded-lg border border-primary/50 bg-primary/5 p-4">
+              <p className="text-sm font-semibold text-primary mb-3 flex items-center gap-2">
+                <Key className="h-4 w-4" />
+                API Configuration
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-xs text-muted-foreground">API Endpoint</Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <code className="flex-1 bg-background p-2 rounded text-sm font-mono border border-border overflow-x-auto">
+                      https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => copyToClipboard('https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway')}
+                    >
+                      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+                <div className="border-t border-border pt-3">
+                  <Label className="text-xs text-muted-foreground">Agent API Key</Label>
+                  {dataSources && dataSources.length > 0 && dataSources[0].agent_api_keys && dataSources[0].agent_api_keys.length > 0 ? (
+                    <div className="mt-1">
+                      <p className="text-sm text-muted-foreground">
+                        Your existing key: <code className="bg-background px-2 py-1 rounded">{dataSources[0].agent_api_keys[0].key_prefix}...</code>
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2 gap-2"
+                        onClick={() => {
+                          if (dataSources[0]) {
+                            generateKeyMutation.mutate(dataSources[0].id);
+                          }
+                        }}
+                      >
+                        <Key className="h-3 w-3" />
+                        Generate New Key
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="mt-1">
+                      <p className="text-sm text-yellow-500 bg-yellow-500/10 p-2 rounded flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4" />
+                        No agent registered yet. Register an agent first to get an API key.
+                      </p>
+                      <Button
+                        className="mt-2 gap-2"
+                        onClick={() => {
+                          setAgentDownloadOpen(false);
+                          setAddDialogOpen(true);
+                        }}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Register Agent
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
-              <Download className="h-5 w-5 text-muted-foreground" />
-            </a>
+            </div>
 
-            <a
-              href="/agents/socmind-agent-windows.ps1"
-              download="socmind-agent-windows.ps1"
-              className="flex items-center gap-4 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer"
-            >
-              <Monitor className="h-10 w-10 text-blue-500" />
-              <div className="flex-1">
-                <p className="font-medium">Windows Agent</p>
-                <p className="text-sm text-muted-foreground">
-                  PowerShell script for Windows Server 2016+
-                </p>
-              </div>
-              <Download className="h-5 w-5 text-muted-foreground" />
-            </a>
+            {/* Download Agents */}
+            <div className="grid grid-cols-2 gap-4">
+              <a
+                href="/agents/socmind-agent-linux.sh"
+                download="socmind-agent-linux.sh"
+                className="flex flex-col items-center gap-3 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center"
+              >
+                <Terminal className="h-10 w-10 text-orange-500" />
+                <div>
+                  <p className="font-medium">Linux Agent</p>
+                  <p className="text-xs text-muted-foreground">Ubuntu, Debian, RHEL</p>
+                </div>
+                <Download className="h-4 w-4 text-muted-foreground" />
+              </a>
 
+              <a
+                href="/agents/socmind-agent-windows.ps1"
+                download="socmind-agent-windows.ps1"
+                className="flex flex-col items-center gap-3 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center"
+              >
+                <Monitor className="h-10 w-10 text-blue-500" />
+                <div>
+                  <p className="font-medium">Windows Agent</p>
+                  <p className="text-xs text-muted-foreground">Windows Server 2016+</p>
+                </div>
+                <Download className="h-4 w-4 text-muted-foreground" />
+              </a>
+            </div>
+
+            {/* Quick Start */}
             <div className="rounded-lg border border-border bg-secondary/30 p-4">
-              <p className="text-sm font-medium mb-2">Quick Start:</p>
-              <div className="space-y-2 text-xs text-muted-foreground">
-                <p><strong>Linux:</strong></p>
-                <pre className="bg-background p-2 rounded overflow-x-auto">
-{`chmod +x socmind-agent-linux.sh
-sudo ./socmind-agent-linux.sh configure
-sudo ./socmind-agent-linux.sh run`}
-                </pre>
-                <p className="mt-3"><strong>Windows (Run as Administrator):</strong></p>
-                <pre className="bg-background p-2 rounded overflow-x-auto">
-{`.\\socmind-agent-windows.ps1 configure
-.\\socmind-agent-windows.ps1 run`}
-                </pre>
+              <p className="text-sm font-medium mb-3">🚀 Quick Start:</p>
+              <div className="space-y-3 text-xs">
+                <div>
+                  <p className="font-medium mb-1">1. Download and configure:</p>
+                  <pre className="bg-background p-2 rounded overflow-x-auto text-muted-foreground">
+{`# Linux
+chmod +x socmind-agent-linux.sh
+./socmind-agent-linux.sh
+
+# Windows (Run as Administrator)
+.\\socmind-agent-windows.ps1`}
+                  </pre>
+                </div>
+                <div>
+                  <p className="font-medium mb-1">2. Enter your API Key when prompted</p>
+                  <p className="text-muted-foreground">The agent will connect automatically</p>
+                </div>
               </div>
             </div>
           </div>
