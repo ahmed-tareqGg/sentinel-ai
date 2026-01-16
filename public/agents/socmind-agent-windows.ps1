@@ -48,6 +48,21 @@ function Get-Config {
     return $null
 }
 
+function Get-ConfigValue {
+    param(
+        [hashtable]$Config,
+        [string[]]$Keys
+    )
+
+    foreach ($k in $Keys) {
+        if ($Config.ContainsKey($k) -and -not [string]::IsNullOrWhiteSpace($Config[$k])) {
+            return $Config[$k]
+        }
+    }
+
+    return $null
+}
+
 function Set-AgentConfig {
     Write-Log "Configuring SOCMind Agent..."
     
@@ -76,12 +91,23 @@ function Set-AgentConfig {
     
     $hostname = $env:COMPUTERNAME
     
-    $configContent = @"
+$configContent = @"
+# SOCMind Agent Configuration
+# (Supports both SOCMIND_* keys and simple keys like endpoint/api_key for compatibility)
+
+# Preferred keys
 SOCMIND_API_ENDPOINT="$endpoint"
 SOCMIND_API_KEY="$apiKey"
 SOCMIND_LOG_TYPES="$logTypes"
 SOCMIND_INTERVAL="$interval"
 SOCMIND_HOSTNAME="$hostname"
+
+# Compatibility keys
+endpoint="$endpoint"
+api_key="$apiKey"
+log_types="$logTypes"
+interval="$interval"
+hostname="$hostname"
 "@
     
     Set-Content -Path $ConfigPath -Value $configContent
@@ -96,23 +122,22 @@ function Send-Heartbeat {
     
     $config = Get-Config
     if (-not $config) { return }
-    
-    $body = @{
-        hostname = $config["SOCMIND_HOSTNAME"]
-        status = $Status
+
+    $endpoint = Get-ConfigValue -Config $config -Keys @('SOCMIND_API_ENDPOINT', 'endpoint')
+    $apiKey = Get-ConfigValue -Config $config -Keys @('SOCMIND_API_KEY', 'api_key', 'AGENT_API_KEY', 'AGENT_KEY')
+    $hostname = Get-ConfigValue -Config $config -Keys @('SOCMIND_HOSTNAME', 'hostname')
+
+    if ([string]::IsNullOrWhiteSpace($endpoint) -or [string]::IsNullOrWhiteSpace($apiKey)) {
+        return
     }
-    
-    if ($ErrorMessage) {
-        $body["error_message"] = $ErrorMessage
-    }
-    
+
+    $body = @{ hostname = $hostname; status = $Status }
+    if ($ErrorMessage) { $body["error_message"] = $ErrorMessage }
+
     try {
-        $headers = @{
-            "X-Agent-Key" = $config["SOCMIND_API_KEY"]
-            "Content-Type" = "application/json"
-        }
-        
-        Invoke-RestMethod -Uri "$($config["SOCMIND_API_ENDPOINT"])/heartbeat" `
+        $headers = @{ "X-Agent-Key" = $apiKey; "Content-Type" = "application/json" }
+
+        Invoke-RestMethod -Uri "$endpoint/heartbeat" `
             -Method Post -Headers $headers -Body ($body | ConvertTo-Json) -ErrorAction SilentlyContinue
     }
     catch {
@@ -264,20 +289,23 @@ function Send-Logs {
     
     $config = Get-Config
     if (-not $config) { return $false }
-    
-    $body = @{
-        logs = $Logs
+
+    $endpoint = Get-ConfigValue -Config $config -Keys @('SOCMIND_API_ENDPOINT', 'endpoint')
+    $apiKey = Get-ConfigValue -Config $config -Keys @('SOCMIND_API_KEY', 'api_key', 'AGENT_API_KEY', 'AGENT_KEY')
+
+    if ([string]::IsNullOrWhiteSpace($endpoint) -or [string]::IsNullOrWhiteSpace($apiKey)) {
+        Write-Log "API Key is required" -Level "ERROR"
+        return $false
     }
-    
+
+    $body = @{ logs = $Logs }
+
     try {
-        $headers = @{
-            "X-Agent-Key" = $config["SOCMIND_API_KEY"]
-            "Content-Type" = "application/json"
-        }
-        
-        $response = Invoke-RestMethod -Uri "$($config["SOCMIND_API_ENDPOINT"])/ingest" `
+        $headers = @{ "X-Agent-Key" = $apiKey; "Content-Type" = "application/json" }
+
+        $response = Invoke-RestMethod -Uri "$endpoint/ingest" `
             -Method Post -Headers $headers -Body ($body | ConvertTo-Json -Depth 10)
-        
+
         Write-Log "Successfully sent $($Logs.Count) logs"
         return $true
     }
@@ -298,18 +326,23 @@ function Start-Agent {
         Write-Log "Configuration not found. Run 'socmind-agent.ps1 configure' first" -Level "ERROR"
         return
     }
-    
+
+    $endpoint = Get-ConfigValue -Config $config -Keys @('SOCMIND_API_ENDPOINT', 'endpoint')
+    $hostname = Get-ConfigValue -Config $config -Keys @('SOCMIND_HOSTNAME', 'hostname')
+    $logTypesRaw = Get-ConfigValue -Config $config -Keys @('SOCMIND_LOG_TYPES', 'log_types')
+    $intervalRaw = Get-ConfigValue -Config $config -Keys @('SOCMIND_INTERVAL', 'interval')
+
     Write-Log "SOCMind Agent v$AgentVersion starting..."
-    Write-Log "Hostname: $($config["SOCMIND_HOSTNAME"])"
-    Write-Log "API Endpoint: $($config["SOCMIND_API_ENDPOINT"])"
-    Write-Log "Log Types: $($config["SOCMIND_LOG_TYPES"])"
-    Write-Log "Interval: $($config["SOCMIND_INTERVAL"])s"
-    
+    Write-Log "Hostname: $hostname"
+    Write-Log "API Endpoint: $endpoint"
+    Write-Log "Log Types: $logTypesRaw"
+    Write-Log "Interval: $intervalRaw`s"
+
     # Initial heartbeat
     Send-Heartbeat -Status "active"
-    
-    $interval = [int]$config["SOCMIND_INTERVAL"]
-    $logTypes = $config["SOCMIND_LOG_TYPES"] -split ","
+
+    $interval = [int]$intervalRaw
+    $logTypes = $logTypesRaw -split ","
     
     while ($true) {
         $allLogs = @()

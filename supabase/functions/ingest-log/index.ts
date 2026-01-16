@@ -23,30 +23,50 @@ interface RawLog {
   [key: string]: unknown;
 }
 
-async function verifyAuth(req: Request): Promise<{ user: any; isApiKey: boolean; error?: string }> {
+async function verifyAuth(
+  req: Request,
+): Promise<{ user: any; isApiKey: boolean; error?: string }> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-  // Check for API key authentication (for external systems like SIEM)
+  // 1) Service-role internal calls (from backend functions)
+  const authHeader = req.headers.get('Authorization');
+  if (authHeader?.toLowerCase().startsWith('bearer ')) {
+    const token = authHeader.slice(7).trim();
+    if (token === serviceRoleKey) {
+      console.log('Authenticated via internal service role');
+      return { user: { id: 'internal-service', type: 'service_role' }, isApiKey: true };
+    }
+  }
+
+  // 2) API key authentication (for external systems like SIEM)
   const apiKey = req.headers.get('x-api-key');
-  const validApiKeys = Deno.env.get('INGEST_API_KEYS')?.split(',').filter(k => k.trim()) || [];
-  
+  const validApiKeys =
+    Deno.env.get('INGEST_API_KEYS')?.split(',').filter((k) => k.trim()) || [];
+
   if (apiKey && validApiKeys.includes(apiKey)) {
     console.log('Authenticated via API key');
     return { user: { id: 'api-key-user', type: 'api_key' }, isApiKey: true };
   }
 
-  // Check for JWT authentication
-  const authHeader = req.headers.get('Authorization');
+  // 3) JWT authentication (browser/users)
   if (!authHeader) {
-    return { user: null, isApiKey: false, error: 'Missing authorization. Provide JWT token or X-API-Key header.' };
+    return {
+      user: null,
+      isApiKey: false,
+      error: 'Missing authorization. Provide JWT token or X-API-Key header.',
+    };
   }
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: authHeader } }
+    global: { headers: { Authorization: authHeader } },
   });
 
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
   if (error || !user) {
     return { user: null, isApiKey: false, error: 'Invalid or expired token' };
   }
@@ -59,7 +79,11 @@ async function verifyAuth(req: Request): Promise<{ user: any; isApiKey: boolean;
     .single();
 
   if (!roleData || !['admin', 'soc_analyst'].includes(roleData.role)) {
-    return { user: null, isApiKey: false, error: 'Insufficient permissions. Admin or SOC Analyst role required.' };
+    return {
+      user: null,
+      isApiKey: false,
+      error: 'Insufficient permissions. Admin or SOC Analyst role required.',
+    };
   }
 
   return { user, isApiKey: false };

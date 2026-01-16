@@ -41,7 +41,20 @@ check_root() {
 # Load configuration
 load_config() {
     if [[ -f "$CONFIG_FILE" ]]; then
+        # shellcheck disable=SC1090
         source "$CONFIG_FILE"
+
+        # Backward/forward compatibility: support both SOCMIND_* vars and simple keys
+        SOCMIND_API_ENDPOINT=${SOCMIND_API_ENDPOINT:-${endpoint:-""}}
+        SOCMIND_API_KEY=${SOCMIND_API_KEY:-${api_key:-""}}
+        SOCMIND_LOG_TYPES=${SOCMIND_LOG_TYPES:-${log_types:-"auth,system,security"}}
+        SOCMIND_INTERVAL=${SOCMIND_INTERVAL:-${interval:-60}}
+        SOCMIND_HOSTNAME=${SOCMIND_HOSTNAME:-${hostname:-"$(hostname)"}}
+
+        if [[ -z "$SOCMIND_API_ENDPOINT" ]] || [[ -z "$SOCMIND_API_KEY" ]]; then
+            error "API endpoint and API key are required in $CONFIG_FILE"
+            exit 1
+        fi
     else
         error "Configuration file not found: $CONFIG_FILE"
         error "Run 'socmind-agent configure' first"
@@ -73,11 +86,21 @@ configure() {
     
     cat > "$CONFIG_FILE" << EOF
 # SOCMind Agent Configuration
+# (Supports both SOCMIND_* vars and simple keys like endpoint/api_key for compatibility)
+
+# Preferred keys
 SOCMIND_API_ENDPOINT="$API_ENDPOINT"
 SOCMIND_API_KEY="$API_KEY"
 SOCMIND_LOG_TYPES="$LOG_TYPES"
 SOCMIND_INTERVAL="$INTERVAL"
 SOCMIND_HOSTNAME="$(hostname)"
+
+# Compatibility keys
+endpoint="$API_ENDPOINT"
+api_key="$API_KEY"
+log_types="$LOG_TYPES"
+interval="$INTERVAL"
+hostname="$(hostname)"
 EOF
     
     chmod 600 "$CONFIG_FILE"
