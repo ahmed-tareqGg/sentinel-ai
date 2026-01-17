@@ -15,42 +15,7 @@ interface LogData {
   fileHash?: string;
   action?: string;
   rawLog?: Record<string, unknown>;
-  provider?: string;
-  event_id?: string;
-  hostname?: string;
 }
-
-// Windows Events that are commonly benign (system/telemetry)
-const BENIGN_PATTERNS: RegExp[] = [
-  /Netwtw10|BTHUSB|WudfUsbccidDriver/i,
-  /Service Control Manager.*started|stopped/i,
-  /Windows Update Client/i,
-  /Application Information.*started/i,
-  /DistributedCOM.*machine default/i,
-  /Bits Client|Background Intelligent Transfer/i,
-  /Microsoft-Windows-Security-SPP/i,
-  /Microsoft-Windows-Kernel-Power/i,
-  /Microsoft-Windows-WMI/i,
-  /User Profile Service.*loaded|unloaded/i,
-  /Group Policy.*applied|processed/i,
-  /Time-Service.*synchroniz/i,
-  /Desktop Window Manager/i,
-  /Print Spooler/i,
-  /Task Scheduler.*task.*completed/i,
-];
-
-// High-risk patterns that should be flagged
-const HIGH_RISK_PATTERNS: RegExp[] = [
-  /mimikatz|credential.*dump|lsass/i,
-  /privilege.*escalation|runas/i,
-  /powershell.*-enc|-EncodedCommand|base64/i,
-  /suspicious.*login|brute.*force|multiple.*failed/i,
-  /malware|trojan|ransomware|payload/i,
-  /reverse.*shell|bind.*shell|c2.*beacon/i,
-  /lateral.*movement|pass.*hash|pass.*ticket/i,
-  /process.*injection|dll.*inject/i,
-  /registry.*run.*key|startup.*persistence/i,
-];
 
 // MITRE ATT&CK Mapping Database
 const MITRE_MAPPING: Record<string, { technique: string; tactic: string; name: string }[]> = {
@@ -140,53 +105,6 @@ const KEYWORD_PATTERNS: { pattern: RegExp; techniques: string[] }[] = [
   { pattern: /outbound.*connection|suspicious.*domain|unknown.*host/i, techniques: ['c2'] },
 ];
 
-// Normalize the log data to handle various formats
-function normalizeLog(rawLog: any): LogData {
-  return {
-    eventType: rawLog.eventType || rawLog.event_type || rawLog.EventType || 'Unknown',
-    severity: rawLog.severity || rawLog.Severity || 1,
-    srcIP: rawLog.srcIP || rawLog.source_ip || rawLog.src_ip || rawLog.ip_address || 'N/A',
-    dstIP: rawLog.dstIP || rawLog.destination_ip || rawLog.dst_ip || 'N/A',
-    msg: rawLog.msg || rawLog.message || rawLog.Message || rawLog.parsed_message || '',
-    fileHash: rawLog.fileHash || rawLog.file_hash,
-    action: rawLog.action || rawLog.Action,
-    rawLog: rawLog.rawLog || rawLog.raw_log || rawLog,
-    provider: rawLog.provider || rawLog.Provider || rawLog.ProviderName,
-    event_id: rawLog.event_id || rawLog.EventId || rawLog.Id,
-    hostname: rawLog.hostname || rawLog.host || rawLog.Host,
-  };
-}
-
-// Check if the event is a known benign pattern
-function isBenignEvent(log: LogData): { isBenign: boolean; reason: string } {
-  const content = `${log.eventType} ${log.msg} ${log.provider || ''} ${log.action || ''}`;
-  
-  for (const pattern of BENIGN_PATTERNS) {
-    if (pattern.test(content)) {
-      return { 
-        isBenign: true, 
-        reason: `Common system/telemetry event: ${pattern.source.substring(0, 50)}` 
-      };
-    }
-  }
-  return { isBenign: false, reason: '' };
-}
-
-// Check if the event matches high-risk patterns
-function isHighRiskEvent(log: LogData): { isHighRisk: boolean; reason: string } {
-  const content = `${log.eventType} ${log.msg} ${log.action || ''}`;
-  
-  for (const pattern of HIGH_RISK_PATTERNS) {
-    if (pattern.test(content)) {
-      return { 
-        isHighRisk: true, 
-        reason: `Matches high-risk pattern: ${pattern.source.substring(0, 50)}` 
-      };
-    }
-  }
-  return { isHighRisk: false, reason: '' };
-}
-
 function detectMitreFromContent(log: LogData): { technique: string; tactic: string; name: string; confidence: number }[] {
   const detected: { technique: string; tactic: string; name: string; confidence: number }[] = [];
   const content = `${log.eventType} ${log.msg} ${log.action || ''}`.toLowerCase();
@@ -197,10 +115,11 @@ function detectMitreFromContent(log: LogData): { technique: string; tactic: stri
         const mappings = MITRE_MAPPING[techKey];
         if (mappings) {
           for (const mapping of mappings) {
+            // Avoid duplicates
             if (!detected.find(d => d.technique === mapping.technique)) {
               detected.push({
                 ...mapping,
-                confidence: 75 + Math.floor(Math.random() * 20)
+                confidence: 75 + Math.floor(Math.random() * 20) // 75-95%
               });
             }
           }
@@ -209,6 +128,7 @@ function detectMitreFromContent(log: LogData): { technique: string; tactic: stri
     }
   }
   
+  // Sort by confidence
   return detected.sort((a, b) => b.confidence - a.confidence).slice(0, 3);
 }
 
@@ -258,10 +178,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json() as { log: LogData; internal?: boolean };
-    const { internal } = body;
-    
-    // Normalize the log data
-    const log = normalizeLog(body.log);
+    const { log, internal } = body;
 
     const { user, error: authError } = await verifyAuth(req, internal === true);
     if (authError) {
@@ -274,36 +191,6 @@ serve(async (req) => {
     
     console.log(`Analyzing log for ${user.type === 'service' ? 'internal call' : `user ${user.id}`}:`, JSON.stringify(log));
 
-    // Step 1: Quick benign check - avoid unnecessary AI calls
-    const benignCheck = isBenignEvent(log);
-    if (benignCheck.isBenign && log.severity <= 2) {
-      console.log(`📌 Fast-tracked as benign: ${benignCheck.reason}`);
-      return new Response(JSON.stringify({
-        ai_analysis: {
-          classification: 'Benign',
-          confidence: 15,
-          reason: benignCheck.reason,
-          risk_level: 'Low',
-          mitre_techniques: [],
-          recommended_actions: ['No action required - normal system activity'],
-          evidence: [benignCheck.reason],
-          kill_chain_phase: 'N/A',
-        },
-        sandbox_result: null,
-        classification: 'Benign',
-        confidence: 15,
-        risk_level: 'Low',
-        recommended_actions: ['No action required'],
-        evidence: [benignCheck.reason],
-        mitre_technique: null,
-        mitre_tactic: null,
-        mitre_techniques: [],
-        kill_chain_phase: 'N/A',
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
       throw new Error('API key is not configured');
@@ -313,46 +200,27 @@ serve(async (req) => {
     const keywordMitre = detectMitreFromContent(log);
     console.log('Keyword-based MITRE detection:', keywordMitre);
 
-    // Check for high-risk patterns
-    const riskCheck = isHighRiskEvent(log);
+    // Enhanced AI prompt with structured MITRE output
+    const aiPrompt = `You are a senior SOC analyst with deep expertise in MITRE ATT&CK framework.
 
-    // Security-tuned SOC Analyst Prompt
-    const aiPrompt = `You are a Tier-2 SOC Analyst with expertise in MITRE ATT&CK framework.
-
-Analyze the following security event carefully and provide classification.
+Analyze the following security event and provide comprehensive classification.
 
 EVENT DETAILS:
 - Event Type: ${log.eventType}
-- Provider: ${log.provider || 'Unknown'}
-- Event ID: ${log.event_id || 'N/A'}
 - Severity: ${log.severity}/5
 - Source IP: ${log.srcIP}
 - Destination IP: ${log.dstIP}
-- Hostname: ${log.hostname || 'Unknown'}
 - Message: ${log.msg}
 ${log.fileHash ? `- File Hash: ${log.fileHash}` : ''}
 
-CRITICAL ANALYSIS RULES:
-1. Do NOT flag common system or telemetry events as malicious
-2. Windows events like Netwtw10, BTHUSB, Service start/stop, driver events are usually Benign
-3. One event alone is rarely malicious unless clearly suspicious
-4. Only flag as True Positive if there are CLEAR indicators of compromise
-5. Consider context: failed logins could be user mistakes, not attacks
-
-HIGH-RISK indicators (if present, investigate carefully):
-- Credential access, privilege escalation, persistence mechanisms
-- Encoded/obfuscated commands
-- Known malware signatures
-- Lateral movement indicators
-- Data exfiltration patterns
-- C2 beaconing
+IMPORTANT: You MUST identify ALL applicable MITRE ATT&CK techniques. Map indicators to specific techniques.
 
 Return ONLY a valid JSON object with this EXACT structure:
 {
-  "classification": "True Positive" | "False Positive" | "Benign",
-  "confidence": 0-100 (integer, be conservative),
-  "reason": "Brief explanation (1-2 sentences)",
-  "risk_level": "Critical" | "High" | "Medium" | "Low",
+  "classification": "True Positive" or "False Positive",
+  "confidence": 0-100 (integer),
+  "reason": "Brief explanation of classification",
+  "risk_level": "Critical" or "High" or "Medium" or "Low",
   "mitre_techniques": [
     {
       "technique_id": "T####.###",
@@ -362,65 +230,54 @@ Return ONLY a valid JSON object with this EXACT structure:
       "evidence": "Why this technique was identified"
     }
   ],
-  "recommended_actions": ["action1", "action2"],
+  "recommended_actions": ["action1", "action2", "action3"],
   "evidence": ["evidence1", "evidence2"],
   "kill_chain_phase": "Reconnaissance/Weaponization/Delivery/Exploitation/Installation/C2/Actions"
 }
 
-IMPORTANT: 
-- For Benign events, mitre_techniques should be empty array []
-- Be CONSERVATIVE with True Positive classifications
-- confidence should reflect actual certainty (don't default to high values)`;
+CRITICAL: mitre_techniques MUST be an array with at least one technique for True Positives.`;
 
-    let aiAnalysis;
+    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          { role: 'system', content: 'You are a SOC analyst expert in MITRE ATT&CK. Return only valid JSON. Always include mitre_techniques array.' },
+          { role: 'user', content: aiPrompt }
+        ],
+        temperature: 0.2,
+      }),
+    });
+
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
+      console.error('AI Gateway error:', aiResponse.status, errorText);
+      throw new Error(`AI Gateway error: ${aiResponse.status}`);
+    }
+
+    const aiData = await aiResponse.json();
+    const aiContent = aiData.choices?.[0]?.message?.content;
     
+    console.log('AI Response:', aiContent);
+
+    // Parse AI response
+    let aiAnalysis;
     try {
-      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
-          messages: [
-            { role: 'system', content: 'You are an expert SOC analyst. Return only valid JSON. Be conservative with True Positive classifications. Most system events are benign.' },
-            { role: 'user', content: aiPrompt }
-          ],
-          temperature: 0.1, // Lower temperature for more consistent results
-        }),
-      });
-
-      if (!aiResponse.ok) {
-        const errorText = await aiResponse.text();
-        console.error('AI Gateway error:', aiResponse.status, errorText);
-        throw new Error(`AI Gateway error: ${aiResponse.status}`);
-      }
-
-      const aiData = await aiResponse.json();
-      const aiContent = aiData.choices?.[0]?.message?.content;
-      
-      console.log('AI Response:', aiContent);
-
-      // Parse AI response
       const jsonMatch = aiContent.match(/```json\s*([\s\S]*?)\s*```/) || 
                         aiContent.match(/```\s*([\s\S]*?)\s*```/) ||
                         [null, aiContent];
       aiAnalysis = JSON.parse(jsonMatch[1] || aiContent);
-      
     } catch (e) {
-      console.error('AI analysis failed, using fallback:', e);
-      
-      // Fallback analysis - conservative approach
-      const isSuspicious = riskCheck.isHighRisk || log.severity >= 4;
-      
+      console.error('Failed to parse AI response:', e);
       aiAnalysis = {
-        classification: isSuspicious ? 'False Positive' : 'Benign',
-        confidence: isSuspicious ? 40 : 20,
-        reason: isSuspicious 
-          ? 'Automated analysis inconclusive - manual review recommended' 
-          : 'Low severity system event - likely benign activity',
-        risk_level: log.severity >= 4 ? 'Medium' : 'Low',
+        classification: 'Pending',
+        confidence: 0,
+        reason: 'AI analysis failed to parse',
+        risk_level: log.severity >= 4 ? 'High' : 'Medium',
         mitre_techniques: keywordMitre.map(m => ({
           technique_id: m.technique,
           technique_name: m.name,
@@ -428,10 +285,8 @@ IMPORTANT:
           confidence: m.confidence,
           evidence: 'Detected via keyword matching'
         })),
-        recommended_actions: isSuspicious 
-          ? ['Manual review required', 'Check related events for context']
-          : ['No immediate action required', 'Monitor for patterns'],
-        evidence: isSuspicious ? [riskCheck.reason || 'High severity event'] : ['Normal system activity'],
+        recommended_actions: ['Manual review required'],
+        evidence: [],
         kill_chain_phase: 'Unknown'
       };
     }
@@ -441,21 +296,19 @@ IMPORTANT:
       aiAnalysis.mitre_techniques = [];
     }
 
-    // Merge keyword-detected techniques with AI-detected (only for non-benign)
-    if (aiAnalysis.classification !== 'Benign') {
-      for (const kwTech of keywordMitre) {
-        const exists = aiAnalysis.mitre_techniques.find(
-          (t: any) => t.technique_id === kwTech.technique
-        );
-        if (!exists) {
-          aiAnalysis.mitre_techniques.push({
-            technique_id: kwTech.technique,
-            technique_name: kwTech.name,
-            tactic: kwTech.tactic,
-            confidence: kwTech.confidence,
-            evidence: 'Detected via keyword pattern matching'
-          });
-        }
+    // Merge keyword-detected techniques with AI-detected
+    for (const kwTech of keywordMitre) {
+      const exists = aiAnalysis.mitre_techniques.find(
+        (t: any) => t.technique_id === kwTech.technique
+      );
+      if (!exists) {
+        aiAnalysis.mitre_techniques.push({
+          technique_id: kwTech.technique,
+          technique_name: kwTech.name,
+          tactic: kwTech.tactic,
+          confidence: kwTech.confidence,
+          evidence: 'Detected via keyword pattern matching'
+        });
       }
     }
 
@@ -487,11 +340,11 @@ IMPORTANT:
               if (!aiAnalysis.evidence.includes('Malicious hash detected by VirusTotal')) {
                 aiAnalysis.evidence.push('Malicious hash detected by VirusTotal');
               }
-              if (aiAnalysis.classification === 'Benign' && sandboxResult.malicious > 5) {
+              if (aiAnalysis.classification === 'False Positive' && sandboxResult.malicious > 5) {
                 aiAnalysis.classification = 'True Positive';
                 aiAnalysis.reason = 'Hash flagged as malicious by multiple vendors';
-                aiAnalysis.risk_level = 'High';
               }
+              // Add malware technique if not present
               if (!aiAnalysis.mitre_techniques.find((t: any) => t.technique_id === 'T1204.002')) {
                 aiAnalysis.mitre_techniques.push({
                   technique_id: 'T1204.002',
@@ -513,18 +366,16 @@ IMPORTANT:
 
     // Calculate final risk score
     let riskScore = 0;
-    if (log.severity >= 4) riskScore += 2;
+    if (log.severity >= 4) riskScore += 3;
     if (aiAnalysis.classification === 'True Positive') riskScore += 5;
     if (sandboxResult?.malicious > 0) riskScore += 7;
-    if (aiAnalysis.mitre_techniques.length > 2) riskScore += 1;
-    if (riskCheck.isHighRisk) riskScore += 3;
+    if (aiAnalysis.mitre_techniques.length > 2) riskScore += 2;
     
     const calculatedRiskLevel = riskScore >= 10 ? 'Critical' : 
                                 riskScore >= 7 ? 'High' : 
                                 riskScore >= 4 ? 'Medium' : 'Low';
 
-    // Only override risk_level if AI didn't provide one or if VirusTotal found malware
-    if (!aiAnalysis.risk_level || sandboxResult?.malicious > 5) {
+    if (!aiAnalysis.risk_level) {
       aiAnalysis.risk_level = calculatedRiskLevel;
     }
 
@@ -541,13 +392,15 @@ IMPORTANT:
       risk_level: aiAnalysis.risk_level,
       recommended_actions: aiAnalysis.recommended_actions || [],
       evidence: aiAnalysis.evidence || [],
+      // Primary MITRE fields for backward compatibility
       mitre_technique: primaryTechnique?.technique_id || null,
       mitre_tactic: primaryTechnique?.tactic || null,
+      // Full MITRE techniques array
       mitre_techniques: aiAnalysis.mitre_techniques,
       kill_chain_phase: aiAnalysis.kill_chain_phase || null,
     };
 
-    console.log(`✅ Analysis complete: ${result.classification} (${result.confidence}%) - ${result.risk_level}`);
+    console.log('Analysis complete with MITRE techniques:', result.mitre_techniques?.length || 0);
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -555,31 +408,8 @@ IMPORTANT:
   } catch (error) {
     console.error('Error in analyze-log function:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    
-    // Return a safe fallback instead of error
-    return new Response(JSON.stringify({
-      ai_analysis: {
-        classification: 'Benign',
-        confidence: 10,
-        reason: 'Analysis error - defaulting to benign for unsupported event type',
-        risk_level: 'Low',
-        mitre_techniques: [],
-        recommended_actions: ['Manual review if recurring'],
-        evidence: ['Automated analysis failed'],
-        kill_chain_phase: 'N/A',
-      },
-      sandbox_result: null,
-      classification: 'Benign',
-      confidence: 10,
-      risk_level: 'Low',
-      recommended_actions: ['Manual review if recurring'],
-      evidence: ['Automated analysis failed'],
-      mitre_technique: null,
-      mitre_tactic: null,
-      mitre_techniques: [],
-      kill_chain_phase: 'N/A',
-      _error: message, // Include error for debugging but don't fail
-    }), {
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
