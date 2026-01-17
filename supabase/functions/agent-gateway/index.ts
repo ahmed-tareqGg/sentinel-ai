@@ -17,9 +17,10 @@ interface AgentRegistration {
 
 interface AgentHeartbeat {
   hostname: string;
-  status: 'active' | 'error';
+  status: 'active' | 'error' | 'paused';
   logs_sent?: number;
   error_message?: string;
+  ip_address?: string;
 }
 
 interface NormalizedLog {
@@ -33,12 +34,21 @@ interface NormalizedLog {
   process?: string;
   event_id?: string;
   file_hash?: string;
+  provider?: string;
   raw_log: any;
 }
 
 interface LogBatch {
   logs: NormalizedLog[];
   batch_id?: string;
+  hostname?: string;
+  ip_address?: string;
+}
+
+interface AgentCommand {
+  command: 'start' | 'stop' | 'pause' | 'resume' | 'terminate';
+  issued_at: string;
+  issued_by?: string;
 }
 
 // Simulation mode data
@@ -67,7 +77,6 @@ async function verifyAgentKey(req: Request, supabase: any): Promise<{ valid: boo
     return { valid: false, error: 'Missing X-Agent-Key header' };
   }
 
-  // Use the verify function
   const { data, error } = await supabase.rpc('verify_agent_api_key', { _api_key: agentKey });
   
   if (error) {
@@ -104,19 +113,27 @@ async function verifyUserAuth(req: Request): Promise<{ valid: boolean; userId?: 
     return { valid: false, error: 'Invalid token' };
   }
 
-  // Check role
   const { data: roleData } = await supabase
     .from('user_roles')
     .select('role')
     .eq('user_id', user.id)
     .single();
 
-  const allowedRoles = ['admin', 'ciso', 'soc_manager', 'soc_tier_3'];
+  const allowedRoles = ['admin', 'ciso', 'soc_manager', 'soc_tier_3', 'soc_analyst'];
   if (!roleData || !allowedRoles.includes(roleData.role)) {
     return { valid: false, error: 'Insufficient permissions' };
   }
 
   return { valid: true, userId: user.id };
+}
+
+// Extract IP address from request headers
+function extractClientIP(req: Request, bodyIP?: string): string {
+  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+         req.headers.get('cf-connecting-ip') ||
+         req.headers.get('x-real-ip') ||
+         bodyIP ||
+         'N/A';
 }
 
 serve(async (req) => {
@@ -133,7 +150,7 @@ serve(async (req) => {
 
   try {
     // Actions that require user authentication (management)
-    if (['register', 'generate-key', 'list', 'delete', 'simulate'].includes(action || '')) {
+    if (['register', 'generate-key', 'list', 'delete', 'simulate', 'command', 'status'].includes(action || '')) {
       const auth = await verifyUserAuth(req);
       if (!auth.valid) {
         return new Response(JSON.stringify({ error: auth.error }), {
@@ -145,7 +162,6 @@ serve(async (req) => {
       if (action === 'register') {
         const body = await req.json() as AgentRegistration;
         
-        // Create data source
         const { data: dataSource, error } = await supabase
           .from('data_sources')
           .insert({
@@ -165,7 +181,6 @@ serve(async (req) => {
 
         if (error) throw error;
 
-        // Generate API key
         const { data: keyData, error: keyError } = await supabase.rpc('generate_agent_api_key', {
           _data_source_id: dataSource.id,
           _name: `Initial key for ${body.hostname}`,
@@ -181,7 +196,7 @@ serve(async (req) => {
           data_source_id: dataSource.id,
           api_key: keyData[0].api_key,
           key_id: keyData[0].key_id,
-          message: 'Agent registered successfully. Store the API key securely - it will not be shown again.',
+          message: 'Agent registered successfully. Store the API key securely.',
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -202,7 +217,7 @@ serve(async (req) => {
           success: true,
           api_key: keyData[0].api_key,
           key_id: keyData[0].key_id,
-          message: 'API key generated. Store securely - it will not be shown again.',
+          message: 'API key generated. Store securely.',
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -216,7 +231,20 @@ serve(async (req) => {
 
         if (error) throw error;
 
-        return new Response(JSON.stringify({ data_sources: sources }), {
+        // Check for stale agents (no heartbeat in 60 seconds)
+        const now = new Date();
+        const updatedSources = sources?.map(source => {
+          if (source.last_heartbeat) {
+            const lastSeen = new Date(source.last_heartbeat);
+            const diffSeconds = (now.getTime() - lastSeen.getTime()) / 1000;
+            if (diffSeconds > 60 && source.status === 'active') {
+              return { ...source, status: 'offline' };
+            }
+          }
+          return source;
+        });
+
+        return new Response(JSON.stringify({ data_sources: updatedSources }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
@@ -236,10 +264,85 @@ serve(async (req) => {
         });
       }
 
+      // Agent control commands
+      if (action === 'command') {
+        const { data_source_id, command } = await req.json() as { data_source_id: string; command: AgentCommand['command'] };
+        
+        const validCommands = ['start', 'stop', 'pause', 'resume', 'terminate'];
+        if (!validCommands.includes(command)) {
+          return new Response(JSON.stringify({ error: 'Invalid command' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Map command to status
+        const statusMap: Record<string, string> = {
+          'start': 'active',
+          'stop': 'inactive',
+          'pause': 'paused',
+          'resume': 'active',
+          'terminate': 'terminated',
+        };
+
+        const { error } = await supabase
+          .from('data_sources')
+          .update({
+            status: statusMap[command],
+            config: {
+              pending_command: command,
+              command_issued_at: new Date().toISOString(),
+              command_issued_by: auth.userId,
+            },
+          })
+          .eq('id', data_source_id);
+
+        if (error) throw error;
+
+        console.log(`🎮 Command '${command}' issued for agent ${data_source_id}`);
+
+        return new Response(JSON.stringify({
+          success: true,
+          command,
+          message: `Command '${command}' sent to agent`,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Get agent status with pending command
+      if (action === 'status') {
+        const data_source_id = url.searchParams.get('agent_id');
+        
+        if (!data_source_id) {
+          return new Response(JSON.stringify({ error: 'Missing agent_id' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const { data: source, error } = await supabase
+          .from('data_sources')
+          .select('id, name, status, last_heartbeat, config')
+          .eq('id', data_source_id)
+          .single();
+
+        if (error) throw error;
+
+        return new Response(JSON.stringify({
+          agent_id: source.id,
+          name: source.name,
+          status: source.status,
+          last_heartbeat: source.last_heartbeat,
+          pending_command: source.config?.pending_command || null,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       if (action === 'simulate') {
         const { data_source_id, log_type, count = 5 } = await req.json();
         
-        // Get data source
         const { data: dataSource, error: dsError } = await supabase
           .from('data_sources')
           .select('*')
@@ -267,9 +370,9 @@ serve(async (req) => {
             msg: baseLog.message,
             fileHash: 'file_hash' in baseLog ? baseLog.file_hash : undefined,
             time: timestamp,
+            hostname: dataSource.hostname,
           });
 
-          // Prepare raw log entry
           rawLogsToInsert.push({
             data_source_id: data_source_id,
             timestamp: timestamp,
@@ -283,7 +386,6 @@ serve(async (req) => {
           });
         }
 
-        // Insert raw logs first
         if (rawLogsToInsert.length > 0) {
           const { data: insertedLogs, error: rawError } = await supabase
             .from('raw_logs')
@@ -297,7 +399,6 @@ serve(async (req) => {
           }
         }
 
-        // Send to ingest-log for analysis
         const ingestResponse = await fetch(`${supabaseUrl}/functions/v1/ingest-log`, {
           method: 'POST',
           headers: {
@@ -316,7 +417,6 @@ serve(async (req) => {
 
         const ingestResult = await ingestResponse.json();
 
-        // Update raw logs status
         if (ingestResult.incidents?.length > 0) {
           await supabase
             .from('raw_logs')
@@ -327,7 +427,6 @@ serve(async (req) => {
             .limit(rawLogsToInsert.length);
         }
 
-        // Update data source stats
         await supabase
           .from('data_sources')
           .update({
@@ -351,7 +450,7 @@ serve(async (req) => {
     }
 
     // Actions that require agent key authentication
-    if (['heartbeat', 'ingest'].includes(action || '')) {
+    if (['heartbeat', 'ingest', 'poll-command'].includes(action || '')) {
       const auth = await verifyAgentKey(req, supabase);
       if (!auth.valid) {
         return new Response(JSON.stringify({ error: auth.error }), {
@@ -360,23 +459,65 @@ serve(async (req) => {
         });
       }
 
+      // Agent polls for pending commands
+      if (action === 'poll-command') {
+        const { data: source, error } = await supabase
+          .from('data_sources')
+          .select('config, status')
+          .eq('id', auth.dataSourceId)
+          .single();
+
+        if (error) throw error;
+
+        const pendingCommand = source.config?.pending_command || null;
+        
+        // Clear the pending command after agent retrieves it
+        if (pendingCommand) {
+          await supabase
+            .from('data_sources')
+            .update({
+              config: { ...source.config, pending_command: null },
+            })
+            .eq('id', auth.dataSourceId);
+        }
+
+        return new Response(JSON.stringify({
+          command: pendingCommand,
+          status: source.status,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       if (action === 'heartbeat') {
         const body = await req.json() as AgentHeartbeat;
+        const clientIP = extractClientIP(req, body.ip_address);
 
         await supabase
           .from('data_sources')
           .update({
             status: body.status,
             last_heartbeat: new Date().toISOString(),
+            ip_address: clientIP !== 'N/A' ? clientIP : undefined,
             config: body.error_message ? { last_error: body.error_message } : undefined,
           })
           .eq('id', auth.dataSourceId);
 
-        console.log(`💓 Heartbeat from ${auth.dataSourceName}: ${body.status}`);
+        console.log(`💓 Heartbeat from ${auth.dataSourceName}: ${body.status} (IP: ${clientIP})`);
+
+        // Return any pending command
+        const { data: source } = await supabase
+          .from('data_sources')
+          .select('config')
+          .eq('id', auth.dataSourceId)
+          .single();
+
+        const pendingCommand = source?.config?.pending_command || null;
 
         return new Response(JSON.stringify({ 
           success: true,
           message: 'Heartbeat recorded',
+          command: pendingCommand,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -384,21 +525,21 @@ serve(async (req) => {
 
       if (action === 'ingest') {
         const body = await req.json() as LogBatch;
+        const clientIP = extractClientIP(req, body.ip_address);
 
-        // Store raw logs first
+        // Store raw logs first with IP address
         const rawLogsToInsert = body.logs.map(log => ({
           data_source_id: auth.dataSourceId,
           timestamp: log.timestamp,
           log_type: log.log_type,
           severity: log.severity >= 4 ? 'high' : log.severity >= 3 ? 'medium' : log.severity >= 2 ? 'low' : 'info',
-          hostname: auth.dataSourceName,
-          ip_address: log.source_ip,
+          hostname: body.hostname || auth.dataSourceName,
+          ip_address: log.source_ip || clientIP,
           raw_payload: log.raw_log || log,
           parsed_message: log.message,
           processing_status: 'pending' as const,
         }));
 
-        // Insert raw logs
         let insertedLogIds: string[] = [];
         if (rawLogsToInsert.length > 0) {
           const { data: insertedLogs, error: rawError } = await supabase
@@ -410,23 +551,26 @@ serve(async (req) => {
             console.error('Failed to insert raw logs:', rawError);
           } else {
             insertedLogIds = insertedLogs?.map(l => l.id) || [];
-            console.log(`📝 Stored ${insertedLogIds.length} raw logs`);
+            console.log(`📝 Stored ${insertedLogIds.length} raw logs from ${clientIP}`);
           }
         }
 
-        // Transform logs to ingest-log format
+        // Transform logs to ingest-log format with all enrichments
         const transformedLogs = body.logs.map(log => ({
           eventType: log.log_type,
           severity: log.severity,
-          srcIP: log.source_ip || auth.dataSourceName,
-          dstIP: log.destination_ip || 'Unknown',
+          srcIP: log.source_ip || clientIP,
+          dstIP: log.destination_ip || 'N/A',
           msg: log.message,
           fileHash: log.file_hash,
           time: log.timestamp,
           raw_log: log.raw_log,
+          hostname: body.hostname || auth.dataSourceName,
+          provider: log.provider,
+          event_id: log.event_id,
+          ip_address: log.source_ip || clientIP,
         }));
 
-        // Send to ingest-log
         const ingestResponse = await fetch(`${supabaseUrl}/functions/v1/ingest-log`, {
           method: 'POST',
           headers: {
@@ -443,7 +587,6 @@ serve(async (req) => {
           const errorText = await ingestResponse.text();
           console.error('Ingest failed:', errorText);
           
-          // Update raw logs with error status
           if (insertedLogIds.length > 0) {
             await supabase
               .from('raw_logs')
@@ -456,7 +599,6 @@ serve(async (req) => {
 
         const ingestResult = await ingestResponse.json();
 
-        // Update raw logs status based on results
         if (insertedLogIds.length > 0) {
           const status = ingestResult.incidents?.length > 0 ? 'incident_created' : 'analyzed';
           await supabase
@@ -469,7 +611,6 @@ serve(async (req) => {
             .in('id', insertedLogIds);
         }
 
-        // Update data source stats
         const { data: currentSource } = await supabase
           .from('data_sources')
           .select('logs_received_today, logs_received_total')
@@ -480,13 +621,14 @@ serve(async (req) => {
           .from('data_sources')
           .update({
             last_log_received: new Date().toISOString(),
+            last_heartbeat: new Date().toISOString(),
             logs_received_today: (currentSource?.logs_received_today || 0) + body.logs.length,
             logs_received_total: (currentSource?.logs_received_total || 0) + body.logs.length,
             status: 'active',
+            ip_address: clientIP !== 'N/A' ? clientIP : undefined,
           })
           .eq('id', auth.dataSourceId);
 
-        // Update stats table
         const currentHour = new Date().getHours();
         for (const log of body.logs) {
           await supabase
@@ -503,7 +645,7 @@ serve(async (req) => {
             });
         }
 
-        console.log(`📥 Ingested ${body.logs.length} logs from ${auth.dataSourceName}`);
+        console.log(`📥 Ingested ${body.logs.length} logs from ${auth.dataSourceName} (IP: ${clientIP})`);
 
         return new Response(JSON.stringify({
           success: true,
