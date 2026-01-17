@@ -24,53 +24,53 @@ const MITRE_MAPPING: Record<string, { technique: string; tactic: string; name: s
   'powershell': [{ technique: 'T1059.001', tactic: 'Execution', name: 'PowerShell' }],
   'script': [{ technique: 'T1059.005', tactic: 'Execution', name: 'Visual Basic' }],
   'process_injection': [{ technique: 'T1055', tactic: 'Defense Evasion', name: 'Process Injection' }],
-  
+
   // Initial Access
   'phishing': [{ technique: 'T1566', tactic: 'Initial Access', name: 'Phishing' }],
   'spearphishing': [{ technique: 'T1566.001', tactic: 'Initial Access', name: 'Spearphishing Attachment' }],
   'drive_by': [{ technique: 'T1189', tactic: 'Initial Access', name: 'Drive-by Compromise' }],
-  
+
   // Credential Access
   'brute_force': [{ technique: 'T1110', tactic: 'Credential Access', name: 'Brute Force' }],
   'password_spray': [{ technique: 'T1110.003', tactic: 'Credential Access', name: 'Password Spraying' }],
   'credential_dump': [{ technique: 'T1003', tactic: 'Credential Access', name: 'OS Credential Dumping' }],
   'mimikatz': [{ technique: 'T1003.001', tactic: 'Credential Access', name: 'LSASS Memory' }],
-  
+
   // Lateral Movement
   'lateral_movement': [{ technique: 'T1021', tactic: 'Lateral Movement', name: 'Remote Services' }],
   'rdp': [{ technique: 'T1021.001', tactic: 'Lateral Movement', name: 'Remote Desktop Protocol' }],
   'smb': [{ technique: 'T1021.002', tactic: 'Lateral Movement', name: 'SMB/Windows Admin Shares' }],
   'ssh': [{ technique: 'T1021.004', tactic: 'Lateral Movement', name: 'SSH' }],
-  
+
   // Exfiltration
   'data_exfiltration': [{ technique: 'T1041', tactic: 'Exfiltration', name: 'Exfiltration Over C2 Channel' }],
   'dns_exfiltration': [{ technique: 'T1048.003', tactic: 'Exfiltration', name: 'Exfiltration Over DNS' }],
-  
+
   // Command & Control
   'c2': [{ technique: 'T1071', tactic: 'Command and Control', name: 'Application Layer Protocol' }],
   'beaconing': [{ technique: 'T1071.001', tactic: 'Command and Control', name: 'Web Protocols' }],
   'dns_c2': [{ technique: 'T1071.004', tactic: 'Command and Control', name: 'DNS' }],
   'encoded_command': [{ technique: 'T1132', tactic: 'Command and Control', name: 'Data Encoding' }],
-  
+
   // Persistence
   'registry': [{ technique: 'T1547.001', tactic: 'Persistence', name: 'Registry Run Keys' }],
   'scheduled_task': [{ technique: 'T1053', tactic: 'Persistence', name: 'Scheduled Task/Job' }],
   'startup': [{ technique: 'T1547', tactic: 'Persistence', name: 'Boot or Logon Autostart Execution' }],
-  
+
   // Discovery
   'network_scan': [{ technique: 'T1046', tactic: 'Discovery', name: 'Network Service Discovery' }],
   'port_scan': [{ technique: 'T1046', tactic: 'Discovery', name: 'Network Service Discovery' }],
   'discovery': [{ technique: 'T1082', tactic: 'Discovery', name: 'System Information Discovery' }],
-  
+
   // Defense Evasion
   'obfuscation': [{ technique: 'T1027', tactic: 'Defense Evasion', name: 'Obfuscated Files or Information' }],
   'disable_security': [{ technique: 'T1562', tactic: 'Defense Evasion', name: 'Impair Defenses' }],
-  
+
   // Impact
   'ransomware': [{ technique: 'T1486', tactic: 'Impact', name: 'Data Encrypted for Impact' }],
   'wiper': [{ technique: 'T1485', tactic: 'Impact', name: 'Data Destruction' }],
   'dos': [{ technique: 'T1499', tactic: 'Impact', name: 'Endpoint Denial of Service' }],
-  
+
   // Malware
   'malware': [{ technique: 'T1204', tactic: 'Execution', name: 'User Execution' }],
   'trojan': [{ technique: 'T1204.002', tactic: 'Execution', name: 'Malicious File' }],
@@ -108,7 +108,7 @@ const KEYWORD_PATTERNS: { pattern: RegExp; techniques: string[] }[] = [
 function detectMitreFromContent(log: LogData): { technique: string; tactic: string; name: string; confidence: number }[] {
   const detected: { technique: string; tactic: string; name: string; confidence: number }[] = [];
   const content = `${log.eventType} ${log.msg} ${log.action || ''}`.toLowerCase();
-  
+
   for (const { pattern, techniques } of KEYWORD_PATTERNS) {
     if (pattern.test(content)) {
       for (const techKey of techniques) {
@@ -127,7 +127,7 @@ function detectMitreFromContent(log: LogData): { technique: string; tactic: stri
       }
     }
   }
-  
+
   // Sort by confidence
   return detected.sort((a, b) => b.confidence - a.confidence).slice(0, 3);
 }
@@ -148,7 +148,7 @@ async function verifyAuth(req: Request, isInternal: boolean): Promise<{ user: an
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-  
+
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     global: { headers: { Authorization: authHeader } }
   });
@@ -188,96 +188,107 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    
-    console.log(`Analyzing log for ${user.type === 'service' ? 'internal call' : `user ${user.id}`}:`, JSON.stringify(log));
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('API key is not configured');
-    }
+    console.log(`Analyzing log for ${user.type === 'service' ? 'internal call' : `user ${user.id}`}:`, JSON.stringify(log));
 
     // First, detect MITRE techniques from keywords
     const keywordMitre = detectMitreFromContent(log);
     console.log('Keyword-based MITRE detection:', keywordMitre);
 
-    // Enhanced AI prompt with structured MITRE output
-    const aiPrompt = `You are a senior SOC analyst with deep expertise in MITRE ATT&CK framework.
-
-Analyze the following security event and provide comprehensive classification.
-
-EVENT DETAILS:
-- Event Type: ${log.eventType}
-- Severity: ${log.severity}/5
-- Source IP: ${log.srcIP}
-- Destination IP: ${log.dstIP}
-- Message: ${log.msg}
-${log.fileHash ? `- File Hash: ${log.fileHash}` : ''}
-
-IMPORTANT: You MUST identify ALL applicable MITRE ATT&CK techniques. Map indicators to specific techniques.
-
-Return ONLY a valid JSON object with this EXACT structure:
-{
-  "classification": "True Positive" or "False Positive",
-  "confidence": 0-100 (integer),
-  "reason": "Brief explanation of classification",
-  "risk_level": "Critical" or "High" or "Medium" or "Low",
-  "mitre_techniques": [
-    {
-      "technique_id": "T####.###",
-      "technique_name": "Full technique name",
-      "tactic": "Tactic name",
-      "confidence": 0-100,
-      "evidence": "Why this technique was identified"
-    }
-  ],
-  "recommended_actions": ["action1", "action2", "action3"],
-  "evidence": ["evidence1", "evidence2"],
-  "kill_chain_phase": "Reconnaissance/Weaponization/Delivery/Exploitation/Installation/C2/Actions"
-}
-
-CRITICAL: mitre_techniques MUST be an array with at least one technique for True Positives.`;
-
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: 'You are a SOC analyst expert in MITRE ATT&CK. Return only valid JSON. Always include mitre_techniques array.' },
-          { role: 'user', content: aiPrompt }
-        ],
-        temperature: 0.2,
-      }),
-    });
-
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error('AI Gateway error:', aiResponse.status, errorText);
-      throw new Error(`AI Gateway error: ${aiResponse.status}`);
-    }
-
-    const aiData = await aiResponse.json();
-    const aiContent = aiData.choices?.[0]?.message?.content;
-    
-    console.log('AI Response:', aiContent);
-
-    // Parse AI response
-    let aiAnalysis;
+    // 1. Try Primary Model (Lovable AI Gateway)
     try {
-      const jsonMatch = aiContent.match(/```json\s*([\s\S]*?)\s*```/) || 
-                        aiContent.match(/```\s*([\s\S]*?)\s*```/) ||
-                        [null, aiContent];
-      aiAnalysis = JSON.parse(jsonMatch[1] || aiContent);
+      if (LOVABLE_API_KEY) {
+        console.log('🤖 Analyzing with Primary Model (Lovable)...');
+        const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash',
+            messages: [
+              { role: 'system', content: 'You are a SOC analyst expert in MITRE ATT&CK. Return only valid JSON. Always include mitre_techniques array.' },
+              { role: 'user', content: aiPrompt }
+            ],
+            temperature: 0.2,
+          }),
+        });
+
+        if (aiResponse.ok) {
+          const aiData = await aiResponse.json();
+          const aiContent = aiData.choices?.[0]?.message?.content;
+          console.log('✅ Primary Model Response received');
+
+          const jsonMatch = aiContent.match(/```json\s*([\s\S]*?)\s*```/) ||
+            aiContent.match(/```\s*([\s\S]*?)\s*```/) ||
+            [null, aiContent];
+          aiAnalysis = JSON.parse(jsonMatch[1] || aiContent);
+        } else {
+          console.warn(`Primary model failed: ${aiResponse.status} ${aiResponse.statusText}`);
+        }
+      }
     } catch (e) {
-      console.error('Failed to parse AI response:', e);
+      console.warn('Primary model error:', e);
+    }
+
+    // 2. Try Secondary Model (Direct OpenAI Fallback)
+    if (!aiAnalysis) {
+      const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+      if (OPENAI_API_KEY) {
+        try {
+          console.log('🤖 Switching to Secondary Model (OpenAI)...');
+          const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [
+                { role: 'system', content: 'You are a SOC analyst expert in MITRE ATT&CK. Return only valid JSON. Always include mitre_techniques array.' },
+                { role: 'user', content: aiPrompt }
+              ],
+              temperature: 0.2,
+              response_format: { type: "json_object" }
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const content = data.choices[0].message.content;
+            console.log('✅ Secondary model analysis successful');
+            aiAnalysis = JSON.parse(content);
+          } else {
+            console.warn(`Secondary model failed: ${response.status}`);
+          }
+        } catch (err) {
+          console.warn('Secondary model error:', err);
+        }
+      }
+    }
+
+    // 3. Final Fallback: Rule-based / Static Analysis
+    if (!aiAnalysis) {
+      console.log('⚠️ All AI models unavailable. Using rule-based fallback.');
+
+      let fallbackRisk = 'Low';
+      let fallbackClass = 'False Positive';
+
+      // Simple heuristic: High severity + keyword match = True Positive
+      if (log.severity >= 4 && keywordMitre.length > 0) {
+        fallbackRisk = 'High';
+        fallbackClass = 'True Positive';
+      } else if (log.severity >= 3) {
+        fallbackRisk = 'Medium';
+      }
+
       aiAnalysis = {
-        classification: 'Pending',
-        confidence: 0,
-        reason: 'AI analysis failed to parse',
-        risk_level: log.severity >= 4 ? 'High' : 'Medium',
+        classification: fallbackClass,
+        confidence: 50,
+        reason: 'AI services unavailable. Automated fallback analysis applied based on rules.',
+        risk_level: fallbackRisk,
         mitre_techniques: keywordMitre.map(m => ({
           technique_id: m.technique,
           technique_name: m.name,
@@ -285,7 +296,7 @@ CRITICAL: mitre_techniques MUST be an array with at least one technique for True
           confidence: m.confidence,
           evidence: 'Detected via keyword matching'
         })),
-        recommended_actions: ['Manual review required'],
+        recommended_actions: ['Manual review required', 'Check AI Service Status'],
         evidence: [],
         kill_chain_phase: 'Unknown'
       };
@@ -322,7 +333,7 @@ CRITICAL: mitre_techniques MUST be an array with at least one technique for True
           const vtResponse = await fetch(`https://www.virustotal.com/api/v3/files/${log.fileHash}`, {
             headers: { 'x-apikey': VT_API_KEY }
           });
-          
+
           if (vtResponse.ok) {
             const vtData = await vtResponse.json();
             const stats = vtData.data?.attributes?.last_analysis_stats;
@@ -370,17 +381,17 @@ CRITICAL: mitre_techniques MUST be an array with at least one technique for True
     if (aiAnalysis.classification === 'True Positive') riskScore += 5;
     if (sandboxResult?.malicious > 0) riskScore += 7;
     if (aiAnalysis.mitre_techniques.length > 2) riskScore += 2;
-    
-    const calculatedRiskLevel = riskScore >= 10 ? 'Critical' : 
-                                riskScore >= 7 ? 'High' : 
-                                riskScore >= 4 ? 'Medium' : 'Low';
+
+    const calculatedRiskLevel = riskScore >= 10 ? 'Critical' :
+      riskScore >= 7 ? 'High' :
+        riskScore >= 4 ? 'Medium' : 'Low';
 
     if (!aiAnalysis.risk_level) {
       aiAnalysis.risk_level = calculatedRiskLevel;
     }
 
     // Get primary MITRE technique (highest confidence)
-    const primaryTechnique = aiAnalysis.mitre_techniques.length > 0 
+    const primaryTechnique = aiAnalysis.mitre_techniques.length > 0
       ? aiAnalysis.mitre_techniques.sort((a: any, b: any) => (b.confidence || 0) - (a.confidence || 0))[0]
       : null;
 

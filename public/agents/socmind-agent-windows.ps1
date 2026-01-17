@@ -3,7 +3,7 @@
 # Run as Administrator
 
 param(
-    [Parameter(Position=0)]
+    [Parameter(Position = 0)]
     [string]$Command = "help"
 )
 
@@ -19,7 +19,7 @@ function Write-Log {
     # Console output with colors
     switch ($Level) {
         "ERROR" { Write-Host "[SOCMind ERROR] $Message" -ForegroundColor Red }
-        "WARN"  { Write-Host "[SOCMind WARN] $Message" -ForegroundColor Yellow }
+        "WARN" { Write-Host "[SOCMind WARN] $Message" -ForegroundColor Yellow }
         default { Write-Host "[SOCMind] $Message" -ForegroundColor Green }
     }
     
@@ -63,6 +63,22 @@ function Get-ConfigValue {
     return $null
 }
 
+function Get-LocalIPAddress {
+    try {
+        # Get first active IPv4 address that isn't localhost
+        $ip = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { 
+            $_.InterfaceAlias -notlike "*Loopback*" -and 
+            $_.IPAddress -notlike "169.254.*" 
+        } | Select-Object -First 1 -ExpandProperty IPAddress
+        
+        if ($ip) { return $ip }
+        return "0.0.0.0"
+    }
+    catch {
+        return "0.0.0.0"
+    }
+}
+
 function Set-AgentConfig {
     Write-Log "Configuring SOCMind Agent..."
     
@@ -91,7 +107,7 @@ function Set-AgentConfig {
     
     $hostname = $env:COMPUTERNAME
     
-$configContent = @"
+    $configContent = @"
 # SOCMind Agent Configuration
 # (Supports both SOCMIND_* keys and simple keys like endpoint/api_key for compatibility)
 
@@ -131,7 +147,8 @@ function Send-Heartbeat {
         return
     }
 
-    $body = @{ hostname = $hostname; status = $Status }
+    $ipAddress = Get-LocalIPAddress
+    $body = @{ hostname = $hostname; status = $Status; ip_address = $ipAddress }
     if ($ErrorMessage) { $body["error_message"] = $ErrorMessage }
 
     try {
@@ -177,14 +194,14 @@ function Get-SecurityLogs {
             }
             
             $logs += @{
-                log_type = "security"
+                log_type  = "security"
                 timestamp = $event.TimeCreated.ToString("o")
-                message = "$eventType - Event ID: $($event.Id) - $($event.Message -replace '\r?\n', ' ' | Select-Object -First 200)"
-                severity = $severity
+                message   = "$eventType - Event ID: $($event.Id) - $($event.Message -replace '\r?\n', ' ' | ForEach-Object { if ($_.Length -gt 200) { $_.Substring(0, 200) } else { $_ } })"
+                severity  = $severity
                 source_ip = $config["SOCMIND_HOSTNAME"]
-                event_id = $event.Id.ToString()
-                raw_log = @{
-                    source = "Windows Security Log"
+                event_id  = $event.Id.ToString()
+                raw_log   = @{
+                    source   = "Windows Security Log"
                     provider = $event.ProviderName
                     event_id = $event.Id
                 }
@@ -224,13 +241,13 @@ function Get-SystemLogs {
             }
             
             $logs += @{
-                log_type = "system"
+                log_type  = "system"
                 timestamp = $event.TimeCreated.ToString("o")
-                message = "$eventType - $($event.ProviderName): $($event.Message -replace '\r?\n', ' ' | Select-Object -First 200)"
-                severity = $severity
+                message   = "$eventType - $($event.ProviderName): $($event.Message -replace '\r?\n', ' ' | ForEach-Object { if ($_.Length -gt 200) { $_.Substring(0, 200) } else { $_ } })"
+                severity  = $severity
                 source_ip = $config["SOCMIND_HOSTNAME"]
-                raw_log = @{
-                    source = "Windows System Log"
+                raw_log   = @{
+                    source   = "Windows System Log"
                     provider = $event.ProviderName
                     event_id = $event.Id
                 }
@@ -262,13 +279,13 @@ function Get-ApplicationLogs {
             }
             
             $logs += @{
-                log_type = "application"
+                log_type  = "application"
                 timestamp = $event.TimeCreated.ToString("o")
-                message = "$($event.ProviderName): $($event.Message -replace '\r?\n', ' ' | Select-Object -First 200)"
-                severity = $severity
+                message   = "$($event.ProviderName): $($event.Message -replace '\r?\n', ' ' | ForEach-Object { if ($_.Length -gt 200) { $_.Substring(0, 200) } else { $_ } })"
+                severity  = $severity
                 source_ip = $config["SOCMIND_HOSTNAME"]
-                raw_log = @{
-                    source = "Windows Application Log"
+                raw_log   = @{
+                    source   = "Windows Application Log"
                     provider = $event.ProviderName
                     event_id = $event.Id
                 }

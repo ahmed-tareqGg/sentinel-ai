@@ -78,7 +78,7 @@ async function verifyAuth(
     .eq('user_id', user.id)
     .single();
 
-  if (!roleData || !['admin', 'soc_analyst'].includes(roleData.role)) {
+  if (!roleData || !['admin', 'soc_analyst', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(roleData.role)) {
     return {
       user: null,
       isApiKey: false,
@@ -127,7 +127,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { logs, source } = await req.json() as { logs: RawLog | RawLog[], source?: string };
-    
+
     const logsArray = Array.isArray(logs) ? logs : [logs];
     console.log(`Ingesting ${logsArray.length} logs from ${source || 'unknown source'}`);
 
@@ -144,7 +144,7 @@ serve(async (req) => {
           'Authorization': `Bearer ${supabaseKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           log: {
             eventType: normalizedLog.eventType,
             severity: normalizedLog.severity,
@@ -248,7 +248,7 @@ serve(async (req) => {
 
       if (!existingPlaybook.data?.length) {
         console.log('No playbook for event type, generating suggestion:', normalizedLog.eventType);
-        
+
         // Auto-generate playbook for this event type
         try {
           const generateResponse = await fetch(`${supabaseUrl}/functions/v1/generate-playbook`, {
@@ -257,7 +257,7 @@ serve(async (req) => {
               'Authorization': `Bearer ${supabaseKey}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
               autoGenerate: true,
               eventType: normalizedLog.eventType,
               riskLevel: analysis?.risk_level || 'Medium',
@@ -267,7 +267,7 @@ serve(async (req) => {
 
           if (generateResponse.ok) {
             const generatedPlaybook = await generateResponse.json();
-            
+
             // Insert as suggestion (not auto-create to let analyst approve)
             await supabase.from('playbook_suggestions').insert({
               name: generatedPlaybook.name,
@@ -304,10 +304,10 @@ serve(async (req) => {
             'Authorization': `Bearer ${supabaseKey}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             incident_id: incident.id,
-            mode: (analysis?.risk_level === 'Critical' || analysis?.classification === 'True Positive') 
-              ? 'autonomous' 
+            mode: (analysis?.risk_level === 'Critical' || analysis?.classification === 'True Positive')
+              ? 'autonomous'
               : 'supervised',
           }),
         });
@@ -340,10 +340,10 @@ serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ 
-      success: true, 
+    return new Response(JSON.stringify({
+      success: true,
       processed: results.length,
-      incidents: results 
+      incidents: results
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

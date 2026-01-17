@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { 
-  Activity, 
-  RefreshCw, 
-  Search, 
+import {
+  Activity,
+  RefreshCw,
+  Search,
   Filter,
   Eye,
   AlertTriangle,
@@ -28,6 +28,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/backend/client';
 import { format } from 'date-fns';
+import { useLiveLogsPauseState } from '@/hooks/useLiveLogsPauseState';
 
 interface RawLog {
   id: string;
@@ -74,18 +75,24 @@ export default function LiveLogs() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [hostFilter, setHostFilter] = useState<string>('all');
   const [selectedLog, setSelectedLog] = useState<RawLog | null>(null);
-  const [isLive, setIsLive] = useState(true);
+  const { isLive, isLoading: isPauseStateLoading, toggleLive } = useLiveLogsPauseState();
   const [logs, setLogs] = useState<RawLog[]>([]);
+  const [totalCount, setTotalCount] = useState<number>(0);
+  const [limit, setLimit] = useState<number>(100);
+  const [page, setPage] = useState<number>(1);
 
   // Fetch logs
   const { data: fetchedLogs, isLoading, refetch } = useQuery({
-    queryKey: ['raw-logs', logTypeFilter, severityFilter, statusFilter, hostFilter],
+    queryKey: ['raw-logs', logTypeFilter, severityFilter, statusFilter, hostFilter, limit, page],
     queryFn: async () => {
+      const from = (page - 1) * limit;
+      const to = from + limit - 1;
+
       let query = supabase
         .from('raw_logs')
-        .select('*, data_sources(name, type)')
+        .select('*, data_sources(name, type)', { count: 'exact' })
         .order('timestamp', { ascending: false })
-        .limit(500);
+        .range(from, to);
 
       if (logTypeFilter !== 'all') {
         query = query.eq('log_type', logTypeFilter);
@@ -100,17 +107,19 @@ export default function LiveLogs() {
         query = query.eq('hostname', hostFilter);
       }
 
-      const { data, error } = await query;
+      const { data, error, count } = await query;
       if (error) throw error;
-      return data as RawLog[];
+      return { logs: data as RawLog[], count };
     },
     refetchInterval: isLive ? 5000 : false,
+    refetchOnWindowFocus: isLive,
   });
 
   // Update local logs when fetched
   useEffect(() => {
     if (fetchedLogs) {
-      setLogs(fetchedLogs);
+      setLogs(fetchedLogs.logs);
+      setTotalCount(fetchedLogs.count || 0);
     }
   }, [fetchedLogs]);
 
@@ -128,7 +137,8 @@ export default function LiveLogs() {
           table: 'raw_logs',
         },
         (payload) => {
-          setLogs((prev) => [payload.new as RawLog, ...prev].slice(0, 500));
+          setLogs((prev) => [payload.new as RawLog, ...prev].slice(0, limit));
+          setTotalCount((prev) => prev + 1);
         }
       )
       .subscribe();
@@ -142,11 +152,12 @@ export default function LiveLogs() {
   const uniqueHosts = [...new Set(logs?.map(l => l.hostname).filter(Boolean) || [])];
   const uniqueLogTypes = [...new Set(logs?.map(l => l.log_type) || [])];
 
-  // Filter logs by search
+  // Filter logs by search (Client-side filtering for current page)
   const filteredLogs = logs?.filter(log => {
     if (!searchQuery) return true;
     const searchLower = searchQuery.toLowerCase();
     return (
+      log.id.toLowerCase().includes(searchLower) ||
       log.parsed_message?.toLowerCase().includes(searchLower) ||
       log.hostname?.toLowerCase().includes(searchLower) ||
       log.ip_address?.toLowerCase().includes(searchLower) ||
@@ -157,7 +168,7 @@ export default function LiveLogs() {
 
   // Stats
   const stats = {
-    total: logs?.length || 0,
+    total: totalCount || logs?.length || 0,
     pending: logs?.filter(l => l.processing_status === 'pending').length || 0,
     analyzed: logs?.filter(l => l.processing_status === 'analyzed').length || 0,
     incidents: logs?.filter(l => l.processing_status === 'incident_created').length || 0,
@@ -228,7 +239,7 @@ export default function LiveLogs() {
                 />
               </div>
             </div>
-            
+
             <Select value={logTypeFilter} onValueChange={setLogTypeFilter}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Log Type" />
@@ -281,11 +292,25 @@ export default function LiveLogs() {
               </SelectContent>
             </Select>
 
+            <Select value={limit.toString()} onValueChange={(val) => setLimit(Number(val))}>
+              <SelectTrigger className="w-[110px]">
+                <SelectValue placeholder="Limit" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="50">50 rows</SelectItem>
+                <SelectItem value="100">100 rows</SelectItem>
+                <SelectItem value="200">200 rows</SelectItem>
+                <SelectItem value="500">500 rows</SelectItem>
+                <SelectItem value="1000">1000 rows</SelectItem>
+              </SelectContent>
+            </Select>
+
             <div className="flex items-center gap-2">
               <Button
                 variant={isLive ? "default" : "outline"}
                 size="sm"
-                onClick={() => setIsLive(!isLive)}
+                onClick={toggleLive}
+                disabled={isPauseStateLoading}
                 className="gap-2"
               >
                 {isLive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
@@ -313,7 +338,7 @@ export default function LiveLogs() {
               )}
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Showing {filteredLogs.length} of {logs?.length || 0} logs
+              Showing {filteredLogs.length} of {totalCount || logs?.length || 0} logs
             </p>
           </div>
         </CardHeader>
@@ -322,6 +347,7 @@ export default function LiveLogs() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
+                  <TableHead className="w-[100px]">Log ID</TableHead>
                   <TableHead className="w-[180px]">Timestamp</TableHead>
                   <TableHead>Source</TableHead>
                   <TableHead className="w-[100px]">Type</TableHead>
@@ -352,11 +378,14 @@ export default function LiveLogs() {
                   </TableRow>
                 ) : (
                   filteredLogs.map((log) => (
-                    <TableRow 
-                      key={log.id} 
+                    <TableRow
+                      key={log.id}
                       className="hover:bg-muted/30 cursor-pointer transition-colors"
                       onClick={() => setSelectedLog(log)}
                     >
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {log.id.slice(0, 8)}...
+                      </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {format(new Date(log.timestamp), 'MMM dd, HH:mm:ss.SSS')}
                       </TableCell>
@@ -372,8 +401,8 @@ export default function LiveLogs() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge 
-                          variant="outline" 
+                        <Badge
+                          variant="outline"
                           className={`${SEVERITY_CONFIG[log.severity]?.color || 'bg-gray-500'} bg-opacity-20 border-0 text-white text-xs`}
                         >
                           <span className="flex items-center gap-1">
@@ -388,7 +417,7 @@ export default function LiveLogs() {
                         </p>
                       </TableCell>
                       <TableCell>
-                        <Badge 
+                        <Badge
                           variant="outline"
                           className={`${STATUS_CONFIG[log.processing_status]?.color || 'bg-gray-500'} bg-opacity-20 border-0 text-white text-xs`}
                         >
@@ -399,8 +428,8 @@ export default function LiveLogs() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="sm"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -416,6 +445,31 @@ export default function LiveLogs() {
               </TableBody>
             </Table>
           </div>
+
+
+          <div className="flex items-center justify-between mt-4">
+            <div className="text-sm text-muted-foreground mr-4">
+              Page {page} of {Math.ceil((totalCount || 0) / limit) || 1}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1 || isLoading}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => p + 1)}
+                disabled={page * limit >= (totalCount || 0) || isLoading}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -427,7 +481,7 @@ export default function LiveLogs() {
               <FileJson2 className="h-5 w-5 text-primary" />
               Log Details
               {selectedLog && (
-                <Badge 
+                <Badge
                   variant="outline"
                   className={`${STATUS_CONFIG[selectedLog.processing_status]?.color || 'bg-gray-500'} bg-opacity-20 border-0 text-white ml-2`}
                 >
@@ -436,7 +490,7 @@ export default function LiveLogs() {
               )}
             </DialogTitle>
           </DialogHeader>
-          
+
           {selectedLog && (
             <ScrollArea className="max-h-[70vh]">
               <div className="space-y-6 pr-4">
@@ -458,7 +512,7 @@ export default function LiveLogs() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Severity</p>
-                    <Badge 
+                    <Badge
                       variant="outline"
                       className={`${SEVERITY_CONFIG[selectedLog.severity]?.color || 'bg-gray-500'} bg-opacity-20 border-0 text-white`}
                     >
@@ -491,9 +545,9 @@ export default function LiveLogs() {
                 {selectedLog.incident_id && (
                   <div>
                     <p className="text-xs text-muted-foreground mb-2">Created Incident</p>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => window.location.href = `/incidents/${selectedLog.incident_id}`}
                     >
                       View Incident →
@@ -525,6 +579,6 @@ export default function LiveLogs() {
           )}
         </DialogContent>
       </Dialog>
-    </AppLayout>
+    </AppLayout >
   );
 }

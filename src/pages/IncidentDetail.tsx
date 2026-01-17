@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket } from 'lucide-react';
+import { ArrowLeft, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket, Clock } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -12,32 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { soarActions } from '@/lib/soarActions';
 import jsPDF from 'jspdf';
-
-interface Incident {
-  id: string;
-  incident_number: string;
-  timestamp: string;
-  src_ip: string | null;
-  dst_ip: string | null;
-  severity: number;
-  event_type: string;
-  classification: string;
-  confidence: number;
-  status: string;
-  risk_level: string;
-  message: string | null;
-  file_hash: string | null;
-  mitre_technique: string | null;
-  mitre_tactic: string | null;
-  assigned_to: string | null;
-  raw_log: unknown;
-  ai_analysis: unknown;
-  sandbox_result: unknown;
-  evidence: string[] | null;
-  recommended_actions: string[] | null;
-  created_at: string;
-  updated_at: string;
-}
+import { normalizeIncidentContent, Incident as IIncident } from '@/lib/incidentContentUtils';
+import { IncidentHeader } from '@/components/incidents/IncidentHeader';
+import { IncidentDetails } from '@/components/incidents/IncidentDetails';
 
 interface TimelineEntry {
   id: string;
@@ -45,21 +22,6 @@ interface TimelineEntry {
   timestamp: string;
   details: string | null;
 }
-
-const severityColors: Record<number, string> = {
-  1: 'bg-success/20 text-success border-success/30',
-  2: 'bg-success/20 text-success border-success/30',
-  3: 'bg-primary/20 text-primary border-primary/30',
-  4: 'bg-warning/20 text-warning border-warning/30',
-  5: 'bg-critical/20 text-critical border-critical/30',
-};
-
-const riskColors: Record<string, string> = {
-  'Critical': 'bg-critical/20 text-critical border-critical/30',
-  'High': 'bg-warning/20 text-warning border-warning/30',
-  'Medium': 'bg-primary/20 text-primary border-primary/30',
-  'Low': 'bg-success/20 text-success border-success/30',
-};
 
 export default function IncidentDetail() {
   const { id } = useParams();
@@ -72,7 +34,7 @@ export default function IncidentDetail() {
   const canCloseIncident = role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(role);
   const canRunPlaybook = role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(role);
 
-  const [incident, setIncident] = useState<Incident | null>(null);
+  const [incident, setIncident] = useState<IIncident | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -98,7 +60,7 @@ export default function IncidentDetail() {
       .ilike('stage', '%Jira%')
       .order('timestamp', { ascending: false })
       .limit(1);
-    
+
     if (data && data.length > 0) {
       const match = data[0].details?.match(/Ticket (KAN-\d+)/);
       if (match) {
@@ -118,7 +80,7 @@ export default function IncidentDetail() {
       console.error('Error fetching incident:', error);
       toast.error('Failed to load incident');
     } else {
-      setIncident(data);
+      setIncident(data as IIncident);
     }
     setLoading(false);
   };
@@ -129,7 +91,7 @@ export default function IncidentDetail() {
       .select('*')
       .eq('incident_id', id)
       .order('timestamp', { ascending: true });
-    
+
     if (data) setTimeline(data);
   };
 
@@ -141,7 +103,6 @@ export default function IncidentDetail() {
       .from('incidents')
       .update({ status: newStatus })
       .eq('id', incident.id)
-      // Ask PostgREST to return the updated row so we can detect “0 rows updated”
       .select('id,status')
       .maybeSingle();
 
@@ -271,9 +232,9 @@ export default function IncidentDetail() {
   const handleRecommendedAction = async (action: string) => {
     if (!incident) return;
     setExecutingAction(action);
-    
+
     const actionKey = action.toLowerCase().replace(/\s+/g, '');
-    
+
     try {
       switch (actionKey) {
         case 'isolatehost':
@@ -318,13 +279,13 @@ export default function IncidentDetail() {
 
   const exportIncident = () => {
     if (!incident) return;
-    
+
     const exportData = {
       ...incident,
       timeline,
       exported_at: new Date().toISOString(),
     };
-    
+
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -334,16 +295,15 @@ export default function IncidentDetail() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    
+
     toast.success('Incident exported successfully');
   };
 
   const generateReport = async () => {
     if (!incident) return;
     setGeneratingReport(true);
-    
+
     try {
-      // Create PDF using jsPDF
       const pdf = new jsPDF();
       const pageWidth = pdf.internal.pageSize.getWidth();
       let y = 20;
@@ -354,24 +314,21 @@ export default function IncidentDetail() {
       pdf.text('SOCMind INCIDENT REPORT', pageWidth / 2, y, { align: 'center' });
       y += 15;
 
-      // Line separator
       pdf.setDrawColor(0, 100, 200);
       pdf.line(20, y, pageWidth - 20, y);
       y += 15;
 
-      // Incident Number
       pdf.setFontSize(14);
       pdf.setTextColor(0, 0, 0);
       pdf.text(`Incident: ${incident.incident_number}`, 20, y);
       y += 10;
 
-      // Generated Date
       pdf.setFontSize(10);
       pdf.setTextColor(100, 100, 100);
       pdf.text(`Generated: ${new Date().toLocaleString()}`, 20, y);
       y += 15;
 
-      // Executive Summary Section
+      // Executive Summary
       pdf.setFontSize(14);
       pdf.setTextColor(0, 100, 200);
       pdf.text('EXECUTIVE SUMMARY', 20, y);
@@ -393,26 +350,6 @@ export default function IncidentDetail() {
       });
       y += 5;
 
-      // Incident Details Section
-      pdf.setFontSize(14);
-      pdf.setTextColor(0, 100, 200);
-      pdf.text('INCIDENT DETAILS', 20, y);
-      y += 10;
-
-      pdf.setFontSize(10);
-      pdf.setTextColor(0, 0, 0);
-      const detailItems = [
-        `Timestamp: ${new Date(incident.created_at).toLocaleString()}`,
-        `Source IP: ${incident.src_ip || 'N/A'}`,
-        `Destination IP: ${incident.dst_ip || 'N/A'}`,
-        `File Hash: ${incident.file_hash || 'N/A'}`,
-      ];
-      detailItems.forEach(item => {
-        pdf.text(item, 25, y);
-        y += 7;
-      });
-      y += 5;
-
       // Description
       if (incident.message) {
         pdf.setFontSize(14);
@@ -426,76 +363,9 @@ export default function IncidentDetail() {
         y += lines.length * 5 + 10;
       }
 
-      // MITRE ATT&CK
-      pdf.setFontSize(14);
-      pdf.setTextColor(0, 100, 200);
-      pdf.text('MITRE ATT&CK MAPPING', 20, y);
-      y += 10;
-      pdf.setFontSize(10);
-      pdf.setTextColor(0, 0, 0);
-      pdf.text(`Technique: ${incident.mitre_technique || 'Not mapped'}`, 25, y);
-      y += 7;
-      pdf.text(`Tactic: ${incident.mitre_tactic || 'Not mapped'}`, 25, y);
-      y += 15;
-
-      // Recommended Actions
-      if (incident.recommended_actions && incident.recommended_actions.length > 0) {
-        pdf.setFontSize(14);
-        pdf.setTextColor(0, 100, 200);
-        pdf.text('RECOMMENDED ACTIONS', 20, y);
-        y += 10;
-        pdf.setFontSize(10);
-        pdf.setTextColor(0, 0, 0);
-        incident.recommended_actions.forEach((action, i) => {
-          if (y > 270) {
-            pdf.addPage();
-            y = 20;
-          }
-          pdf.text(`${i + 1}. ${action}`, 25, y);
-          y += 7;
-        });
-        y += 10;
-      }
-
-      // Timeline
-      if (timeline.length > 0) {
-        if (y > 230) {
-          pdf.addPage();
-          y = 20;
-        }
-        pdf.setFontSize(14);
-        pdf.setTextColor(0, 100, 200);
-        pdf.text('INCIDENT TIMELINE', 20, y);
-        y += 10;
-        pdf.setFontSize(9);
-        pdf.setTextColor(0, 0, 0);
-        timeline.slice(0, 10).forEach(entry => {
-          if (y > 270) {
-            pdf.addPage();
-            y = 20;
-          }
-          const time = new Date(entry.timestamp).toLocaleTimeString();
-          pdf.text(`[${time}] ${entry.stage}`, 25, y);
-          y += 5;
-          if (entry.details) {
-            pdf.setTextColor(100, 100, 100);
-            const detailLines = pdf.splitTextToSize(entry.details, pageWidth - 60);
-            pdf.text(detailLines, 30, y);
-            y += detailLines.length * 4 + 3;
-            pdf.setTextColor(0, 0, 0);
-          }
-        });
-      }
-
-      // Footer
-      pdf.setFontSize(8);
-      pdf.setTextColor(150, 150, 150);
-      pdf.text('Generated by SOCMind Autonomous SOC Platform', pageWidth / 2, 285, { align: 'center' });
-
-      // Save PDF
       pdf.save(`Incident_Report_${incident.incident_number}.pdf`);
       toast.success('PDF Report downloaded');
-      
+
     } catch (error) {
       console.error('Report generation failed:', error);
       toast.error('Failed to generate report');
@@ -507,16 +377,16 @@ export default function IncidentDetail() {
   const createJiraTicket = async () => {
     if (!incident) return;
     setCreatingTicket(true);
-    
+
     try {
       const { data, error } = await supabase.functions.invoke('create-jira-ticket', {
         body: {
           incident_id: incident.id,
         },
       });
-      
+
       if (error) throw error;
-      
+
       if (data?.jira_url) {
         setJiraTicketUrl(data.jira_url);
         toast.success(`Jira ticket ${data.jira_key} created`);
@@ -529,6 +399,8 @@ export default function IncidentDetail() {
       setCreatingTicket(false);
     }
   };
+
+  const { headerSummary, bodyDescription } = incident ? normalizeIncidentContent(incident) : { headerSummary: null, bodyDescription: null };
 
   if (loading) {
     return (
@@ -555,12 +427,11 @@ export default function IncidentDetail() {
   }
 
   return (
-    <AppLayout title={incident.incident_number} subtitle={incident.message || 'Security Incident'}>
-      {/* Back button & Actions */}
+    <AppLayout title={incident.incident_number} subtitle={headerSummary || 'Security Incident'}>
       <div className="flex items-center justify-between mb-6">
-        <Button 
-          variant="ghost" 
-          onClick={() => navigate('/incidents')} 
+        <Button
+          variant="ghost"
+          onClick={() => navigate('/incidents')}
           className="text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
@@ -595,8 +466,7 @@ export default function IncidentDetail() {
               Create Jira Ticket
             </Button>
           )}
-          
-          {/* Generate Report Button */}
+
           <Button
             variant="outline"
             size="sm"
@@ -611,7 +481,7 @@ export default function IncidentDetail() {
             )}
             Generate Report
           </Button>
-          
+
           <Button variant="outline" size="sm" onClick={() => toast.info('Advanced filtering coming soon')}>
             <Filter className="h-4 w-4 mr-2" />
             Advanced Filter
@@ -623,34 +493,15 @@ export default function IncidentDetail() {
         </div>
       </div>
 
-      {/* Header Card */}
       <div className="rounded-xl border border-border bg-card p-6 mb-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-foreground font-mono">{incident.incident_number}</h1>
-              <Badge variant="outline" className={cn(riskColors[incident.risk_level])}>
-                {incident.risk_level}
-              </Badge>
-              <Badge variant="outline" className={cn(severityColors[incident.severity])}>
-                Severity {incident.severity}
-              </Badge>
-            </div>
-            <p className="text-muted-foreground max-w-2xl">{incident.message}</p>
-            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Clock className="h-4 w-4" />
-                {new Date(incident.created_at).toLocaleString()}
-              </span>
-              <span className="font-mono">{incident.src_ip} → {incident.dst_ip}</span>
-              {incident.mitre_technique && (
-                <span className="text-primary">{incident.mitre_technique} - {incident.mitre_tactic}</span>
-              )}
-            </div>
+          <div className="flex-1 min-w-[300px]">
+            {/* Use New Header Component */}
+            <IncidentHeader incident={incident} summary={headerSummary} />
 
             {/* Actions */}
             {canModifyIncidents && (
-              <div className="flex items-center gap-3 pt-2">
+              <div className="flex items-center gap-3 pt-4">
                 <Select value={incident.status} onValueChange={updateStatus} disabled={updating}>
                   <SelectTrigger className="w-40 bg-secondary/50">
                     <SelectValue />
@@ -658,27 +509,25 @@ export default function IncidentDetail() {
                   <SelectContent>
                     <SelectItem value="Open">Open</SelectItem>
                     <SelectItem value="In Progress">In Progress</SelectItem>
-                    {/* Tier 1 cannot close incidents */}
                     {canCloseIncident && (
                       <SelectItem value="Closed">Closed</SelectItem>
                     )}
                   </SelectContent>
                 </Select>
                 <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={runAnalysis} 
+                  <Button
+                    variant="outline"
+                    onClick={runAnalysis}
                     disabled={updating}
                     className="border-primary/30 text-primary hover:bg-primary/10"
                   >
                     {updating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Shield className="h-4 w-4 mr-2" />}
                     Run Analysis
                   </Button>
-                  {/* Tier 1 cannot execute playbooks */}
                   {canRunPlaybook && (
-                    <Button 
-                      variant="outline" 
-                      onClick={executePlaybook} 
+                    <Button
+                      variant="outline"
+                      onClick={executePlaybook}
                       disabled={updating}
                       className="border-primary/30 text-primary hover:bg-primary/10"
                     >
@@ -695,8 +544,8 @@ export default function IncidentDetail() {
           <div className={cn(
             'rounded-xl p-4 border min-w-[200px]',
             incident.classification === 'True Positive' ? 'bg-critical/5 border-critical/30' :
-            incident.classification === 'False Positive' ? 'bg-success/5 border-success/30' :
-            'bg-muted border-border'
+              incident.classification === 'False Positive' ? 'bg-success/5 border-success/30' :
+                'bg-muted border-border'
           )}>
             <p className="text-xs font-medium text-muted-foreground mb-2">AI Classification</p>
             <div className="flex items-center gap-2">
@@ -716,11 +565,11 @@ export default function IncidentDetail() {
                   <span className="font-mono text-foreground">{incident.confidence}%</span>
                 </div>
                 <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
-                  <div 
+                  <div
                     className={cn(
                       'h-full rounded-full transition-all',
-                      incident.confidence >= 80 ? 'bg-success' : 
-                      incident.confidence >= 50 ? 'bg-warning' : 'bg-destructive'
+                      incident.confidence >= 80 ? 'bg-success' :
+                        incident.confidence >= 50 ? 'bg-warning' : 'bg-destructive'
                     )}
                     style={{ width: `${incident.confidence}%` }}
                   />
@@ -731,7 +580,10 @@ export default function IncidentDetail() {
         </div>
       </div>
 
-      {/* Tabs */}
+      <div className="mb-6">
+        <IncidentDetails description={bodyDescription} />
+      </div>
+
       <Tabs defaultValue="analysis" className="space-y-6">
         <TabsList className="bg-secondary/50">
           <TabsTrigger value="analysis">AI Analysis</TabsTrigger>
@@ -741,7 +593,6 @@ export default function IncidentDetail() {
         </TabsList>
 
         <TabsContent value="analysis" className="space-y-6">
-          {/* Evidence */}
           {incident.evidence && incident.evidence.length > 0 && (
             <div className="rounded-xl border border-border bg-card p-5">
               <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
@@ -759,7 +610,6 @@ export default function IncidentDetail() {
             </div>
           )}
 
-          {/* AI Analysis Details */}
           {incident.ai_analysis && (
             <div className="rounded-xl border border-border bg-card p-5">
               <h3 className="text-sm font-semibold text-foreground mb-4">AI Analysis Details</h3>
@@ -769,16 +619,15 @@ export default function IncidentDetail() {
             </div>
           )}
 
-          {/* Recommended Actions */}
           {incident.recommended_actions && incident.recommended_actions.length > 0 && (
             <div className="rounded-xl border border-border bg-card p-5">
               <h3 className="text-sm font-semibold text-foreground mb-4">Recommended Actions</h3>
               <div className="flex flex-wrap gap-2">
                 {incident.recommended_actions.map((action, idx) => (
-                  <Button 
-                    key={idx} 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    key={idx}
+                    variant="outline"
+                    size="sm"
                     className="border-primary/30 text-primary hover:bg-primary/10"
                     disabled={executingAction === action}
                     onClick={() => handleRecommendedAction(action)}
@@ -798,70 +647,37 @@ export default function IncidentDetail() {
           <div className="rounded-xl border border-border bg-card p-5">
             <h3 className="text-sm font-semibold text-foreground mb-4">Incident Timeline</h3>
             {timeline.length > 0 ? (
-              <div className="relative">
-                <div className="absolute left-3 top-0 bottom-0 w-px bg-border" />
-                <div className="space-y-6">
-                  {timeline.map((event) => (
-                    <div key={event.id} className="flex items-start gap-4 relative">
-                      <div className="relative z-10 h-6 w-6 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center">
-                        <span className="h-2 w-2 rounded-full bg-primary" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">{event.stage}</p>
-                        <p className="text-sm text-muted-foreground font-mono">
-                          {new Date(event.timestamp).toLocaleString()}
-                        </p>
-                        {event.details && (
-                          <p className="text-sm text-muted-foreground mt-1">{event.details}</p>
-                        )}
-                      </div>
+              <div className="relative border-l border-border ml-2 space-y-6">
+                {timeline.map((entry) => (
+                  <div key={entry.id} className="ml-4 relative">
+                    <div className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-primary border-2 border-background" />
+                    <div className="text-xs text-muted-foreground mb-1">
+                      {new Date(entry.timestamp).toLocaleString()}
                     </div>
-                  ))}
-                </div>
+                    <div className="text-sm font-medium text-foreground">{entry.stage}</div>
+                    {entry.details && (
+                      <div className="text-xs text-muted-foreground mt-1 bg-secondary/30 p-2 rounded">
+                        {entry.details}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             ) : (
-              <p className="text-muted-foreground">No timeline data available</p>
+              <p className="text-muted-foreground text-sm">No timeline events yet</p>
             )}
           </div>
         </TabsContent>
 
         <TabsContent value="sandbox">
           <div className="rounded-xl border border-border bg-card p-5">
-            <h3 className="text-sm font-semibold text-foreground mb-4">Sandbox Analysis</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-4">Sandbox Execution Results</h3>
             {incident.sandbox_result ? (
-              <div className="space-y-4">
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-muted-foreground">Vendor:</span>
-                  <Badge variant="outline">{(incident.sandbox_result as any).vendor}</Badge>
-                </div>
-                {(incident.sandbox_result as any).malicious !== undefined && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="rounded-lg bg-critical/10 border border-critical/30 p-4">
-                      <p className="text-xs text-muted-foreground mb-1">Malicious Detections</p>
-                      <p className="text-2xl font-bold text-critical">{(incident.sandbox_result as any).malicious}</p>
-                    </div>
-                    <div className="rounded-lg bg-warning/10 border border-warning/30 p-4">
-                      <p className="text-xs text-muted-foreground mb-1">Suspicious Detections</p>
-                      <p className="text-2xl font-bold text-warning">{(incident.sandbox_result as any).suspicious}</p>
-                    </div>
-                  </div>
-                )}
-                {incident.file_hash && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">File Hash:</span>
-                    <code className="text-sm font-mono text-primary bg-primary/10 px-2 py-1 rounded">
-                      {incident.file_hash}
-                    </code>
-                    <Button variant="ghost" size="sm" asChild>
-                      <a href={`https://www.virustotal.com/gui/file/${incident.file_hash}`} target="_blank" rel="noopener">
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                    </Button>
-                  </div>
-                )}
-              </div>
+              <pre className="bg-secondary/50 p-4 rounded-lg overflow-x-auto text-sm font-mono text-muted-foreground">
+                {JSON.stringify(incident.sandbox_result, null, 2)}
+              </pre>
             ) : (
-              <p className="text-muted-foreground">No sandbox results available</p>
+              <p className="text-muted-foreground text-sm">No sandbox execution data available.</p>
             )}
           </div>
         </TabsContent>
@@ -869,8 +685,8 @@ export default function IncidentDetail() {
         <TabsContent value="raw">
           <div className="rounded-xl border border-border bg-card p-5">
             <h3 className="text-sm font-semibold text-foreground mb-4">Raw Log Data</h3>
-            <pre className="bg-secondary/50 p-4 rounded-lg overflow-x-auto text-sm font-mono text-muted-foreground">
-              {JSON.stringify(incident.raw_log || incident, null, 2)}
+            <pre className="bg-muted p-4 rounded-lg overflow-x-auto text-xs font-mono text-foreground whitespace-pre-wrap">
+              {JSON.stringify(incident.raw_log, null, 2)}
             </pre>
           </div>
         </TabsContent>

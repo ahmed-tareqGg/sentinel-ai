@@ -20,6 +20,7 @@ interface AgentHeartbeat {
   status: 'active' | 'error';
   logs_sent?: number;
   error_message?: string;
+  ip_address?: string;
 }
 
 interface NormalizedLog {
@@ -62,14 +63,14 @@ const SIMULATED_LOGS = {
 
 async function verifyAgentKey(req: Request, supabase: any): Promise<{ valid: boolean; dataSourceId?: string; dataSourceName?: string; error?: string }> {
   const agentKey = req.headers.get('x-agent-key');
-  
+
   if (!agentKey) {
     return { valid: false, error: 'Missing X-Agent-Key header' };
   }
 
   // Use the verify function
   const { data, error } = await supabase.rpc('verify_agent_api_key', { _api_key: agentKey });
-  
+
   if (error) {
     console.error('Key verification error:', error);
     return { valid: false, error: 'Key verification failed' };
@@ -79,10 +80,10 @@ async function verifyAgentKey(req: Request, supabase: any): Promise<{ valid: boo
     return { valid: false, error: 'Invalid or expired API key' };
   }
 
-  return { 
-    valid: true, 
+  return {
+    valid: true,
     dataSourceId: data[0].data_source_id,
-    dataSourceName: data[0].data_source_name 
+    dataSourceName: data[0].data_source_name
   };
 }
 
@@ -144,7 +145,7 @@ serve(async (req) => {
 
       if (action === 'register') {
         const body = await req.json() as AgentRegistration;
-        
+
         // Create data source
         const { data: dataSource, error } = await supabase
           .from('data_sources')
@@ -238,7 +239,7 @@ serve(async (req) => {
 
       if (action === 'simulate') {
         const { data_source_id, log_type, count = 5 } = await req.json();
-        
+
         // Get data source
         const { data: dataSource, error: dsError } = await supabase
           .from('data_sources')
@@ -258,7 +259,7 @@ serve(async (req) => {
           const baseLog = logPool[Math.floor(Math.random() * logPool.length)];
           const timestamp = new Date().toISOString();
           const srcIP = dataSource.ip_address || '10.0.0.' + Math.floor(Math.random() * 255);
-          
+
           simulatedLogs.push({
             eventType: baseLog.event_type,
             severity: baseLog.severity,
@@ -289,7 +290,7 @@ serve(async (req) => {
             .from('raw_logs')
             .insert(rawLogsToInsert)
             .select('id');
-          
+
           if (rawError) {
             console.error('Failed to insert raw logs:', rawError);
           } else {
@@ -369,12 +370,13 @@ serve(async (req) => {
             status: body.status,
             last_heartbeat: new Date().toISOString(),
             config: body.error_message ? { last_error: body.error_message } : undefined,
+            ...(body.ip_address ? { ip_address: body.ip_address } : {}),
           })
           .eq('id', auth.dataSourceId);
 
         console.log(`💓 Heartbeat from ${auth.dataSourceName}: ${body.status}`);
 
-        return new Response(JSON.stringify({ 
+        return new Response(JSON.stringify({
           success: true,
           message: 'Heartbeat recorded',
         }), {
@@ -405,7 +407,7 @@ serve(async (req) => {
             .from('raw_logs')
             .insert(rawLogsToInsert)
             .select('id');
-          
+
           if (rawError) {
             console.error('Failed to insert raw logs:', rawError);
           } else {
@@ -442,7 +444,7 @@ serve(async (req) => {
         if (!ingestResponse.ok) {
           const errorText = await ingestResponse.text();
           console.error('Ingest failed:', errorText);
-          
+
           // Update raw logs with error status
           if (insertedLogIds.length > 0) {
             await supabase
@@ -450,7 +452,7 @@ serve(async (req) => {
               .update({ processing_status: 'error', error_message: 'Analysis failed', analyzed_at: new Date().toISOString() })
               .in('id', insertedLogIds);
           }
-          
+
           throw new Error('Failed to process logs');
         }
 
@@ -461,8 +463,8 @@ serve(async (req) => {
           const status = ingestResult.incidents?.length > 0 ? 'incident_created' : 'analyzed';
           await supabase
             .from('raw_logs')
-            .update({ 
-              processing_status: status, 
+            .update({
+              processing_status: status,
               analyzed_at: new Date().toISOString(),
               incident_id: ingestResult.incidents?.[0]?.id || null,
             })
@@ -522,7 +524,7 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Agent gateway error:', error);
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       error: 'An error occurred processing your request',
       code: 'INTERNAL_ERROR',
     }), {
