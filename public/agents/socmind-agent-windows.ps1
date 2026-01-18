@@ -1,5 +1,5 @@
-# SOCMind Agent for Windows
-# Lightweight log collection and forwarding agent
+# SOCMind Agent for Windows v1.1
+# Lightweight log collection and forwarding agent with remote control
 # Run as Administrator
 
 param(
@@ -7,9 +7,14 @@ param(
     [string]$Command = "help"
 )
 
-$AgentVersion = "1.0.0"
+$AgentVersion = "1.1.0"
 $ConfigPath = "$env:ProgramData\SOCMind\agent.conf"
 $LogPath = "$env:ProgramData\SOCMind\agent.log"
+$StatePath = "$env:ProgramData\SOCMind\agent.state"
+
+# Agent state
+$script:AgentPaused = $false
+$script:AgentRunning = $true
 
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
@@ -20,6 +25,7 @@ function Write-Log {
     switch ($Level) {
         "ERROR" { Write-Host "[SOCMind ERROR] $Message" -ForegroundColor Red }
         "WARN" { Write-Host "[SOCMind WARN] $Message" -ForegroundColor Yellow }
+        "DEBUG" { Write-Host "[SOCMind DEBUG] $Message" -ForegroundColor Gray }
         default { Write-Host "[SOCMind] $Message" -ForegroundColor Green }
     }
     
@@ -79,8 +85,24 @@ function Get-LocalIPAddress {
     }
 }
 
+function Save-AgentState {
+    param([string]$State)
+    $stateDir = Split-Path $StatePath -Parent
+    if (-not (Test-Path $stateDir)) {
+        New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
+    }
+    Set-Content -Path $StatePath -Value $State
+}
+
+function Get-AgentState {
+    if (Test-Path $StatePath) {
+        return Get-Content $StatePath
+    }
+    return "running"
+}
+
 function Set-AgentConfig {
-    Write-Log "Configuring SOCMind Agent..."
+    Write-Log "Configuring SOCMind Agent v$AgentVersion..."
     
     # Create directory
     $configDir = Split-Path $ConfigPath -Parent
@@ -106,17 +128,24 @@ function Set-AgentConfig {
     if ([string]::IsNullOrWhiteSpace($interval)) { $interval = "60" }
     
     $hostname = $env:COMPUTERNAME
+    $agentId = [guid]::NewGuid().ToString()
     
     $configContent = @"
-# SOCMind Agent Configuration
-# (Supports both SOCMIND_* keys and simple keys like endpoint/api_key for compatibility)
+# SOCMind Agent Configuration v1.1
+# (Supports both SOCMIND_* keys and simple keys for compatibility)
 
-# Preferred keys
+# Agent Identity
+SOCMIND_AGENT_ID="$agentId"
+SOCMIND_HOSTNAME="$hostname"
+SOCMIND_AGENT_VERSION="$AgentVersion"
+
+# API Configuration
 SOCMIND_API_ENDPOINT="$endpoint"
 SOCMIND_API_KEY="$apiKey"
+
+# Collection Settings
 SOCMIND_LOG_TYPES="$logTypes"
 SOCMIND_INTERVAL="$interval"
-SOCMIND_HOSTNAME="$hostname"
 
 # Compatibility keys
 endpoint="$endpoint"
@@ -127,7 +156,9 @@ hostname="$hostname"
 "@
     
     Set-Content -Path $ConfigPath -Value $configContent
+    Save-AgentState "running"
     Write-Log "Configuration saved to $ConfigPath"
+    Write-Log "Agent ID: $agentId"
 }
 
 function Send-Heartbeat {
@@ -137,28 +168,88 @@ function Send-Heartbeat {
     )
     
     $config = Get-Config
-    if (-not $config) { return }
+    if (-not $config) { return $null }
 
     $endpoint = Get-ConfigValue -Config $config -Keys @('SOCMIND_API_ENDPOINT', 'endpoint')
     $apiKey = Get-ConfigValue -Config $config -Keys @('SOCMIND_API_KEY', 'api_key', 'AGENT_API_KEY', 'AGENT_KEY')
     $hostname = Get-ConfigValue -Config $config -Keys @('SOCMIND_HOSTNAME', 'hostname')
+    $agentId = Get-ConfigValue -Config $config -Keys @('SOCMIND_AGENT_ID')
+    $logTypes = Get-ConfigValue -Config $config -Keys @('SOCMIND_LOG_TYPES', 'log_types')
 
     if ([string]::IsNullOrWhiteSpace($endpoint) -or [string]::IsNullOrWhiteSpace($apiKey)) {
-        return
+        return $null
     }
 
     $ipAddress = Get-LocalIPAddress
-    $body = @{ hostname = $hostname; status = $Status; ip_address = $ipAddress }
-    if ($ErrorMessage) { $body["error_message"] = $ErrorMessage }
+    
+    # Build heartbeat payload with full agent info
+    $body = @{
+        agent_id = $agentId
+        hostname = $hostname
+        ip_address = $ipAddress
+        os = "windows"
+        status = $Status
+        log_types = $logTypes -split ","
+    }
+    
+    if ($ErrorMessage) { 
+        $body["error_message"] = $ErrorMessage 
+    }
 
     try {
-        $headers = @{ "X-Agent-Key" = $apiKey; "Content-Type" = "application/json" }
+        $headers = @{ 
+            "X-Agent-Key" = $apiKey
+            "Content-Type" = "application/json" 
+        }
 
-        Invoke-RestMethod -Uri "$endpoint/heartbeat" `
-            -Method Post -Headers $headers -Body ($body | ConvertTo-Json) -ErrorAction SilentlyContinue
+        $response = Invoke-RestMethod -Uri "$endpoint/heartbeat" `
+            -Method Post -Headers $headers -Body ($body | ConvertTo-Json) -ErrorAction Stop
+        
+        # Check for remote commands
+        if ($response.command) {
+            Write-Log "Received remote command: $($response.command)" -Level "WARN"
+            return $response.command
+        }
+        
+        return $null
     }
     catch {
-        # Silently fail heartbeat
+        Write-Log "Heartbeat failed: $_" -Level "DEBUG"
+        return $null
+    }
+}
+
+function Process-RemoteCommand {
+    param([string]$Command)
+    
+    switch ($Command.ToLower()) {
+        "pause" {
+            Write-Log "Remote command: PAUSE - Stopping log collection" -Level "WARN"
+            $script:AgentPaused = $true
+            Save-AgentState "paused"
+        }
+        "resume" {
+            Write-Log "Remote command: RESUME - Resuming log collection" -Level "INFO"
+            $script:AgentPaused = $false
+            Save-AgentState "running"
+        }
+        "start" {
+            Write-Log "Remote command: START - Starting log collection" -Level "INFO"
+            $script:AgentPaused = $false
+            $script:AgentRunning = $true
+            Save-AgentState "running"
+        }
+        "stop" {
+            Write-Log "Remote command: STOP - Stopping agent" -Level "WARN"
+            $script:AgentRunning = $false
+            Save-AgentState "stopped"
+        }
+        "terminate" {
+            Write-Log "Remote command: TERMINATE - Shutting down agent" -Level "ERROR"
+            $script:AgentRunning = $false
+            Save-AgentState "terminated"
+            exit 0
+        }
     }
 }
 
@@ -198,12 +289,13 @@ function Get-SecurityLogs {
                 timestamp = $event.TimeCreated.ToString("o")
                 message   = "$eventType - Event ID: $($event.Id) - $($event.Message -replace '\r?\n', ' ' | ForEach-Object { if ($_.Length -gt 200) { $_.Substring(0, 200) } else { $_ } })"
                 severity  = $severity
-                source_ip = $config["SOCMIND_HOSTNAME"]
+                source_ip = Get-LocalIPAddress
                 event_id  = $event.Id.ToString()
                 raw_log   = @{
                     source   = "Windows Security Log"
                     provider = $event.ProviderName
                     event_id = $event.Id
+                    hostname = $env:COMPUTERNAME
                 }
             }
         }
@@ -219,7 +311,6 @@ function Get-SystemLogs {
     param([int]$MaxEvents = 30)
     
     $logs = @()
-    $config = Get-Config
     
     try {
         $events = Get-WinEvent -LogName System -MaxEvents $MaxEvents -ErrorAction SilentlyContinue
@@ -245,11 +336,13 @@ function Get-SystemLogs {
                 timestamp = $event.TimeCreated.ToString("o")
                 message   = "$eventType - $($event.ProviderName): $($event.Message -replace '\r?\n', ' ' | ForEach-Object { if ($_.Length -gt 200) { $_.Substring(0, 200) } else { $_ } })"
                 severity  = $severity
-                source_ip = $config["SOCMIND_HOSTNAME"]
+                source_ip = Get-LocalIPAddress
+                event_id  = $event.Id.ToString()
                 raw_log   = @{
                     source   = "Windows System Log"
                     provider = $event.ProviderName
                     event_id = $event.Id
+                    hostname = $env:COMPUTERNAME
                 }
             }
         }
@@ -265,7 +358,6 @@ function Get-ApplicationLogs {
     param([int]$MaxEvents = 20)
     
     $logs = @()
-    $config = Get-Config
     
     try {
         $events = Get-WinEvent -LogName Application -MaxEvents $MaxEvents -ErrorAction SilentlyContinue
@@ -283,11 +375,13 @@ function Get-ApplicationLogs {
                 timestamp = $event.TimeCreated.ToString("o")
                 message   = "$($event.ProviderName): $($event.Message -replace '\r?\n', ' ' | ForEach-Object { if ($_.Length -gt 200) { $_.Substring(0, 200) } else { $_ } })"
                 severity  = $severity
-                source_ip = $config["SOCMIND_HOSTNAME"]
+                source_ip = Get-LocalIPAddress
+                event_id  = $event.Id.ToString()
                 raw_log   = @{
                     source   = "Windows Application Log"
                     provider = $event.ProviderName
                     event_id = $event.Id
+                    hostname = $env:COMPUTERNAME
                 }
             }
         }
@@ -318,12 +412,15 @@ function Send-Logs {
     $body = @{ logs = $Logs }
 
     try {
-        $headers = @{ "X-Agent-Key" = $apiKey; "Content-Type" = "application/json" }
+        $headers = @{ 
+            "X-Agent-Key" = $apiKey
+            "Content-Type" = "application/json" 
+        }
 
         $response = Invoke-RestMethod -Uri "$endpoint/ingest" `
             -Method Post -Headers $headers -Body ($body | ConvertTo-Json -Depth 10)
 
-        Write-Log "Successfully sent $($Logs.Count) logs"
+        Write-Log "Successfully sent $($Logs.Count) logs (Incidents: $($response.incidents.Count), Skipped: $($response.skipped_duplicates))"
         return $true
     }
     catch {
@@ -348,20 +445,45 @@ function Start-Agent {
     $hostname = Get-ConfigValue -Config $config -Keys @('SOCMIND_HOSTNAME', 'hostname')
     $logTypesRaw = Get-ConfigValue -Config $config -Keys @('SOCMIND_LOG_TYPES', 'log_types')
     $intervalRaw = Get-ConfigValue -Config $config -Keys @('SOCMIND_INTERVAL', 'interval')
+    $agentId = Get-ConfigValue -Config $config -Keys @('SOCMIND_AGENT_ID')
 
     Write-Log "SOCMind Agent v$AgentVersion starting..."
+    Write-Log "Agent ID: $agentId"
     Write-Log "Hostname: $hostname"
+    Write-Log "IP Address: $(Get-LocalIPAddress)"
     Write-Log "API Endpoint: $endpoint"
     Write-Log "Log Types: $logTypesRaw"
     Write-Log "Interval: $intervalRaw`s"
 
+    # Restore state
+    $savedState = Get-AgentState
+    if ($savedState -eq "paused") {
+        $script:AgentPaused = $true
+        Write-Log "Restored paused state" -Level "WARN"
+    }
+
     # Initial heartbeat
-    Send-Heartbeat -Status "active"
+    $command = Send-Heartbeat -Status "active"
+    if ($command) { Process-RemoteCommand -Command $command }
 
     $interval = [int]$intervalRaw
     $logTypes = $logTypesRaw -split ","
     
-    while ($true) {
+    while ($script:AgentRunning) {
+        # Check for remote commands via heartbeat
+        $status = if ($script:AgentPaused) { "paused" } else { "active" }
+        $command = Send-Heartbeat -Status $status
+        if ($command) { 
+            Process-RemoteCommand -Command $command 
+        }
+
+        # Skip log collection if paused
+        if ($script:AgentPaused) {
+            Write-Log "Agent paused - skipping log collection" -Level "DEBUG"
+            Start-Sleep -Seconds $interval
+            continue
+        }
+
         $allLogs = @()
         
         foreach ($logType in $logTypes) {
@@ -382,10 +504,10 @@ function Start-Agent {
             }
         }
         
-        Send-Heartbeat -Status "active"
-        
         Start-Sleep -Seconds $interval
     }
+
+    Write-Log "Agent stopped" -Level "WARN"
 }
 
 function Install-AsService {
@@ -416,6 +538,30 @@ function Install-AsService {
     Start-ScheduledTask -TaskName "SOCMind Agent"
 }
 
+function Show-Status {
+    $config = Get-Config
+    if (-not $config) {
+        Write-Log "Agent not configured" -Level "ERROR"
+        return
+    }
+
+    $state = Get-AgentState
+    $hostname = Get-ConfigValue -Config $config -Keys @('SOCMIND_HOSTNAME', 'hostname')
+    $agentId = Get-ConfigValue -Config $config -Keys @('SOCMIND_AGENT_ID')
+    $endpoint = Get-ConfigValue -Config $config -Keys @('SOCMIND_API_ENDPOINT', 'endpoint')
+    
+    Write-Host ""
+    Write-Host "SOCMind Agent Status" -ForegroundColor Cyan
+    Write-Host "===================="
+    Write-Host "Version:    $AgentVersion"
+    Write-Host "Agent ID:   $agentId"
+    Write-Host "Hostname:   $hostname"
+    Write-Host "IP Address: $(Get-LocalIPAddress)"
+    Write-Host "State:      $state"
+    Write-Host "Endpoint:   $endpoint"
+    Write-Host ""
+}
+
 function Show-Help {
     Write-Host ""
     Write-Host "SOCMind Agent v$AgentVersion for Windows" -ForegroundColor Cyan
@@ -426,7 +572,14 @@ function Show-Help {
     Write-Host "  configure    Configure the agent with API credentials"
     Write-Host "  run          Start the agent in foreground"
     Write-Host "  install      Install as Windows scheduled task"
+    Write-Host "  status       Show agent status"
     Write-Host "  help         Show this help message"
+    Write-Host ""
+    Write-Host "Remote Control:"
+    Write-Host "  The agent supports remote control commands via the SOCMind dashboard:"
+    Write-Host "  - Start:     Resume log collection"
+    Write-Host "  - Pause:     Stop log collection but keep heartbeat"
+    Write-Host "  - Stop:      Stop the agent"
     Write-Host ""
     Write-Host "Example:"
     Write-Host "  .\socmind-agent.ps1 configure"
@@ -439,6 +592,7 @@ switch ($Command.ToLower()) {
     "configure" { Set-AgentConfig }
     "run" { Start-Agent }
     "install" { Install-AsService }
+    "status" { Show-Status }
     "help" { Show-Help }
     default { 
         Write-Log "Unknown command: $Command" -Level "ERROR"
