@@ -55,11 +55,13 @@ export function IncidentHeader({ incident, summary }: IncidentHeaderProps) {
 
                     if (!technique) return null;
 
-                    const techniqueId = technique.match(/(T\d+(\.\d+)?)/)?.[0] || technique;
+                    // Extract technique ID and convert sub-technique format: T1069.001 -> T1069/001
+                    const techniqueIdRaw = technique.match(/(T\d+(\.\d+)?)/)?.[0] || technique;
+                    const techniqueUrlPath = techniqueIdRaw.replace('.', '/');
 
                     return (
                         <a
-                            href={`https://attack.mitre.org/techniques/${techniqueId}`}
+                            href={`https://attack.mitre.org/techniques/${techniqueUrlPath}/`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="hover:opacity-80 transition-opacity"

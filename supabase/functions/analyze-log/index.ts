@@ -195,6 +195,32 @@ serve(async (req) => {
     const keywordMitre = detectMitreFromContent(log);
     console.log('Keyword-based MITRE detection:', keywordMitre);
 
+    // Build AI prompt
+    const aiPrompt = `Analyze this security log and provide a threat assessment:
+
+Event Type: ${log.eventType}
+Severity: ${log.severity}
+Source IP: ${log.srcIP}
+Destination IP: ${log.dstIP}
+Message: ${log.msg}
+${log.fileHash ? `File Hash: ${log.fileHash}` : ''}
+${log.action ? `Action: ${log.action}` : ''}
+
+Respond with JSON containing:
+{
+  "classification": "True Positive" | "False Positive" | "Benign",
+  "confidence": 0-100,
+  "reason": "explanation",
+  "risk_level": "Critical" | "High" | "Medium" | "Low",
+  "mitre_techniques": [{ "technique_id": "T1234", "technique_name": "Name", "tactic": "Tactic", "confidence": 80, "evidence": "why" }],
+  "recommended_actions": ["action1", "action2"],
+  "evidence": ["evidence1", "evidence2"],
+  "kill_chain_phase": "phase name"
+}`;
+
+    let aiAnalysis: any = null;
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+
     // 1. Try Primary Model (Lovable AI Gateway)
     try {
       if (LOVABLE_API_KEY) {
