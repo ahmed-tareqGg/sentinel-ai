@@ -13,14 +13,24 @@ interface AgentRegistration {
   agent_version: string;
   ip_address: string;
   log_types: string[];
+  source_type?: string;  // firewall, edr, ndr, cloud
+  vendor?: string;       // fortinet, crowdstrike, etc.
 }
 
 interface AgentHeartbeat {
   hostname: string;
-  status: 'active' | 'error';
+  status: 'active' | 'error' | 'paused';
   logs_sent?: number;
   error_message?: string;
   ip_address?: string;
+  os?: string;
+  log_types?: string[];
+  agent_id?: string;
+}
+
+interface AgentControl {
+  agent_id: string;
+  action: 'start' | 'pause' | 'stop' | 'resume' | 'terminate';
 }
 
 interface NormalizedLog {
@@ -35,12 +45,19 @@ interface NormalizedLog {
   event_id?: string;
   file_hash?: string;
   raw_log: any;
+  source_type?: string;
+  vendor?: string;
 }
 
 interface LogBatch {
   logs: NormalizedLog[];
   batch_id?: string;
+  source_type?: string;
+  vendor?: string;
 }
+
+// Agent command queue (in-memory for simplicity, would use DB in production)
+const agentCommands = new Map<string, string>();
 
 // Simulation mode data
 const SIMULATED_LOGS = {
@@ -59,7 +76,38 @@ const SIMULATED_LOGS = {
     { event_type: 'Malware Detection', severity: 5, message: 'Suspicious file detected: /tmp/payload.exe', file_hash: 'a1b2c3d4e5f6' },
     { event_type: 'Privilege Escalation', severity: 5, message: 'sudo: user attempted to run command as root' },
   ],
+  firewall: [
+    { event_type: 'Connection Blocked', severity: 3, message: 'Blocked inbound connection from 185.143.172.1:4444 to 10.0.0.5:22' },
+    { event_type: 'Port Scan Detected', severity: 4, message: 'Port scan detected from 45.33.32.156 targeting ports 1-1024' },
+    { event_type: 'Policy Violation', severity: 4, message: 'Traffic from 192.168.1.50 blocked by policy DENY-EXTERNAL' },
+  ],
+  edr: [
+    { event_type: 'Malware Detected', severity: 5, message: 'Malicious executable detected: mimikatz.exe', file_hash: 'e6b8c9d4f5a6' },
+    { event_type: 'Suspicious Process', severity: 4, message: 'PowerShell executed with encoded command from user ADMIN' },
+    { event_type: 'Lateral Movement', severity: 5, message: 'PsExec detected moving laterally to 10.0.0.25' },
+  ],
+  ndr: [
+    { event_type: 'Anomalous Traffic', severity: 4, message: 'Unusual data exfiltration pattern detected to 45.33.32.156' },
+    { event_type: 'C2 Communication', severity: 5, message: 'Potential C2 beacon detected to known malicious IP' },
+    { event_type: 'DNS Tunneling', severity: 4, message: 'Suspicious DNS query pattern suggesting tunneling' },
+  ],
+  cloud: [
+    { event_type: 'IAM Policy Change', severity: 3, message: 'IAM policy AdminAccess attached to user developer' },
+    { event_type: 'S3 Bucket Public', severity: 5, message: 'S3 bucket customer-data made public' },
+    { event_type: 'Root Login', severity: 4, message: 'Root account login detected from unusual location' },
+  ],
 };
+
+// Hash function for deduplication
+async function hashLog(log: any): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(
+    `${log.source_ip || log.srcIP || ''}:${log.event_id || log.eventType || ''}:${log.message || log.msg || ''}:${log.timestamp || ''}`
+  );
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 async function verifyAgentKey(req: Request, supabase: any): Promise<{ valid: boolean; dataSourceId?: string; dataSourceName?: string; error?: string }> {
   const agentKey = req.headers.get('x-agent-key');
@@ -120,6 +168,76 @@ async function verifyUserAuth(req: Request): Promise<{ valid: boolean; userId?: 
   return { valid: true, userId: user.id };
 }
 
+// Correlation: Check if similar logs exist within time window
+async function shouldCreateIncident(
+  supabase: any,
+  log: NormalizedLog,
+  dataSourceId: string
+): Promise<{ create: boolean; reason: string; correlatedCount: number }> {
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  
+  // Check for existing similar raw logs
+  const { data: recentLogs, error } = await supabase
+    .from('raw_logs')
+    .select('id, timestamp, parsed_message')
+    .eq('data_source_id', dataSourceId)
+    .eq('log_type', log.log_type)
+    .gte('timestamp', tenMinutesAgo)
+    .order('timestamp', { ascending: false })
+    .limit(10);
+
+  if (error) {
+    console.error('Correlation check failed:', error);
+    return { create: true, reason: 'Correlation check failed, creating incident', correlatedCount: 1 };
+  }
+
+  const similarLogs = recentLogs?.filter((l: any) => 
+    l.parsed_message?.includes(log.event_id || '') || 
+    l.parsed_message?.includes(log.source_ip || '')
+  ) || [];
+
+  // If >= 3 similar logs in 10 mins from same host, create incident
+  if (similarLogs.length >= 2) {
+    return { 
+      create: true, 
+      reason: `Correlated ${similarLogs.length + 1} similar events within 10 minutes`,
+      correlatedCount: similarLogs.length + 1
+    };
+  }
+
+  // High severity always creates incident
+  if (log.severity >= 4) {
+    return { create: true, reason: 'High severity log', correlatedCount: 1 };
+  }
+
+  // Low severity without correlation - just store as raw log
+  if (log.severity <= 2 && similarLogs.length < 2) {
+    return { create: false, reason: 'Low severity, no correlation pattern detected', correlatedCount: similarLogs.length + 1 };
+  }
+
+  return { create: true, reason: 'Standard processing', correlatedCount: 1 };
+}
+
+// Check for duplicate logs
+async function isDuplicate(supabase: any, logHash: string, dataSourceId: string): Promise<boolean> {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  
+  const { data, error } = await supabase
+    .from('raw_logs')
+    .select('id')
+    .eq('data_source_id', dataSourceId)
+    .eq('mitre_technique', logHash) // Using mitre_technique temporarily to store hash
+    .gte('created_at', oneHourAgo)
+    .limit(1);
+
+  if (error) {
+    console.error('Duplicate check failed:', error);
+    return false;
+  }
+
+  return data && data.length > 0;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -134,7 +252,7 @@ serve(async (req) => {
 
   try {
     // Actions that require user authentication (management)
-    if (['register', 'generate-key', 'list', 'delete', 'simulate'].includes(action || '')) {
+    if (['register', 'generate-key', 'list', 'delete', 'simulate', 'control'].includes(action || '')) {
       const auth = await verifyUserAuth(req);
       if (!auth.valid) {
         return new Response(JSON.stringify({ error: auth.error }), {
@@ -146,12 +264,24 @@ serve(async (req) => {
       if (action === 'register') {
         const body = await req.json() as AgentRegistration;
 
+        // Determine type based on source_type
+        let agentType = body.os_type === 'windows' ? 'windows_agent' : 'linux_agent';
+        if (body.source_type) {
+          switch (body.source_type.toLowerCase()) {
+            case 'firewall': agentType = 'firewall'; break;
+            case 'edr': agentType = 'edr'; break;
+            case 'ndr': agentType = 'ndr'; break;
+            case 'cloud': agentType = 'cloud'; break;
+            case 'syslog': agentType = 'syslog'; break;
+          }
+        }
+
         // Create data source
         const { data: dataSource, error } = await supabase
           .from('data_sources')
           .insert({
             name: body.hostname,
-            type: body.os_type === 'windows' ? 'windows_agent' : 'linux_agent',
+            type: agentType,
             hostname: body.hostname,
             ip_address: body.ip_address,
             os_type: body.os_type,
@@ -160,6 +290,7 @@ serve(async (req) => {
             log_types: body.log_types,
             status: 'pending',
             created_by: auth.userId,
+            config: body.vendor ? { vendor: body.vendor } : {},
           })
           .select()
           .single();
@@ -175,7 +306,7 @@ serve(async (req) => {
 
         if (keyError) throw keyError;
 
-        console.log(`✅ Registered new agent: ${body.hostname}`);
+        console.log(`✅ Registered new agent: ${body.hostname} (${agentType})`);
 
         return new Response(JSON.stringify({
           success: true,
@@ -237,6 +368,42 @@ serve(async (req) => {
         });
       }
 
+      // Agent control endpoint (start/pause/stop)
+      if (action === 'control') {
+        const body = await req.json() as AgentControl;
+        
+        // Store command for agent to pick up on next heartbeat
+        agentCommands.set(body.agent_id, body.action);
+        
+        // Update data source status based on action
+        let newStatus = 'active';
+        switch (body.action) {
+          case 'pause': newStatus = 'paused'; break;
+          case 'stop': 
+          case 'terminate': newStatus = 'inactive'; break;
+          case 'start':
+          case 'resume': newStatus = 'active'; break;
+        }
+
+        await supabase
+          .from('data_sources')
+          .update({ 
+            status: newStatus,
+            config: { last_command: body.action, command_time: new Date().toISOString() }
+          })
+          .eq('id', body.agent_id);
+
+        console.log(`🎮 Agent control: ${body.action} for ${body.agent_id}`);
+
+        return new Response(JSON.stringify({
+          success: true,
+          message: `Command ${body.action} sent to agent`,
+          status: newStatus,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       if (action === 'simulate') {
         const { data_source_id, log_type, count = 5 } = await req.json();
 
@@ -251,6 +418,7 @@ serve(async (req) => {
           throw new Error('Data source not found');
         }
 
+        // Support all log types including new ones
         const logPool = SIMULATED_LOGS[log_type as keyof typeof SIMULATED_LOGS] || SIMULATED_LOGS.security;
         const simulatedLogs = [];
         const rawLogsToInsert = [];
@@ -364,21 +532,38 @@ serve(async (req) => {
       if (action === 'heartbeat') {
         const body = await req.json() as AgentHeartbeat;
 
+        // Extract IP from headers if not provided
+        const clientIP = body.ip_address || 
+          req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+          req.headers.get('cf-connecting-ip') ||
+          'Unknown';
+
+        // Check for pending commands
+        const pendingCommand = agentCommands.get(auth.dataSourceId!);
+        if (pendingCommand) {
+          agentCommands.delete(auth.dataSourceId!);
+        }
+
+        // Update data source with full heartbeat info
         await supabase
           .from('data_sources')
           .update({
-            status: body.status,
+            status: body.status || 'active',
             last_heartbeat: new Date().toISOString(),
+            ip_address: clientIP,
+            hostname: body.hostname || auth.dataSourceName,
+            os_type: body.os || undefined,
+            log_types: body.log_types || undefined,
             config: body.error_message ? { last_error: body.error_message } : undefined,
-            ...(body.ip_address ? { ip_address: body.ip_address } : {}),
           })
           .eq('id', auth.dataSourceId);
 
-        console.log(`💓 Heartbeat from ${auth.dataSourceName}: ${body.status}`);
+        console.log(`💓 Heartbeat from ${auth.dataSourceName}: ${body.status} (IP: ${clientIP})`);
 
         return new Response(JSON.stringify({
           success: true,
           message: 'Heartbeat recorded',
+          command: pendingCommand || null, // Send any pending command back to agent
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -386,19 +571,55 @@ serve(async (req) => {
 
       if (action === 'ingest') {
         const body = await req.json() as LogBatch;
+        
+        let processedCount = 0;
+        let skippedDuplicates = 0;
+        let skippedLowPriority = 0;
+        const incidentsCreated: any[] = [];
 
-        // Store raw logs first
-        const rawLogsToInsert = body.logs.map(log => ({
-          data_source_id: auth.dataSourceId,
-          timestamp: log.timestamp,
-          log_type: log.log_type,
-          severity: log.severity >= 4 ? 'high' : log.severity >= 3 ? 'medium' : log.severity >= 2 ? 'low' : 'info',
-          hostname: auth.dataSourceName,
-          ip_address: log.source_ip,
-          raw_payload: log.raw_log || log,
-          parsed_message: log.message,
-          processing_status: 'pending' as const,
-        }));
+        // Store raw logs first with deduplication
+        const rawLogsToInsert = [];
+        const logsToAnalyze = [];
+
+        for (const log of body.logs) {
+          // Generate hash for deduplication
+          const logHash = await hashLog(log);
+          
+          // Check if duplicate
+          if (await isDuplicate(supabase, logHash, auth.dataSourceId!)) {
+            skippedDuplicates++;
+            console.log(`⏭️ Skipping duplicate log: ${logHash.substring(0, 8)}...`);
+            continue;
+          }
+
+          // Check correlation rules
+          const correlation = await shouldCreateIncident(supabase, log, auth.dataSourceId!);
+          
+          // Store raw log
+          rawLogsToInsert.push({
+            data_source_id: auth.dataSourceId,
+            timestamp: log.timestamp,
+            log_type: log.log_type,
+            severity: log.severity >= 4 ? 'high' : log.severity >= 3 ? 'medium' : log.severity >= 2 ? 'low' : 'info',
+            hostname: auth.dataSourceName,
+            ip_address: log.source_ip,
+            raw_payload: log.raw_log || log,
+            parsed_message: log.message,
+            processing_status: correlation.create ? 'pending' : 'stored',
+            mitre_technique: logHash, // Store hash for dedup
+          });
+
+          if (correlation.create) {
+            logsToAnalyze.push({
+              ...log,
+              correlation_reason: correlation.reason,
+              correlated_count: correlation.correlatedCount,
+            });
+          } else {
+            skippedLowPriority++;
+            console.log(`📦 Stored without incident: ${correlation.reason}`);
+          }
+        }
 
         // Insert raw logs
         let insertedLogIds: string[] = [];
@@ -412,63 +633,72 @@ serve(async (req) => {
             console.error('Failed to insert raw logs:', rawError);
           } else {
             insertedLogIds = insertedLogs?.map(l => l.id) || [];
-            console.log(`📝 Stored ${insertedLogIds.length} raw logs`);
+            console.log(`📝 Stored ${insertedLogIds.length} raw logs (${skippedDuplicates} duplicates skipped)`);
           }
         }
 
-        // Transform logs to ingest-log format
-        const transformedLogs = body.logs.map(log => ({
-          eventType: log.log_type,
-          severity: log.severity,
-          srcIP: log.source_ip || auth.dataSourceName,
-          dstIP: log.destination_ip || 'Unknown',
-          msg: log.message,
-          fileHash: log.file_hash,
-          time: log.timestamp,
-          raw_log: log.raw_log,
-        }));
+        // Only send logs that need incident creation to ingest-log
+        if (logsToAnalyze.length > 0) {
+          const transformedLogs = logsToAnalyze.map(log => ({
+            eventType: log.log_type,
+            severity: log.severity,
+            srcIP: log.source_ip || auth.dataSourceName,
+            dstIP: log.destination_ip || 'Unknown',
+            msg: log.message,
+            fileHash: log.file_hash,
+            time: log.timestamp,
+            raw_log: log.raw_log,
+            source_type: body.source_type || log.source_type,
+            vendor: body.vendor || log.vendor,
+          }));
 
-        // Send to ingest-log
-        const ingestResponse = await fetch(`${supabaseUrl}/functions/v1/ingest-log`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${supabaseKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            logs: transformedLogs,
-            source: `Agent: ${auth.dataSourceName}`,
-          }),
-        });
+          // Send to ingest-log
+          const ingestResponse = await fetch(`${supabaseUrl}/functions/v1/ingest-log`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              logs: transformedLogs,
+              source: `Agent: ${auth.dataSourceName}`,
+            }),
+          });
 
-        if (!ingestResponse.ok) {
-          const errorText = await ingestResponse.text();
-          console.error('Ingest failed:', errorText);
+          if (!ingestResponse.ok) {
+            const errorText = await ingestResponse.text();
+            console.error('Ingest failed:', errorText);
 
-          // Update raw logs with error status
+            // Update raw logs with error status
+            if (insertedLogIds.length > 0) {
+              await supabase
+                .from('raw_logs')
+                .update({ processing_status: 'error', error_message: 'Analysis failed', analyzed_at: new Date().toISOString() })
+                .in('id', insertedLogIds);
+            }
+
+            throw new Error('Failed to process logs');
+          }
+
+          const ingestResult = await ingestResponse.json();
+          processedCount = ingestResult.processed || 0;
+
+          if (ingestResult.incidents) {
+            incidentsCreated.push(...ingestResult.incidents);
+          }
+
+          // Update raw logs status based on results
           if (insertedLogIds.length > 0) {
+            const status = ingestResult.incidents?.length > 0 ? 'incident_created' : 'analyzed';
             await supabase
               .from('raw_logs')
-              .update({ processing_status: 'error', error_message: 'Analysis failed', analyzed_at: new Date().toISOString() })
+              .update({
+                processing_status: status,
+                analyzed_at: new Date().toISOString(),
+                incident_id: ingestResult.incidents?.[0]?.id || null,
+              })
               .in('id', insertedLogIds);
           }
-
-          throw new Error('Failed to process logs');
-        }
-
-        const ingestResult = await ingestResponse.json();
-
-        // Update raw logs status based on results
-        if (insertedLogIds.length > 0) {
-          const status = ingestResult.incidents?.length > 0 ? 'incident_created' : 'analyzed';
-          await supabase
-            .from('raw_logs')
-            .update({
-              processing_status: status,
-              analyzed_at: new Date().toISOString(),
-              incident_id: ingestResult.incidents?.[0]?.id || null,
-            })
-            .in('id', insertedLogIds);
         }
 
         // Update data source stats
@@ -499,18 +729,21 @@ serve(async (req) => {
               hour: currentHour,
               log_type: log.log_type,
               count: 1,
-              incidents_created: ingestResult.incidents?.length > 0 ? 1 : 0,
+              incidents_created: incidentsCreated.length > 0 ? 1 : 0,
             }, {
               onConflict: 'data_source_id,date,hour,log_type',
             });
         }
 
-        console.log(`📥 Ingested ${body.logs.length} logs from ${auth.dataSourceName}`);
+        console.log(`📥 Ingested ${body.logs.length} logs from ${auth.dataSourceName} (${processedCount} incidents, ${skippedDuplicates} duplicates, ${skippedLowPriority} stored only)`);
 
         return new Response(JSON.stringify({
           success: true,
-          processed: ingestResult.processed,
-          incidents: ingestResult.incidents,
+          received: body.logs.length,
+          processed: processedCount,
+          incidents: incidentsCreated,
+          skipped_duplicates: skippedDuplicates,
+          stored_without_incident: skippedLowPriority,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

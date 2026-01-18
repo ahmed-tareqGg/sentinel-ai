@@ -436,38 +436,99 @@ export default function DataSources() {
                 </div>
 
                 {canManage && (
-                  <div className="flex items-center gap-2 pt-2 border-t border-border">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => {
-                        setSelectedSource(source);
-                        setSimulateDialogOpen(true);
-                      }}
-                    >
-                      <Play className="h-3 w-3 mr-1" />
-                      Simulate
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => generateKeyMutation.mutate(source.id)}
-                    >
-                      <Key className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => {
-                        if (confirm('Delete this data source?')) {
-                          deleteMutation.mutate(source.id);
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                  <div className="flex flex-col gap-2 pt-2 border-t border-border">
+                    {/* Agent Controls */}
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-green-600 hover:text-green-700 hover:bg-green-50"
+                        onClick={async () => {
+                          await supabase.functions.invoke('agent-gateway/control', {
+                            body: { agent_id: source.id, action: 'start' }
+                          });
+                          toast.success('Start command sent');
+                          refetch();
+                        }}
+                        disabled={source.status === 'active'}
+                      >
+                        <Play className="h-3 w-3 mr-1" />
+                        Start
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50"
+                        onClick={async () => {
+                          await supabase.functions.invoke('agent-gateway/control', {
+                            body: { agent_id: source.id, action: source.status === 'paused' ? 'resume' : 'pause' }
+                          });
+                          toast.success(source.status === 'paused' ? 'Resume command sent' : 'Pause command sent');
+                          refetch();
+                        }}
+                      >
+                        {source.status === 'paused' ? (
+                          <>
+                            <Play className="h-3 w-3 mr-1" />
+                            Resume
+                          </>
+                        ) : (
+                          <>
+                            <Clock className="h-3 w-3 mr-1" />
+                            Pause
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={async () => {
+                          await supabase.functions.invoke('agent-gateway/control', {
+                            body: { agent_id: source.id, action: 'stop' }
+                          });
+                          toast.success('Stop command sent');
+                          refetch();
+                        }}
+                        disabled={source.status === 'inactive'}
+                      >
+                        <AlertCircle className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    {/* Actions */}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => {
+                          setSelectedSource(source);
+                          setSimulateDialogOpen(true);
+                        }}
+                      >
+                        <Play className="h-3 w-3 mr-1" />
+                        Simulate
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => generateKeyMutation.mutate(source.id)}
+                      >
+                        <Key className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => {
+                          if (confirm('Delete this data source?')) {
+                            deleteMutation.mutate(source.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 )}
               </CardContent>
