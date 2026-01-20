@@ -91,18 +91,32 @@ async function verifyAuth(
 
 function normalizeLog(rawLog: RawLog) {
   return {
-    eventType: rawLog.eventType || rawLog.event_type || 'Unknown',
+    eventType: rawLog.eventType || (rawLog as any).event_type || 'Unknown',
     severity: rawLog.severity || 3,
-    srcIP: rawLog.srcIP || rawLog.srcip || rawLog.src_ip || 'Unknown',
-    dstIP: rawLog.dstIP || rawLog.dstip || rawLog.dst_ip || 'Unknown',
+    srcIP: rawLog.srcIP || rawLog.srcip || (rawLog as any).src_ip || (rawLog as any).source_ip || 'Unknown',
+    dstIP: rawLog.dstIP || rawLog.dstip || (rawLog as any).dst_ip || (rawLog as any).destination_ip || 'Unknown',
     msg: rawLog.msg || rawLog.message || '',
-    fileHash: rawLog.fileHash || rawLog.filehash || rawLog.file_hash || null,
+    fileHash: rawLog.fileHash || rawLog.filehash || (rawLog as any).file_hash || null,
     action: rawLog.action || null,
     timestamp: rawLog.time || rawLog.timestamp || new Date().toISOString(),
     rawLog,
   };
 }
 
+function severityToLabel(sev: number) {
+  if (sev >= 5) return 'critical';
+  if (sev >= 4) return 'high';
+  if (sev >= 3) return 'medium';
+  if (sev >= 2) return 'low';
+  return 'info';
+}
+
+function getRequestPublicIp(req: Request) {
+  const cfIP = req.headers.get('cf-connecting-ip');
+  const forwardedFor = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+  const xRealIP = req.headers.get('x-real-ip');
+  return cfIP || forwardedFor || xRealIP || null;
+}
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -136,6 +150,39 @@ serve(async (req) => {
     for (const rawLog of logsArray) {
       const normalizedLog = normalizeLog(rawLog);
       console.log('Normalized log:', normalizedLog);
+
+      const skipRawLogInsert = req.headers.get('x-raw-logs-inserted') === 'true';
+      const publicIp = getRequestPublicIp(req);
+      let rawLogRowId: string | null = null;
+
+      // Always store the incoming event in raw_logs FIRST (unless upstream already did)
+      if (!skipRawLogInsert) {
+        const hostname = (rawLog as any).hostname || (rawLog as any).host || source || 'unknown';
+        const ipAddress = publicIp || normalizedLog.srcIP || null;
+        const logType = (rawLog as any).log_type || (rawLog as any).logType || normalizedLog.eventType || 'unknown';
+
+        const { data: rawRow, error: rawInsertErr } = await supabase
+          .from('raw_logs')
+          .insert({
+            data_source_id: null,
+            timestamp: normalizedLog.timestamp,
+            log_type: logType,
+            severity: severityToLabel(normalizedLog.severity),
+            hostname,
+            ip_address: ipAddress,
+            raw_payload: normalizedLog.rawLog,
+            parsed_message: normalizedLog.msg,
+            processing_status: 'pending',
+          })
+          .select('id')
+          .single();
+
+        if (rawInsertErr) {
+          console.error('Failed to insert raw log:', rawInsertErr);
+        } else {
+          rawLogRowId = rawRow?.id || null;
+        }
+      }
 
       // Analyze the log using AI (internal call with service key)
       const analyzeResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-log`, {
@@ -191,10 +238,34 @@ serve(async (req) => {
 
       if (insertError) {
         console.error('Failed to insert incident:', insertError);
+
+        if (rawLogRowId) {
+          await supabase
+            .from('raw_logs')
+            .update({
+              processing_status: 'error',
+              error_message: 'Failed to create incident',
+              analyzed_at: new Date().toISOString(),
+            })
+            .eq('id', rawLogRowId);
+        }
+
         continue;
       }
 
       console.log('Created incident:', incident.incident_number);
+
+      // Mark raw log as incident_created
+      if (rawLogRowId) {
+        await supabase
+          .from('raw_logs')
+          .update({
+            processing_status: 'incident_created',
+            analyzed_at: new Date().toISOString(),
+            incident_id: incident.id,
+          })
+          .eq('id', rawLogRowId);
+      }
 
       // Add timeline entry
       await supabase.from('incident_timeline').insert({

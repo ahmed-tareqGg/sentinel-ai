@@ -175,15 +175,15 @@ async function shouldCreateIncident(
   dataSourceId: string
 ): Promise<{ create: boolean; reason: string; correlatedCount: number }> {
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-  
-  // Check for existing similar raw logs
+
+  // Check for existing similar raw logs (use received_at so "Live" works even if log.timestamp is old)
   const { data: recentLogs, error } = await supabase
     .from('raw_logs')
-    .select('id, timestamp, parsed_message')
+    .select('id, received_at, parsed_message')
     .eq('data_source_id', dataSourceId)
     .eq('log_type', log.log_type)
-    .gte('timestamp', tenMinutesAgo)
-    .order('timestamp', { ascending: false })
+    .gte('received_at', tenMinutesAgo)
+    .order('received_at', { ascending: false })
     .limit(10);
 
   if (error) {
@@ -539,39 +539,49 @@ serve(async (req) => {
       }
 
       if (action === 'heartbeat') {
-        const body = await req.json() as AgentHeartbeat;
+        const body = await req.json() as any;
+
+        // Normalize status values coming from different agent versions
+        const rawStatus = (body.status || 'active').toString().toLowerCase();
+        const normalizedStatus = rawStatus === 'online' ? 'active' : rawStatus;
 
         // Extract public IP from headers (priority: CF → X-Forwarded-For → agent-provided)
         const cfIP = req.headers.get('cf-connecting-ip');
         const forwardedFor = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
         const xRealIP = req.headers.get('x-real-ip');
-        const publicIP = cfIP || xRealIP || forwardedFor || body.ip_address || 'Unknown';
+        const agentReportedIp = body.ip_address || body.ip || body.host_ip;
+        const publicIP = cfIP || xRealIP || forwardedFor || agentReportedIp || 'Unknown';
 
-        // Check for pending commands from database
-        const { data: dsConfig } = await supabase
+        // Fetch current config once so we don't overwrite vendor/etc
+        const { data: dsRow } = await supabase
           .from('data_sources')
           .select('config')
           .eq('id', auth.dataSourceId)
           .single();
-        
-        const pendingCommand = dsConfig?.config?.last_command || agentCommands.get(auth.dataSourceId!);
+
+        // Check for pending commands from database
+        const pendingCommand = dsRow?.config?.last_command || agentCommands.get(auth.dataSourceId!);
         if (pendingCommand) {
           agentCommands.delete(auth.dataSourceId!);
         }
+
+        const nextConfig = {
+          ...(dsRow?.config ?? {}),
+          last_command: null,
+          ...(body.error_message ? { last_error: body.error_message } : {}),
+        };
 
         // Update data source with full heartbeat info including public IP
         await supabase
           .from('data_sources')
           .update({
-            status: body.status || 'active',
+            status: normalizedStatus || 'active',
             last_heartbeat: new Date().toISOString(),
             ip_address: publicIP,
             hostname: body.hostname || auth.dataSourceName,
-            os_type: body.os || undefined,
+            os_type: body.os || body.os_type || undefined,
             log_types: body.log_types || undefined,
-            config: body.error_message 
-              ? { last_error: body.error_message, last_command: null }
-              : { last_command: null },
+            config: nextConfig,
           })
           .eq('id', auth.dataSourceId);
 
@@ -617,18 +627,29 @@ serve(async (req) => {
           const cfIP = req.headers.get('cf-connecting-ip');
           const forwardedFor = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
           const xRealIP = req.headers.get('x-real-ip');
-          const publicIP = cfIP || xRealIP || forwardedFor || log.source_ip || 'Unknown';
+          const ipCandidate =
+            forwardedFor ||
+            cfIP ||
+            xRealIP ||
+            log.source_ip ||
+            (log as any).srcIP ||
+            (log as any).src_ip ||
+            (log as any).host_ip ||
+            (log as any).ip_address ||
+            body.source_type ||
+            'Unknown';
+          const publicIP = ipCandidate;
 
-          // Store raw log with public IP
+          // Store raw log (always) — show up in Live Logs before incident creation
           rawLogsToInsert.push({
             data_source_id: auth.dataSourceId,
-            timestamp: log.timestamp,
-            log_type: log.log_type,
+            timestamp: (log as any).timestamp || (log as any).time || new Date().toISOString(),
+            log_type: (log as any).log_type || (log as any).eventType || 'unknown',
             severity: log.severity >= 4 ? 'high' : log.severity >= 3 ? 'medium' : log.severity >= 2 ? 'low' : 'info',
-            hostname: auth.dataSourceName,
+            hostname: (log as any).hostname || (log as any).host || auth.dataSourceName,
             ip_address: publicIP,
-            raw_payload: log.raw_log || log,
-            parsed_message: log.message,
+            raw_payload: (log as any).raw_log || (log as any).raw || log,
+            parsed_message: (log as any).message || (log as any).msg || null,
             processing_status: correlation.create ? 'pending' : 'stored',
             mitre_technique: logHash, // Store hash for dedup
           });
@@ -646,34 +667,46 @@ serve(async (req) => {
         }
 
         // Insert raw logs
-        let insertedLogIds: string[] = [];
+        let insertedPendingIds: string[] = [];
+        let insertedStoredIds: string[] = [];
+
         if (rawLogsToInsert.length > 0) {
           const { data: insertedLogs, error: rawError } = await supabase
             .from('raw_logs')
             .insert(rawLogsToInsert)
-            .select('id');
+            .select('id, processing_status');
 
           if (rawError) {
             console.error('Failed to insert raw logs:', rawError);
           } else {
-            insertedLogIds = insertedLogs?.map(l => l.id) || [];
-            console.log(`📝 Stored ${insertedLogIds.length} raw logs (${skippedDuplicates} duplicates skipped)`);
+            const rows = insertedLogs || [];
+            insertedPendingIds = rows.filter((r: any) => r.processing_status === 'pending').map((r: any) => r.id);
+            insertedStoredIds = rows.filter((r: any) => r.processing_status === 'stored').map((r: any) => r.id);
+
+            console.log(
+              `📝 Stored ${rows.length} raw logs (${insertedPendingIds.length} pending, ${insertedStoredIds.length} stored, ${skippedDuplicates} duplicates skipped)`
+            );
           }
         }
 
         // Only send logs that need incident creation to ingest-log
         if (logsToAnalyze.length > 0) {
-          const transformedLogs = logsToAnalyze.map(log => ({
-            eventType: log.log_type,
+          const transformedLogs = logsToAnalyze.map((log) => ({
+            eventType: (log as any).eventType || (log as any).event_type || (log as any).log_type || 'Unknown',
             severity: log.severity,
-            srcIP: log.source_ip || auth.dataSourceName,
-            dstIP: log.destination_ip || 'Unknown',
-            msg: log.message,
+            srcIP:
+              log.source_ip ||
+              (log as any).srcIP ||
+              (log as any).src_ip ||
+              (log as any).host_ip ||
+              auth.dataSourceName,
+            dstIP: log.destination_ip || (log as any).dstIP || (log as any).dst_ip || 'Unknown',
+            msg: log.message || (log as any).msg || '',
             fileHash: log.file_hash,
-            time: log.timestamp,
-            raw_log: log.raw_log,
-            source_type: body.source_type || log.source_type,
-            vendor: body.vendor || log.vendor,
+            time: (log as any).timestamp || (log as any).time || new Date().toISOString(),
+            raw_log: (log as any).raw_log || (log as any).raw || log,
+            source_type: body.source_type || (log as any).source_type,
+            vendor: body.vendor || (log as any).vendor,
           }));
 
           // Send to ingest-log
@@ -682,6 +715,7 @@ serve(async (req) => {
             headers: {
               'Authorization': `Bearer ${supabaseKey}`,
               'Content-Type': 'application/json',
+              'x-raw-logs-inserted': 'true',
             },
             body: JSON.stringify({
               logs: transformedLogs,
@@ -693,12 +727,12 @@ serve(async (req) => {
             const errorText = await ingestResponse.text();
             console.error('Ingest failed:', errorText);
 
-            // Update raw logs with error status
-            if (insertedLogIds.length > 0) {
+            // Update ONLY pending raw logs with error status
+            if (insertedPendingIds.length > 0) {
               await supabase
                 .from('raw_logs')
                 .update({ processing_status: 'error', error_message: 'Analysis failed', analyzed_at: new Date().toISOString() })
-                .in('id', insertedLogIds);
+                .in('id', insertedPendingIds);
             }
 
             throw new Error('Failed to process logs');
@@ -711,8 +745,8 @@ serve(async (req) => {
             incidentsCreated.push(...ingestResult.incidents);
           }
 
-          // Update raw logs status based on results
-          if (insertedLogIds.length > 0) {
+          // Update ONLY pending raw logs status based on results
+          if (insertedPendingIds.length > 0) {
             const status = ingestResult.incidents?.length > 0 ? 'incident_created' : 'analyzed';
             await supabase
               .from('raw_logs')
@@ -721,7 +755,7 @@ serve(async (req) => {
                 analyzed_at: new Date().toISOString(),
                 incident_id: ingestResult.incidents?.[0]?.id || null,
               })
-              .in('id', insertedLogIds);
+              .in('id', insertedPendingIds);
           }
         }
 

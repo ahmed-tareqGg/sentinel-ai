@@ -91,7 +91,7 @@ export default function LiveLogs() {
       let query = supabase
         .from('raw_logs')
         .select('*, data_sources(name, type)', { count: 'exact' })
-        .order('timestamp', { ascending: false })
+        .order('received_at', { ascending: false })
         .range(from, to);
 
       if (logTypeFilter !== 'all') {
@@ -421,7 +421,7 @@ export default function LiveLogs() {
                         {log.id.slice(0, 8)}...
                       </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">
-                        {format(new Date(log.timestamp), 'MMM dd, HH:mm:ss.SSS')}
+                        {format(new Date(log.received_at || log.timestamp), 'MMM dd, HH:mm:ss.SSS')}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
