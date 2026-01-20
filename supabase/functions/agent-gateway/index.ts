@@ -650,7 +650,7 @@ serve(async (req) => {
             ip_address: publicIP,
             raw_payload: (log as any).raw_log || (log as any).raw || log,
             parsed_message: (log as any).message || (log as any).msg || null,
-            processing_status: correlation.create ? 'pending' : 'stored',
+            processing_status: correlation.create ? 'pending' : 'ignored',
             mitre_technique: logHash, // Store hash for dedup
           });
 
@@ -668,7 +668,7 @@ serve(async (req) => {
 
         // Insert raw logs
         let insertedPendingIds: string[] = [];
-        let insertedStoredIds: string[] = [];
+        let insertedIgnoredIds: string[] = [];
 
         if (rawLogsToInsert.length > 0) {
           const { data: insertedLogs, error: rawError } = await supabase
@@ -681,10 +681,10 @@ serve(async (req) => {
           } else {
             const rows = insertedLogs || [];
             insertedPendingIds = rows.filter((r: any) => r.processing_status === 'pending').map((r: any) => r.id);
-            insertedStoredIds = rows.filter((r: any) => r.processing_status === 'stored').map((r: any) => r.id);
+            insertedIgnoredIds = rows.filter((r: any) => r.processing_status === 'ignored').map((r: any) => r.id);
 
             console.log(
-              `📝 Stored ${rows.length} raw logs (${insertedPendingIds.length} pending, ${insertedStoredIds.length} stored, ${skippedDuplicates} duplicates skipped)`
+              `📝 Stored ${rows.length} raw logs (${insertedPendingIds.length} pending, ${insertedIgnoredIds.length} ignored, ${skippedDuplicates} duplicates skipped)`
             );
           }
         }
