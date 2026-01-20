@@ -385,15 +385,24 @@ serve(async (req) => {
           case 'resume': newStatus = 'active'; break;
         }
 
-        await supabase
+        // Store command in database config for persistent command delivery
+        const { error: updateError } = await supabase
           .from('data_sources')
           .update({ 
             status: newStatus,
-            config: { last_command: body.action, command_time: new Date().toISOString() }
+            config: { 
+              last_command: body.action, 
+              command_time: new Date().toISOString() 
+            }
           })
           .eq('id', body.agent_id);
 
-        console.log(`🎮 Agent control: ${body.action} for ${body.agent_id}`);
+        if (updateError) {
+          console.error('Failed to update agent status:', updateError);
+          throw updateError;
+        }
+
+        console.log(`🎮 Agent control: ${body.action} for ${body.agent_id} - New status: ${newStatus}`);
 
         return new Response(JSON.stringify({
           success: true,
@@ -532,38 +541,47 @@ serve(async (req) => {
       if (action === 'heartbeat') {
         const body = await req.json() as AgentHeartbeat;
 
-        // Extract IP from headers if not provided
-        const clientIP = body.ip_address || 
-          req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-          req.headers.get('cf-connecting-ip') ||
-          'Unknown';
+        // Extract public IP from headers (priority: CF → X-Forwarded-For → agent-provided)
+        const cfIP = req.headers.get('cf-connecting-ip');
+        const forwardedFor = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+        const xRealIP = req.headers.get('x-real-ip');
+        const publicIP = cfIP || xRealIP || forwardedFor || body.ip_address || 'Unknown';
 
-        // Check for pending commands
-        const pendingCommand = agentCommands.get(auth.dataSourceId!);
+        // Check for pending commands from database
+        const { data: dsConfig } = await supabase
+          .from('data_sources')
+          .select('config')
+          .eq('id', auth.dataSourceId)
+          .single();
+        
+        const pendingCommand = dsConfig?.config?.last_command || agentCommands.get(auth.dataSourceId!);
         if (pendingCommand) {
           agentCommands.delete(auth.dataSourceId!);
         }
 
-        // Update data source with full heartbeat info
+        // Update data source with full heartbeat info including public IP
         await supabase
           .from('data_sources')
           .update({
             status: body.status || 'active',
             last_heartbeat: new Date().toISOString(),
-            ip_address: clientIP,
+            ip_address: publicIP,
             hostname: body.hostname || auth.dataSourceName,
             os_type: body.os || undefined,
             log_types: body.log_types || undefined,
-            config: body.error_message ? { last_error: body.error_message } : undefined,
+            config: body.error_message 
+              ? { last_error: body.error_message, last_command: null }
+              : { last_command: null },
           })
           .eq('id', auth.dataSourceId);
 
-        console.log(`💓 Heartbeat from ${auth.dataSourceName}: ${body.status} (IP: ${clientIP})`);
+        console.log(`💓 Heartbeat from ${auth.dataSourceName}: ${body.status} (Public IP: ${publicIP})`);
 
         return new Response(JSON.stringify({
           success: true,
           message: 'Heartbeat recorded',
           command: pendingCommand || null, // Send any pending command back to agent
+          public_ip: publicIP,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -595,14 +613,20 @@ serve(async (req) => {
           // Check correlation rules
           const correlation = await shouldCreateIncident(supabase, log, auth.dataSourceId!);
           
-          // Store raw log
+          // Extract public IP from headers for ingested logs
+          const cfIP = req.headers.get('cf-connecting-ip');
+          const forwardedFor = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+          const xRealIP = req.headers.get('x-real-ip');
+          const publicIP = cfIP || xRealIP || forwardedFor || log.source_ip || 'Unknown';
+
+          // Store raw log with public IP
           rawLogsToInsert.push({
             data_source_id: auth.dataSourceId,
             timestamp: log.timestamp,
             log_type: log.log_type,
             severity: log.severity >= 4 ? 'high' : log.severity >= 3 ? 'medium' : log.severity >= 2 ? 'low' : 'info',
             hostname: auth.dataSourceName,
-            ip_address: log.source_ip,
+            ip_address: publicIP,
             raw_payload: log.raw_log || log,
             parsed_message: log.message,
             processing_status: correlation.create ? 'pending' : 'stored',
