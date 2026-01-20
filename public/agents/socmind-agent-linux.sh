@@ -107,21 +107,38 @@ EOF
     log "Configuration saved to $CONFIG_FILE"
 }
 
-# Send heartbeat
+# Get local IP address
+get_local_ip() {
+    # Try to get primary IP
+    ip -4 route get 8.8.8.8 2>/dev/null | grep -oP 'src \K[\d.]+' | head -1 || \
+    hostname -I 2>/dev/null | awk '{print $1}' || \
+    echo "0.0.0.0"
+}
+
+# Send heartbeat with full agent info
 send_heartbeat() {
     local status="${1:-active}"
     local error_msg="$2"
     
-    local payload="{\"hostname\": \"$SOCMIND_HOSTNAME\", \"status\": \"$status\""
+    local ip_address=$(get_local_ip)
+    local log_types_array=$(echo "$SOCMIND_LOG_TYPES" | tr ',' '\n' | awk '{print "\"" $0 "\""}' | paste -sd,)
+    
+    local payload="{\"hostname\": \"$SOCMIND_HOSTNAME\", \"status\": \"$status\", \"ip_address\": \"$ip_address\", \"os\": \"linux\", \"log_types\": [$log_types_array]"
     if [[ -n "$error_msg" ]]; then
         payload="$payload, \"error_message\": \"$error_msg\""
     fi
     payload="$payload}"
     
-    curl -s -X POST "$SOCMIND_API_ENDPOINT/heartbeat" \
+    local response=$(curl -s -X POST "$SOCMIND_API_ENDPOINT/heartbeat" \
         -H "X-Agent-Key: $SOCMIND_API_KEY" \
         -H "Content-Type: application/json" \
-        -d "$payload" > /dev/null 2>&1
+        -d "$payload" 2>/dev/null)
+    
+    # Check for remote command
+    local command=$(echo "$response" | grep -o '"command":"[^"]*"' | cut -d'"' -f4)
+    if [[ -n "$command" ]]; then
+        echo "$command"
+    fi
 }
 
 # Collect auth logs

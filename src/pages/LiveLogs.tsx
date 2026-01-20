@@ -166,12 +166,46 @@ export default function LiveLogs() {
     );
   }) || [];
 
+  // Fetch actual stats from database
+  const { data: dbStats } = useQuery({
+    queryKey: ['raw-logs-stats'],
+    queryFn: async () => {
+      // Get counts for each status
+      const { count: totalCount } = await supabase
+        .from('raw_logs')
+        .select('*', { count: 'exact', head: true });
+      
+      const { count: pendingCount } = await supabase
+        .from('raw_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('processing_status', 'pending');
+      
+      const { count: analyzedCount } = await supabase
+        .from('raw_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('processing_status', 'analyzed');
+      
+      const { count: incidentCount } = await supabase
+        .from('raw_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('processing_status', 'incident_created');
+
+      return {
+        total: totalCount || 0,
+        pending: pendingCount || 0,
+        analyzed: analyzedCount || 0,
+        incidents: incidentCount || 0,
+      };
+    },
+    refetchInterval: isLive ? 5000 : 30000,
+  });
+
   // Stats
   const stats = {
-    total: totalCount || logs?.length || 0,
-    pending: logs?.filter(l => l.processing_status === 'pending').length || 0,
-    analyzed: logs?.filter(l => l.processing_status === 'analyzed').length || 0,
-    incidents: logs?.filter(l => l.processing_status === 'incident_created').length || 0,
+    total: dbStats?.total || totalCount || logs?.length || 0,
+    pending: dbStats?.pending || logs?.filter(l => l.processing_status === 'pending').length || 0,
+    analyzed: dbStats?.analyzed || logs?.filter(l => l.processing_status === 'analyzed').length || 0,
+    incidents: dbStats?.incidents || logs?.filter(l => l.processing_status === 'incident_created').length || 0,
   };
 
   return (

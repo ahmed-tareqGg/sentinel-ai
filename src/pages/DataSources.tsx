@@ -281,11 +281,39 @@ export default function DataSources() {
     return `${Math.floor(seconds / 86400)}d ago`;
   };
 
+  // Fetch actual log counts from raw_logs table
+  const { data: logStats } = useQuery({
+    queryKey: ['log-stats'],
+    queryFn: async () => {
+      // Get today's date in UTC
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+
+      // Get total logs count 
+      const { count: totalCount } = await supabase
+        .from('raw_logs')
+        .select('*', { count: 'exact', head: true });
+
+      // Get today's logs count
+      const { count: todayCount } = await supabase
+        .from('raw_logs')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', todayISO);
+
+      return {
+        total: totalCount || 0,
+        today: todayCount || 0,
+      };
+    },
+    refetchInterval: 10000,
+  });
+
   const stats = {
     total: dataSources?.length || 0,
     active: dataSources?.filter(s => s.status === 'active').length || 0,
-    logsToday: dataSources?.reduce((sum, s) => sum + (s.logs_received_today || 0), 0) || 0,
-    totalLogs: dataSources?.reduce((sum, s) => sum + (s.logs_received_total || 0), 0) || 0,
+    logsToday: logStats?.today || dataSources?.reduce((sum, s) => sum + (s.logs_received_today || 0), 0) || 0,
+    totalLogs: logStats?.total || dataSources?.reduce((sum, s) => sum + (s.logs_received_total || 0), 0) || 0,
   };
 
   return (
