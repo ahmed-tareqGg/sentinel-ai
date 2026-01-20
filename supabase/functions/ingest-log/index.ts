@@ -23,6 +23,9 @@ interface RawLog {
   [key: string]: unknown;
 }
 
+// Risk threshold for creating incidents (0-100)
+const INCIDENT_RISK_THRESHOLD = 50;
+
 async function verifyAuth(
   req: Request,
 ): Promise<{ user: any; isApiKey: boolean; error?: string }> {
@@ -117,6 +120,41 @@ function getRequestPublicIp(req: Request) {
   const xRealIP = req.headers.get('x-real-ip');
   return cfIP || forwardedFor || xRealIP || null;
 }
+
+// Decide if an incident should be created based on analysis
+function shouldCreateIncident(analysis: any, severity: number): { create: boolean; reason: string } {
+  // High severity always creates incident
+  if (severity >= 4) {
+    return { create: true, reason: 'High severity event' };
+  }
+  
+  // Check AI classification
+  const classification = (analysis?.classification || '').toLowerCase();
+  if (classification === 'true positive' || classification === 'malicious') {
+    return { create: true, reason: 'AI classified as True Positive/Malicious' };
+  }
+  
+  // Check risk level
+  const riskLevel = (analysis?.risk_level || '').toLowerCase();
+  if (riskLevel === 'critical' || riskLevel === 'high') {
+    return { create: true, reason: `Risk level: ${riskLevel}` };
+  }
+  
+  // Check confidence score
+  const confidence = analysis?.confidence || 0;
+  if (confidence >= INCIDENT_RISK_THRESHOLD && classification !== 'benign') {
+    return { create: true, reason: `Confidence ${confidence}% exceeds threshold` };
+  }
+  
+  // Check for MITRE techniques (always interesting)
+  if (analysis?.mitre_technique || analysis?.mitre_techniques?.length > 0) {
+    return { create: true, reason: 'MITRE technique detected' };
+  }
+  
+  // Low severity/benign events don't create incidents
+  return { create: false, reason: 'Low risk, no incident needed' };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -143,16 +181,20 @@ serve(async (req) => {
     const { logs, source } = await req.json() as { logs: RawLog | RawLog[], source?: string };
 
     const logsArray = Array.isArray(logs) ? logs : [logs];
-    console.log(`Ingesting ${logsArray.length} logs from ${source || 'unknown source'}`);
+    console.log(`📥 Ingesting ${logsArray.length} logs from ${source || 'unknown source'}`);
+
+    const skipRawLogInsert = req.headers.get('x-raw-logs-inserted') === 'true';
+    const publicIp = getRequestPublicIp(req);
 
     const results = [];
+    const rawLogIds: string[] = [];
 
+    // ===== STEP 1: STORE ALL LOGS FIRST =====
+    console.log('📝 Step 1: Storing all logs in raw_logs table...');
+    
     for (const rawLog of logsArray) {
       const normalizedLog = normalizeLog(rawLog);
-      console.log('Normalized log:', normalizedLog);
-
-      const skipRawLogInsert = req.headers.get('x-raw-logs-inserted') === 'true';
-      const publicIp = getRequestPublicIp(req);
+      
       let rawLogRowId: string | null = null;
 
       // Always store the incoming event in raw_logs FIRST (unless upstream already did)
@@ -181,35 +223,102 @@ serve(async (req) => {
           console.error('Failed to insert raw log:', rawInsertErr);
         } else {
           rawLogRowId = rawRow?.id || null;
+          if (rawLogRowId) rawLogIds.push(rawLogRowId);
+          console.log(`📝 Stored raw log: ${rawLogRowId}`);
         }
       }
+    }
+
+    console.log(`✅ Step 1 complete: Stored ${rawLogIds.length} raw logs`);
+
+    // ===== STEP 2: ANALYZE EACH LOG =====
+    console.log('🔍 Step 2: Analyzing logs with AI...');
+    
+    const analyzedLogs: Array<{
+      normalizedLog: any;
+      rawLogRowId: string | null;
+      analysis: any;
+      rawLog: RawLog;
+    }> = [];
+
+    for (let i = 0; i < logsArray.length; i++) {
+      const rawLog = logsArray[i];
+      const normalizedLog = normalizeLog(rawLog);
+      const rawLogRowId = skipRawLogInsert ? null : (rawLogIds[i] || null);
 
       // Analyze the log using AI (internal call with service key)
-      const analyzeResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-log`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          log: {
-            eventType: normalizedLog.eventType,
-            severity: normalizedLog.severity,
-            srcIP: normalizedLog.srcIP,
-            dstIP: normalizedLog.dstIP,
-            msg: normalizedLog.msg,
-            fileHash: normalizedLog.fileHash,
-          },
-          internal: true // Mark as internal call
-        }),
-      });
-
       let analysis = null;
-      if (analyzeResponse.ok) {
-        analysis = await analyzeResponse.json();
-      } else {
-        console.error('Analysis failed:', await analyzeResponse.text());
+      try {
+        const analyzeResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-log`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            log: {
+              eventType: normalizedLog.eventType,
+              severity: normalizedLog.severity,
+              srcIP: normalizedLog.srcIP,
+              dstIP: normalizedLog.dstIP,
+              msg: normalizedLog.msg,
+              fileHash: normalizedLog.fileHash,
+            },
+            internal: true
+          }),
+        });
+
+        if (analyzeResponse.ok) {
+          analysis = await analyzeResponse.json();
+          console.log(`🔍 Analyzed: ${normalizedLog.eventType} -> ${analysis?.classification || 'Unknown'} (${analysis?.confidence || 0}%)`);
+        } else {
+          console.error('Analysis failed:', await analyzeResponse.text());
+        }
+      } catch (analysisError) {
+        console.error('Analysis error:', analysisError);
       }
+
+      // Update raw log with analysis results (mark as analyzed)
+      if (rawLogRowId) {
+        await supabase
+          .from('raw_logs')
+          .update({
+            processing_status: 'analyzed',
+            analyzed_at: new Date().toISOString(),
+            mitre_technique: analysis?.mitre_technique || null,
+          })
+          .eq('id', rawLogRowId);
+      }
+
+      analyzedLogs.push({ normalizedLog, rawLogRowId, analysis, rawLog });
+    }
+
+    console.log(`✅ Step 2 complete: Analyzed ${analyzedLogs.length} logs`);
+
+    // ===== STEP 3: CREATE INCIDENTS ONLY FOR HIGH-RISK LOGS =====
+    console.log('🚨 Step 3: Creating incidents for high-risk logs...');
+    
+    let incidentsCreated = 0;
+    let incidentsSkipped = 0;
+
+    for (const { normalizedLog, rawLogRowId, analysis, rawLog } of analyzedLogs) {
+      const decision = shouldCreateIncident(analysis, normalizedLog.severity);
+      
+      if (!decision.create) {
+        incidentsSkipped++;
+        console.log(`⏭️ Skipping incident: ${decision.reason} - ${normalizedLog.eventType}`);
+        
+        // Mark as ignored (analyzed but no incident)
+        if (rawLogRowId) {
+          await supabase
+            .from('raw_logs')
+            .update({ processing_status: 'ignored' })
+            .eq('id', rawLogRowId);
+        }
+        continue;
+      }
+
+      console.log(`🚨 Creating incident: ${decision.reason} - ${normalizedLog.eventType}`);
 
       // Insert incident into database
       const { data: incident, error: insertError } = await supabase
@@ -245,7 +354,6 @@ serve(async (req) => {
             .update({
               processing_status: 'error',
               error_message: 'Failed to create incident',
-              analyzed_at: new Date().toISOString(),
             })
             .eq('id', rawLogRowId);
         }
@@ -253,15 +361,15 @@ serve(async (req) => {
         continue;
       }
 
-      console.log('Created incident:', incident.incident_number);
+      incidentsCreated++;
+      console.log('✅ Created incident:', incident.incident_number);
 
-      // Mark raw log as incident_created
+      // Mark raw log as incident_created with reference
       if (rawLogRowId) {
         await supabase
           .from('raw_logs')
           .update({
             processing_status: 'incident_created',
-            analyzed_at: new Date().toISOString(),
             incident_id: incident.id,
           })
           .eq('id', rawLogRowId);
@@ -288,7 +396,7 @@ serve(async (req) => {
         });
       }
 
-      // 🔥 MITRE Enrichment Hook - Auto update coverage
+      // MITRE Enrichment Hook
       if (analysis?.mitre_techniques?.length > 0 || analysis?.mitre_technique) {
         console.log('🎯 Triggering MITRE enrichment...');
         try {
@@ -303,7 +411,6 @@ serve(async (req) => {
               incident_id: incident.id
             }),
           });
-          console.log('MITRE enrichment completed for incident:', incident.incident_number);
         } catch (mitreError) {
           console.error('MITRE enrichment failed:', mitreError);
         }
@@ -318,9 +425,6 @@ serve(async (req) => {
         .limit(1);
 
       if (!existingPlaybook.data?.length) {
-        console.log('No playbook for event type, generating suggestion:', normalizedLog.eventType);
-
-        // Auto-generate playbook for this event type
         try {
           const generateResponse = await fetch(`${supabaseUrl}/functions/v1/generate-playbook`, {
             method: 'POST',
@@ -338,8 +442,6 @@ serve(async (req) => {
 
           if (generateResponse.ok) {
             const generatedPlaybook = await generateResponse.json();
-
-            // Insert as suggestion (not auto-create to let analyst approve)
             await supabase.from('playbook_suggestions').insert({
               name: generatedPlaybook.name,
               description: generatedPlaybook.description || `Auto-generated for ${normalizedLog.eventType}`,
@@ -352,21 +454,13 @@ serve(async (req) => {
               incident_count: 1,
               status: 'pending',
             });
-
-            console.log('Created playbook suggestion for:', normalizedLog.eventType);
-
-            await supabase.from('incident_timeline').insert({
-              incident_id: incident.id,
-              stage: 'Playbook Suggested',
-              details: `Auto-generated playbook suggestion: ${generatedPlaybook.name}`,
-            });
           }
         } catch (genError) {
           console.error('Failed to generate playbook suggestion:', genError);
         }
       }
 
-      // Trigger Autonomous SOC Pipeline for all incidents
+      // Trigger Autonomous SOC Pipeline
       console.log('🤖 Triggering Autonomous SOC Pipeline...');
       try {
         const autonomousResponse = await fetch(`${supabaseUrl}/functions/v1/autonomous-soc`, {
@@ -385,8 +479,8 @@ serve(async (req) => {
 
         if (autonomousResponse.ok) {
           const pipelineResult = await autonomousResponse.json();
-          console.log('Autonomous SOC Pipeline result:', pipelineResult.summary);
           results.push({
+            id: incident.id,
             incident_number: incident.incident_number,
             classification: analysis?.classification,
             risk_level: analysis?.risk_level,
@@ -394,8 +488,8 @@ serve(async (req) => {
             pipeline_status: pipelineResult.summary,
           });
         } else {
-          console.error('Autonomous SOC Pipeline failed:', await autonomousResponse.text());
           results.push({
+            id: incident.id,
             incident_number: incident.incident_number,
             classification: analysis?.classification,
             risk_level: analysis?.risk_level,
@@ -404,6 +498,7 @@ serve(async (req) => {
       } catch (pipelineError) {
         console.error('Pipeline error:', pipelineError);
         results.push({
+          id: incident.id,
           incident_number: incident.incident_number,
           classification: analysis?.classification,
           risk_level: analysis?.risk_level,
@@ -411,9 +506,14 @@ serve(async (req) => {
       }
     }
 
+    console.log(`✅ Step 3 complete: Created ${incidentsCreated} incidents, skipped ${incidentsSkipped}`);
+
     return new Response(JSON.stringify({
       success: true,
-      processed: results.length,
+      processed: logsArray.length,
+      stored_in_raw_logs: rawLogIds.length,
+      incidents_created: incidentsCreated,
+      incidents_skipped: incidentsSkipped,
       incidents: results
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
