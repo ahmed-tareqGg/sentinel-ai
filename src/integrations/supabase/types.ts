@@ -214,6 +214,133 @@ export type Database = {
         }
         Relationships: []
       }
+      compliance_controls: {
+        Row: {
+          category: string | null
+          control_code: string
+          created_at: string | null
+          description: string | null
+          id: string
+          standard: string
+          title: string
+        }
+        Insert: {
+          category?: string | null
+          control_code: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          standard: string
+          title: string
+        }
+        Update: {
+          category?: string | null
+          control_code?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          standard?: string
+          title?: string
+        }
+        Relationships: []
+      }
+      compliance_reports: {
+        Row: {
+          file_url: string | null
+          generated_at: string | null
+          generated_by: string | null
+          id: string
+          standard: string
+          status: string | null
+          summary: Json | null
+        }
+        Insert: {
+          file_url?: string | null
+          generated_at?: string | null
+          generated_by?: string | null
+          id?: string
+          standard: string
+          status?: string | null
+          summary?: Json | null
+        }
+        Update: {
+          file_url?: string | null
+          generated_at?: string | null
+          generated_by?: string | null
+          id?: string
+          standard?: string
+          status?: string | null
+          summary?: Json | null
+        }
+        Relationships: []
+      }
+      control_evidence: {
+        Row: {
+          audit_log_id: string | null
+          compliance_audit_log_id: string | null
+          control_id: string | null
+          created_at: string | null
+          id: string
+          status: string | null
+        }
+        Insert: {
+          audit_log_id?: string | null
+          compliance_audit_log_id?: string | null
+          control_id?: string | null
+          created_at?: string | null
+          id?: string
+          status?: string | null
+        }
+        Update: {
+          audit_log_id?: string | null
+          compliance_audit_log_id?: string | null
+          control_id?: string | null
+          created_at?: string | null
+          id?: string
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "control_evidence_control_id_fkey"
+            columns: ["control_id"]
+            isOneToOne: false
+            referencedRelation: "compliance_controls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      control_rules: {
+        Row: {
+          control_id: string | null
+          created_at: string | null
+          id: string
+          match_action: string
+          match_resource: string | null
+        }
+        Insert: {
+          control_id?: string | null
+          created_at?: string | null
+          id?: string
+          match_action: string
+          match_resource?: string | null
+        }
+        Update: {
+          control_id?: string | null
+          created_at?: string | null
+          id?: string
+          match_action?: string
+          match_resource?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "control_rules_control_id_fkey"
+            columns: ["control_id"]
+            isOneToOne: false
+            referencedRelation: "compliance_controls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       data_sources: {
         Row: {
           agent_version: string | null
