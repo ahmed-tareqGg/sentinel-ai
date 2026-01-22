@@ -221,7 +221,10 @@ export type Database = {
           created_at: string | null
           description: string | null
           id: string
+          last_review: string | null
+          owner: string | null
           standard: string
+          status: string | null
           title: string
         }
         Insert: {
@@ -230,7 +233,10 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          last_review?: string | null
+          owner?: string | null
           standard: string
+          status?: string | null
           title: string
         }
         Update: {
@@ -239,7 +245,10 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          last_review?: string | null
+          owner?: string | null
           standard?: string
+          status?: string | null
           title?: string
         }
         Relationships: []

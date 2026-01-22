@@ -8,6 +8,9 @@ interface ComplianceControl {
   title: string;
   description: string | null;
   category: string | null;
+  status: string | null;
+  owner: string | null;
+  last_review: string | null;
 }
 
 interface ControlEvidence {
@@ -134,10 +137,37 @@ export function useComplianceData() {
     return controls.map(control => ({
       ...control,
       evidenceCount: evidenceByControl.get(control.id)?.length || 0,
-      isCovered: evidenceByControl.has(control.id),
+      isCovered: control.status === 'implemented' || evidenceByControl.has(control.id),
       latestEvidence: evidenceByControl.get(control.id)?.[0] || null,
     }));
   }, [controls, evidence]);
+
+  // Status stats for dashboard
+  const statusStats = useMemo(() => {
+    const implemented = controls.filter(c => c.status === 'implemented').length;
+    const planned = controls.filter(c => c.status === 'planned').length;
+    const notImplemented = controls.filter(c => c.status === 'not_implemented' || !c.status).length;
+    return { implemented, planned, notImplemented };
+  }, [controls]);
+
+  // Update control status
+  const updateControlStatus = async (controlId: string, status: string, owner?: string) => {
+    const { error } = await supabase
+      .from('compliance_controls')
+      .update({ 
+        status, 
+        owner: owner || null,
+        last_review: new Date().toISOString().split('T')[0]
+      })
+      .eq('id', controlId);
+    
+    if (error) {
+      console.error('Error updating control:', error);
+      return false;
+    }
+    await fetchData();
+    return true;
+  };
 
   // Action breakdown
   const actionBreakdown = useMemo(() => {
@@ -180,11 +210,13 @@ export function useComplianceData() {
     evidence,
     auditLogs,
     stats,
+    statusStats,
     standardCoverage,
     controlsWithStatus,
     actionBreakdown,
     evidenceTimeline,
     loading,
     refetch: fetchData,
+    updateControlStatus,
   };
 }
