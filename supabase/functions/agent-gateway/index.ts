@@ -600,33 +600,26 @@ serve(async (req) => {
       if (action === 'ingest') {
         const body = await req.json() as LogBatch;
         
-        let processedCount = 0;
-        let skippedDuplicates = 0;
-        let skippedLowPriority = 0;
-        const incidentsCreated: any[] = [];
+        // CRITICAL FIX: Separate ingestion from incident creation.
+        // - ALWAYS store every received log in raw_logs (no filtering, no dedup skipping).
+        // - AI analysis + incident creation happens AFTER storage.
 
-        // Store raw logs first with deduplication
-        const rawLogsToInsert = [];
-        const logsToAnalyze = [];
+        const rawLogsToInsert: any[] = [];
+        const transformedLogs: any[] = [];
+
+        // Extract public IP once for this request
+        const cfIP = req.headers.get('cf-connecting-ip');
+        const forwardedFor = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+        const xRealIP = req.headers.get('x-real-ip');
 
         for (const log of body.logs) {
-          // Generate hash for deduplication
-          const logHash = await hashLog(log);
-          
-          // Check if duplicate
-          if (await isDuplicate(supabase, logHash, auth.dataSourceId!)) {
-            skippedDuplicates++;
-            console.log(`⏭️ Skipping duplicate log: ${logHash.substring(0, 8)}...`);
-            continue;
-          }
+          const ingestId = crypto.randomUUID();
 
-          // Check correlation rules
-          const correlation = await shouldCreateIncident(supabase, log, auth.dataSourceId!);
-          
-          // Extract public IP from headers for ingested logs
-          const cfIP = req.headers.get('cf-connecting-ip');
-          const forwardedFor = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-          const xRealIP = req.headers.get('x-real-ip');
+          const logTimestamp = (log as any).timestamp || (log as any).time || new Date().toISOString();
+          const logType = (log as any).log_type || (log as any).eventType || 'unknown';
+          const hostname = (log as any).hostname || (log as any).host || auth.dataSourceName;
+          const parsedMessage = (log as any).message || (log as any).msg || null;
+
           const ipCandidate =
             forwardedFor ||
             cfIP ||
@@ -636,126 +629,118 @@ serve(async (req) => {
             (log as any).src_ip ||
             (log as any).host_ip ||
             (log as any).ip_address ||
-            body.source_type ||
-            'Unknown';
-          const publicIP = ipCandidate;
+            null;
 
-          // Store raw log (always) — show up in Live Logs before incident creation
+          const rawOriginal = (log as any).raw_log || (log as any).raw || log;
+          const rawPayload = (rawOriginal && typeof rawOriginal === 'object')
+            ? { ...rawOriginal, _socmind: { ...(rawOriginal as any)?._socmind, ingest_id: ingestId } }
+            : { value: rawOriginal, _socmind: { ingest_id: ingestId } };
+
           rawLogsToInsert.push({
             data_source_id: auth.dataSourceId,
-            timestamp: (log as any).timestamp || (log as any).time || new Date().toISOString(),
-            log_type: (log as any).log_type || (log as any).eventType || 'unknown',
+            timestamp: logTimestamp,
+            log_type: logType,
             severity: log.severity >= 4 ? 'high' : log.severity >= 3 ? 'medium' : log.severity >= 2 ? 'low' : 'info',
-            hostname: (log as any).hostname || (log as any).host || auth.dataSourceName,
-            ip_address: publicIP,
-            raw_payload: (log as any).raw_log || (log as any).raw || log,
-            parsed_message: (log as any).message || (log as any).msg || null,
-            processing_status: correlation.create ? 'pending' : 'ignored',
-            mitre_technique: logHash, // Store hash for dedup
+            hostname,
+            ip_address: ipCandidate,
+            raw_payload: rawPayload,
+            parsed_message: parsedMessage,
+            processing_status: 'pending',
           });
 
-          if (correlation.create) {
-            logsToAnalyze.push({
-              ...log,
-              correlation_reason: correlation.reason,
-              correlated_count: correlation.correlatedCount,
-            });
-          } else {
-            skippedLowPriority++;
-            console.log(`📦 Stored without incident: ${correlation.reason}`);
-          }
-        }
+          // Send ALL logs for analysis AFTER storage. We will attach raw_log_id after insert.
+          transformedLogs.push({
+            raw_log_id: null,
+            ingest_id: ingestId,
+            data_source_id: auth.dataSourceId,
+            hostname,
+            log_type: logType,
 
-        // Insert raw logs
-        let insertedPendingIds: string[] = [];
-        let insertedIgnoredIds: string[] = [];
-
-        if (rawLogsToInsert.length > 0) {
-          const { data: insertedLogs, error: rawError } = await supabase
-            .from('raw_logs')
-            .insert(rawLogsToInsert)
-            .select('id, processing_status');
-
-          if (rawError) {
-            console.error('Failed to insert raw logs:', rawError);
-          } else {
-            const rows = insertedLogs || [];
-            insertedPendingIds = rows.filter((r: any) => r.processing_status === 'pending').map((r: any) => r.id);
-            insertedIgnoredIds = rows.filter((r: any) => r.processing_status === 'ignored').map((r: any) => r.id);
-
-            console.log(
-              `📝 Stored ${rows.length} raw logs (${insertedPendingIds.length} pending, ${insertedIgnoredIds.length} ignored, ${skippedDuplicates} duplicates skipped)`
-            );
-          }
-        }
-
-        // Only send logs that need incident creation to ingest-log
-        if (logsToAnalyze.length > 0) {
-          const transformedLogs = logsToAnalyze.map((log) => ({
-            eventType: (log as any).eventType || (log as any).event_type || (log as any).log_type || 'Unknown',
+            eventType: (log as any).eventType || (log as any).event_type || logType || 'Unknown',
             severity: log.severity,
             srcIP:
               log.source_ip ||
               (log as any).srcIP ||
               (log as any).src_ip ||
               (log as any).host_ip ||
+              hostname ||
               auth.dataSourceName,
             dstIP: log.destination_ip || (log as any).dstIP || (log as any).dst_ip || 'Unknown',
             msg: log.message || (log as any).msg || '',
             fileHash: log.file_hash,
-            time: (log as any).timestamp || (log as any).time || new Date().toISOString(),
-            raw_log: (log as any).raw_log || (log as any).raw || log,
+            time: logTimestamp,
+            raw_log: rawOriginal,
             source_type: body.source_type || (log as any).source_type,
             vendor: body.vendor || (log as any).vendor,
-          }));
+          });
+        }
 
-          // Send to ingest-log
-          const ingestResponse = await fetch(`${supabaseUrl}/functions/v1/ingest-log`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabaseKey}`,
-              'Content-Type': 'application/json',
-              'x-raw-logs-inserted': 'true',
-            },
-            body: JSON.stringify({
+        // Insert raw logs (ALL logs)
+        let insertedIds: string[] = [];
+        const idByIngestId = new Map<string, string>();
+
+        if (rawLogsToInsert.length > 0) {
+          const { data: insertedRows, error: rawError } = await supabase
+            .from('raw_logs')
+            .insert(rawLogsToInsert)
+            .select('id, raw_payload');
+
+          if (rawError) {
+            console.error('Failed to insert raw logs:', rawError);
+            throw rawError;
+          }
+
+          const rows = insertedRows || [];
+          insertedIds = rows.map((r: any) => r.id);
+
+          for (const r of rows) {
+            const ingestId = (r as any)?.raw_payload?._socmind?.ingest_id;
+            if (ingestId) idByIngestId.set(ingestId, r.id);
+          }
+
+          console.log(`📝 Stored ${rows.length} raw logs (all pending)`);
+        }
+
+        // Attach raw_log_id to the analysis payload
+        for (const t of transformedLogs) {
+          t.raw_log_id = idByIngestId.get(t.ingest_id) || null;
+        }
+
+        // Analyze AFTER storage (non-blocking from an ingestion standpoint: failure won't hide logs)
+        let analyzedCount = 0;
+        let incidentsCreated: any[] = [];
+        let incidentsCreatedCount = 0;
+        let incidentsSkippedCount = 0;
+
+        if (transformedLogs.length > 0) {
+          const { data: ingestResult, error: ingestErr } = await supabase.functions.invoke('ingest-log', {
+            body: {
               logs: transformedLogs,
               source: `Agent: ${auth.dataSourceName}`,
-            }),
+            },
+            headers: {
+              'x-raw-logs-inserted': 'true',
+            },
           });
 
-          if (!ingestResponse.ok) {
-            const errorText = await ingestResponse.text();
-            console.error('Ingest failed:', errorText);
+          if (ingestErr) {
+            console.error('Ingest-log failed:', ingestErr);
 
-            // Update ONLY pending raw logs with error status
-            if (insertedPendingIds.length > 0) {
+            if (insertedIds.length > 0) {
               await supabase
                 .from('raw_logs')
-                .update({ processing_status: 'error', error_message: 'Analysis failed', analyzed_at: new Date().toISOString() })
-                .in('id', insertedPendingIds);
+                .update({
+                  processing_status: 'error',
+                  error_message: 'Analysis failed',
+                  analyzed_at: new Date().toISOString(),
+                })
+                .in('id', insertedIds);
             }
-
-            throw new Error('Failed to process logs');
-          }
-
-          const ingestResult = await ingestResponse.json();
-          processedCount = ingestResult.processed || 0;
-
-          if (ingestResult.incidents) {
-            incidentsCreated.push(...ingestResult.incidents);
-          }
-
-          // Update ONLY pending raw logs status based on results
-          if (insertedPendingIds.length > 0) {
-            const status = ingestResult.incidents?.length > 0 ? 'incident_created' : 'analyzed';
-            await supabase
-              .from('raw_logs')
-              .update({
-                processing_status: status,
-                analyzed_at: new Date().toISOString(),
-                incident_id: ingestResult.incidents?.[0]?.id || null,
-              })
-              .in('id', insertedPendingIds);
+          } else {
+            analyzedCount = (ingestResult as any)?.processed || 0;
+            incidentsCreated = (ingestResult as any)?.incidents || [];
+            incidentsCreatedCount = (ingestResult as any)?.incidents_created ?? (incidentsCreated?.length || 0);
+            incidentsSkippedCount = (ingestResult as any)?.incidents_skipped ?? 0;
           }
         }
 
@@ -793,15 +778,15 @@ serve(async (req) => {
             });
         }
 
-        console.log(`📥 Ingested ${body.logs.length} logs from ${auth.dataSourceName} (${processedCount} incidents, ${skippedDuplicates} duplicates, ${skippedLowPriority} stored only)`);
-
         return new Response(JSON.stringify({
           success: true,
-          received: body.logs.length,
-          processed: processedCount,
+          logs_received: body.logs.length,
+          logs_ingested: rawLogsToInsert.length,
+          logs_analyzed: analyzedCount,
+          incidents_created: incidentsCreatedCount,
+          incidents_skipped: incidentsSkippedCount,
           incidents: incidentsCreated,
-          skipped_duplicates: skippedDuplicates,
-          stored_without_incident: skippedLowPriority,
+          message: `Successfully sent ${body.logs.length} logs (Ingested: ${rawLogsToInsert.length}, Analyzed: ${analyzedCount}, Incidents: ${incidentsCreatedCount})`,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
