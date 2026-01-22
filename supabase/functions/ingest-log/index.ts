@@ -20,6 +20,8 @@ interface RawLog {
   action?: string;
   time?: string;
   timestamp?: string;
+  // When upstream already inserted into raw_logs, it can pass the raw log row id here
+  raw_log_id?: string;
   [key: string]: unknown;
 }
 
@@ -244,7 +246,9 @@ serve(async (req) => {
     for (let i = 0; i < logsArray.length; i++) {
       const rawLog = logsArray[i];
       const normalizedLog = normalizeLog(rawLog);
-      const rawLogRowId = skipRawLogInsert ? null : (rawLogIds[i] || null);
+      // If upstream already inserted raw_logs, it should pass raw_log_id so we can update status.
+      const providedRawLogId = (rawLog as any).raw_log_id || (rawLog as any).rawLogId || null;
+      const rawLogRowId = skipRawLogInsert ? (providedRawLogId || null) : (rawLogIds[i] || null);
 
       // Analyze the log using AI (internal call with service key)
       let analysis = null;
