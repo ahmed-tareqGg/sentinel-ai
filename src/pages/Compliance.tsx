@@ -51,16 +51,25 @@ const STANDARD_COLORS: Record<string, string> = {
 
 const PIE_COLORS = ['hsl(var(--primary))', 'hsl(142, 71%, 45%)', 'hsl(262, 83%, 58%)', 'hsl(25, 95%, 53%)'];
 
+const STATUS_COLORS: Record<string, string> = {
+  implemented: 'bg-green-500/10 text-green-500 border-green-500/30',
+  planned: 'bg-blue-500/10 text-blue-500 border-blue-500/30',
+  not_implemented: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30',
+};
+
 export default function Compliance() {
   const {
+    controls,
     auditLogs,
     stats,
+    statusStats,
     standardCoverage,
     controlsWithStatus,
     actionBreakdown,
     evidenceTimeline,
     loading,
     refetch,
+    updateControlStatus,
   } = useComplianceData();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -68,6 +77,7 @@ export default function Compliance() {
   const [filterResult, setFilterResult] = useState<string>('all');
   const [filterActor, setFilterActor] = useState<string>('all');
   const [filterStandard, setFilterStandard] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
 
   const filteredLogs = auditLogs.filter(log => {
     if (searchTerm && !JSON.stringify(log).toLowerCase().includes(searchTerm.toLowerCase())) {
@@ -81,12 +91,22 @@ export default function Compliance() {
 
   const filteredControls = controlsWithStatus.filter(control => {
     if (filterStandard !== 'all' && control.standard !== filterStandard) return false;
+    if (filterStatus !== 'all' && (control.status || 'not_implemented') !== filterStatus) return false;
     if (searchTerm && !control.title.toLowerCase().includes(searchTerm.toLowerCase()) 
         && !control.control_code.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
     return true;
   });
+
+  const handleStatusChange = async (controlId: string, newStatus: string) => {
+    const success = await updateControlStatus(controlId, newStatus);
+    if (success) {
+      toast.success('Control status updated');
+    } else {
+      toast.error('Failed to update control status');
+    }
+  };
 
   const uniqueActions = [...new Set(auditLogs.map(l => l.action))];
 
@@ -359,6 +379,54 @@ export default function Compliance() {
 
         {/* Controls Tab */}
         <TabsContent value="controls" className="space-y-6">
+          {/* Status Stats */}
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <Shield className="h-6 w-6 text-primary" />
+                  <div>
+                    <p className="text-2xl font-bold">{controls.length || statusStats?.implemented + statusStats?.planned + statusStats?.notImplemented || 0}</p>
+                    <p className="text-xs text-muted-foreground">Total Controls</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="h-6 w-6 text-green-500" />
+                  <div>
+                    <p className="text-2xl font-bold">{statusStats?.implemented || 0}</p>
+                    <p className="text-xs text-muted-foreground">Implemented</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <Clock className="h-6 w-6 text-blue-500" />
+                  <div>
+                    <p className="text-2xl font-bold">{statusStats?.planned || 0}</p>
+                    <p className="text-xs text-muted-foreground">Planned</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="h-6 w-6 text-yellow-500" />
+                  <div>
+                    <p className="text-2xl font-bold">{statusStats?.notImplemented || 0}</p>
+                    <p className="text-xs text-muted-foreground">Not Implemented</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           {/* Filters */}
           <Card>
             <CardContent className="pt-6">
@@ -385,6 +453,17 @@ export default function Compliance() {
                     <SelectItem value="GDPR">GDPR</SelectItem>
                   </SelectContent>
                 </Select>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="implemented">Implemented</SelectItem>
+                    <SelectItem value="planned">Planned</SelectItem>
+                    <SelectItem value="not_implemented">Not Implemented</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>
@@ -392,9 +471,9 @@ export default function Compliance() {
           {/* Controls Table */}
           <Card>
             <CardHeader>
-              <CardTitle>Compliance Controls</CardTitle>
+              <CardTitle>ISO 27001:2022 Annex A Controls ({filteredControls.length})</CardTitle>
               <CardDescription>
-                Control coverage status across all compliance standards
+                Manage implementation status for all 93 controls
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -407,18 +486,19 @@ export default function Compliance() {
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-secondary/50">
-                        <TableHead>Standard</TableHead>
-                        <TableHead>Control</TableHead>
+                        <TableHead className="w-[100px]">Standard</TableHead>
+                        <TableHead className="w-[80px]">Control</TableHead>
                         <TableHead>Title</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Evidence</TableHead>
+                        <TableHead className="w-[120px]">Category</TableHead>
+                        <TableHead className="w-[180px]">Status</TableHead>
+                        <TableHead className="w-[100px]">Owner</TableHead>
+                        <TableHead className="w-[80px]">Evidence</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredControls.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                             No controls found
                           </TableCell>
                         </TableRow>
@@ -436,35 +516,60 @@ export default function Compliance() {
                                 {control.standard}
                               </Badge>
                             </TableCell>
-                            <TableCell className="font-mono text-sm">
+                            <TableCell className="font-mono text-sm font-medium">
                               {control.control_code}
                             </TableCell>
-                            <TableCell className="max-w-[300px]">
+                            <TableCell>
                               <div className="font-medium text-sm">{control.title}</div>
                               {control.description && (
-                                <div className="text-xs text-muted-foreground truncate">
+                                <div className="text-xs text-muted-foreground line-clamp-1">
                                   {control.description}
                                 </div>
                               )}
                             </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
+                            <TableCell className="text-xs text-muted-foreground">
                               {control.category || '-'}
                             </TableCell>
                             <TableCell>
-                              {control.isCovered ? (
-                                <Badge className="bg-green-500/10 text-green-500 border-green-500/30">
-                                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                                  Covered
-                                </Badge>
-                              ) : (
-                                <Badge variant="outline" className="text-muted-foreground">
-                                  <XCircle className="h-3 w-3 mr-1" />
-                                  Not Covered
-                                </Badge>
-                              )}
+                              <Select 
+                                value={control.status || 'not_implemented'} 
+                                onValueChange={(value) => handleStatusChange(control.id, value)}
+                              >
+                                <SelectTrigger className={cn(
+                                  "h-8 text-xs w-[150px]",
+                                  STATUS_COLORS[control.status || 'not_implemented']
+                                )}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="implemented">
+                                    <div className="flex items-center gap-2">
+                                      <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                      Implemented
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="planned">
+                                    <div className="flex items-center gap-2">
+                                      <Clock className="h-3 w-3 text-blue-500" />
+                                      Planned
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="not_implemented">
+                                    <div className="flex items-center gap-2">
+                                      <XCircle className="h-3 w-3 text-yellow-500" />
+                                      Not Implemented
+                                    </div>
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {control.owner || '-'}
                             </TableCell>
                             <TableCell>
-                              <span className="text-sm font-medium">{control.evidenceCount}</span>
+                              <Badge variant="outline" className="text-xs">
+                                {control.evidenceCount}
+                              </Badge>
                             </TableCell>
                           </TableRow>
                         ))
