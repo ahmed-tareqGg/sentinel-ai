@@ -216,42 +216,116 @@ export type Database = {
       }
       compliance_controls: {
         Row: {
+          applicable: string | null
           category: string | null
+          comments: string | null
+          control_category: string | null
           control_code: string
           created_at: string | null
           description: string | null
+          evidence_reference: string | null
           id: string
+          implementation_description: string | null
+          implemented: boolean | null
+          justification: string | null
           last_review: string | null
           owner: string | null
+          risk_reference: string | null
           standard: string
           status: string | null
           title: string
+          updated_at: string | null
         }
         Insert: {
+          applicable?: string | null
           category?: string | null
+          comments?: string | null
+          control_category?: string | null
           control_code: string
           created_at?: string | null
           description?: string | null
+          evidence_reference?: string | null
           id?: string
+          implementation_description?: string | null
+          implemented?: boolean | null
+          justification?: string | null
           last_review?: string | null
           owner?: string | null
+          risk_reference?: string | null
           standard: string
           status?: string | null
           title: string
+          updated_at?: string | null
         }
         Update: {
+          applicable?: string | null
           category?: string | null
+          comments?: string | null
+          control_category?: string | null
           control_code?: string
           created_at?: string | null
           description?: string | null
+          evidence_reference?: string | null
           id?: string
+          implementation_description?: string | null
+          implemented?: boolean | null
+          justification?: string | null
           last_review?: string | null
           owner?: string | null
+          risk_reference?: string | null
           standard?: string
           status?: string | null
           title?: string
+          updated_at?: string | null
         }
         Relationships: []
+      }
+      compliance_evidence: {
+        Row: {
+          control_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          evidence_type: string
+          file_url: string | null
+          id: string
+          reference_id: string | null
+          source: string | null
+          title: string
+        }
+        Insert: {
+          control_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          evidence_type: string
+          file_url?: string | null
+          id?: string
+          reference_id?: string | null
+          source?: string | null
+          title: string
+        }
+        Update: {
+          control_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          evidence_type?: string
+          file_url?: string | null
+          id?: string
+          reference_id?: string | null
+          source?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "compliance_evidence_control_id_fkey"
+            columns: ["control_id"]
+            isOneToOne: false
+            referencedRelation: "compliance_controls"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       compliance_reports: {
         Row: {

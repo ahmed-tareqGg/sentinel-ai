@@ -1,16 +1,39 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/backend/client';
 
-interface ComplianceControl {
+export interface ComplianceControl {
   id: string;
   standard: string;
   control_code: string;
   title: string;
   description: string | null;
   category: string | null;
+  control_category: string | null;
   status: string | null;
   owner: string | null;
   last_review: string | null;
+  // New NIST-like fields
+  applicable: string | null;
+  justification: string | null;
+  implemented: boolean | null;
+  implementation_description: string | null;
+  evidence_reference: string | null;
+  risk_reference: string | null;
+  comments: string | null;
+  updated_at: string | null;
+}
+
+export interface ComplianceEvidence {
+  id: string;
+  control_id: string;
+  evidence_type: string;
+  source: string | null;
+  reference_id: string | null;
+  title: string;
+  description: string | null;
+  file_url: string | null;
+  created_by: string | null;
+  created_at: string;
 }
 
 interface ControlEvidence {
@@ -46,6 +69,8 @@ interface ComplianceStats {
   systemActions: number;
   aiActions: number;
   agentActions: number;
+  applicableControls: number;
+  implementedControls: number;
 }
 
 interface StandardCoverage {
@@ -53,11 +78,14 @@ interface StandardCoverage {
   total: number;
   covered: number;
   percentage: number;
+  applicable: number;
+  implemented: number;
 }
 
 export function useComplianceData() {
   const [controls, setControls] = useState<ComplianceControl[]>([]);
   const [evidence, setEvidence] = useState<ControlEvidence[]>([]);
+  const [complianceEvidence, setComplianceEvidence] = useState<ComplianceEvidence[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -69,14 +97,16 @@ export function useComplianceData() {
     setLoading(true);
     try {
       // Fetch all data in parallel
-      const [controlsRes, evidenceRes, logsRes] = await Promise.all([
-        supabase.from('compliance_controls').select('*').order('standard', { ascending: true }),
+      const [controlsRes, evidenceRes, complianceEvidenceRes, logsRes] = await Promise.all([
+        supabase.from('compliance_controls').select('*').order('control_code', { ascending: true }),
         supabase.from('control_evidence').select('*').order('created_at', { ascending: false }),
+        supabase.from('compliance_evidence').select('*').order('created_at', { ascending: false }),
         supabase.from('compliance_audit_logs').select('*').order('timestamp', { ascending: false }).limit(500),
       ]);
 
-      if (controlsRes.data) setControls(controlsRes.data);
+      if (controlsRes.data) setControls(controlsRes.data as ComplianceControl[]);
       if (evidenceRes.data) setEvidence(evidenceRes.data);
+      if (complianceEvidenceRes.data) setComplianceEvidence(complianceEvidenceRes.data as ComplianceEvidence[]);
       if (logsRes.data) setAuditLogs(logsRes.data as AuditLog[]);
     } catch (error) {
       console.error('Error fetching compliance data:', error);
@@ -85,15 +115,18 @@ export function useComplianceData() {
     }
   };
 
-  // Calculate stats
+  // Calculate stats with proper coverage based on applicable + implemented
   const stats: ComplianceStats = useMemo(() => {
-    const coveredControlIds = new Set(evidence.map(e => e.control_id));
+    const applicableControls = controls.filter(c => c.applicable === 'yes' || c.applicable === null);
+    const implementedControls = controls.filter(c => c.implemented === true);
     
     return {
       totalControls: controls.length,
-      coveredControls: coveredControlIds.size,
-      coveragePercentage: controls.length > 0 
-        ? Math.round((coveredControlIds.size / controls.length) * 100) 
+      applicableControls: applicableControls.length,
+      implementedControls: implementedControls.length,
+      coveredControls: implementedControls.length,
+      coveragePercentage: applicableControls.length > 0 
+        ? Math.round((implementedControls.filter(c => applicableControls.some(a => a.id === c.id)).length / applicableControls.length) * 100) 
         : 0,
       totalEvents: auditLogs.length,
       successEvents: auditLogs.filter(l => l.result === 'success').length,
@@ -103,29 +136,31 @@ export function useComplianceData() {
       aiActions: auditLogs.filter(l => l.actor_type === 'ai').length,
       agentActions: auditLogs.filter(l => l.actor_type === 'agent').length,
     };
-  }, [controls, evidence, auditLogs]);
+  }, [controls, auditLogs]);
 
-  // Coverage by standard
+  // Coverage by standard with proper calculation
   const standardCoverage: StandardCoverage[] = useMemo(() => {
     const standards = [...new Set(controls.map(c => c.standard))];
-    const coveredControlIds = new Set(evidence.map(e => e.control_id));
     
     return standards.map(standard => {
       const standardControls = controls.filter(c => c.standard === standard);
-      const covered = standardControls.filter(c => coveredControlIds.has(c.id)).length;
+      const applicableControls = standardControls.filter(c => c.applicable === 'yes' || c.applicable === null);
+      const implementedControls = standardControls.filter(c => c.implemented === true);
       
       return {
         standard,
         total: standardControls.length,
-        covered,
-        percentage: standardControls.length > 0 
-          ? Math.round((covered / standardControls.length) * 100) 
+        applicable: applicableControls.length,
+        implemented: implementedControls.length,
+        covered: implementedControls.length,
+        percentage: applicableControls.length > 0 
+          ? Math.round((implementedControls.filter(c => applicableControls.some(a => a.id === c.id)).length / applicableControls.length) * 100) 
           : 0,
       };
     });
-  }, [controls, evidence]);
+  }, [controls]);
 
-  // Controls with coverage status
+  // Controls with coverage status and evidence count
   const controlsWithStatus = useMemo(() => {
     const evidenceByControl = new Map<string, ControlEvidence[]>();
     evidence.forEach(e => {
@@ -134,30 +169,43 @@ export function useComplianceData() {
       evidenceByControl.set(e.control_id, existing);
     });
 
+    const complianceEvidenceByControl = new Map<string, ComplianceEvidence[]>();
+    complianceEvidence.forEach(e => {
+      const existing = complianceEvidenceByControl.get(e.control_id) || [];
+      existing.push(e);
+      complianceEvidenceByControl.set(e.control_id, existing);
+    });
+
     return controls.map(control => ({
       ...control,
-      evidenceCount: evidenceByControl.get(control.id)?.length || 0,
-      isCovered: control.status === 'implemented' || evidenceByControl.has(control.id),
+      evidenceCount: (evidenceByControl.get(control.id)?.length || 0) + (complianceEvidenceByControl.get(control.id)?.length || 0),
+      isCovered: control.implemented === true,
       latestEvidence: evidenceByControl.get(control.id)?.[0] || null,
+      complianceEvidenceList: complianceEvidenceByControl.get(control.id) || [],
     }));
-  }, [controls, evidence]);
+  }, [controls, evidence, complianceEvidence]);
 
   // Status stats for dashboard
   const statusStats = useMemo(() => {
-    const implemented = controls.filter(c => c.status === 'implemented').length;
+    const implemented = controls.filter(c => c.implemented === true).length;
     const planned = controls.filter(c => c.status === 'planned').length;
-    const notImplemented = controls.filter(c => c.status === 'not_implemented' || !c.status).length;
-    return { implemented, planned, notImplemented };
+    const notImplemented = controls.filter(c => c.implemented === false || c.implemented === null).length;
+    const applicable = controls.filter(c => c.applicable === 'yes' || c.applicable === null).length;
+    const notApplicable = controls.filter(c => c.applicable === 'no' || c.applicable === 'na').length;
+    return { implemented, planned, notImplemented, applicable, notApplicable };
   }, [controls]);
 
-  // Update control status
-  const updateControlStatus = async (controlId: string, status: string, owner?: string) => {
+  // Update control - full update with all fields
+  const updateControl = async (
+    controlId: string, 
+    updates: Partial<ComplianceControl>
+  ) => {
     const { error } = await supabase
       .from('compliance_controls')
-      .update({ 
-        status, 
-        owner: owner || null,
-        last_review: new Date().toISOString().split('T')[0]
+      .update({
+        ...updates,
+        last_review: new Date().toISOString().split('T')[0],
+        updated_at: new Date().toISOString(),
       })
       .eq('id', controlId);
     
@@ -167,6 +215,58 @@ export function useComplianceData() {
     }
     await fetchData();
     return true;
+  };
+
+  // Legacy method for backward compatibility
+  const updateControlStatus = async (controlId: string, status: string, owner?: string) => {
+    return updateControl(controlId, { 
+      status, 
+      owner: owner || null,
+      implemented: status === 'implemented',
+    });
+  };
+
+  // Add evidence to a control
+  const addEvidence = async (
+    controlId: string,
+    evidenceData: Omit<ComplianceEvidence, 'id' | 'control_id' | 'created_at' | 'created_by'>
+  ) => {
+    const { data: userData } = await supabase.auth.getUser();
+    
+    const { error } = await supabase
+      .from('compliance_evidence')
+      .insert({
+        control_id: controlId,
+        ...evidenceData,
+        created_by: userData?.user?.id || null,
+      });
+    
+    if (error) {
+      console.error('Error adding evidence:', error);
+      return false;
+    }
+    await fetchData();
+    return true;
+  };
+
+  // Delete evidence
+  const deleteEvidence = async (evidenceId: string) => {
+    const { error } = await supabase
+      .from('compliance_evidence')
+      .delete()
+      .eq('id', evidenceId);
+    
+    if (error) {
+      console.error('Error deleting evidence:', error);
+      return false;
+    }
+    await fetchData();
+    return true;
+  };
+
+  // Get evidence for a specific control
+  const getControlEvidence = (controlId: string) => {
+    return complianceEvidence.filter(e => e.control_id === controlId);
   };
 
   // Action breakdown
@@ -192,7 +292,7 @@ export function useComplianceData() {
       date.setDate(date.getDate() - i);
       const dateStr = date.toISOString().split('T')[0];
       
-      const count = evidence.filter(e => 
+      const count = [...evidence, ...complianceEvidence].filter(e => 
         e.created_at.startsWith(dateStr)
       ).length;
       
@@ -203,11 +303,31 @@ export function useComplianceData() {
     }
     
     return timeline;
-  }, [evidence]);
+  }, [evidence, complianceEvidence]);
+
+  // Category breakdown
+  const categoryBreakdown = useMemo(() => {
+    const categories = ['Organizational', 'People', 'Physical', 'Technological'];
+    return categories.map(category => {
+      const categoryControls = controls.filter(c => 
+        (c.control_category || c.category) === category
+      );
+      const implemented = categoryControls.filter(c => c.implemented === true).length;
+      return {
+        category,
+        total: categoryControls.length,
+        implemented,
+        percentage: categoryControls.length > 0 
+          ? Math.round((implemented / categoryControls.length) * 100) 
+          : 0,
+      };
+    });
+  }, [controls]);
 
   return {
     controls,
     evidence,
+    complianceEvidence,
     auditLogs,
     stats,
     statusStats,
@@ -215,8 +335,13 @@ export function useComplianceData() {
     controlsWithStatus,
     actionBreakdown,
     evidenceTimeline,
+    categoryBreakdown,
     loading,
     refetch: fetchData,
     updateControlStatus,
+    updateControl,
+    addEvidence,
+    deleteEvidence,
+    getControlEvidence,
   };
 }
