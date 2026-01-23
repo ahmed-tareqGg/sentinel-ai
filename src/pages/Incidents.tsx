@@ -20,7 +20,7 @@ export default function Incidents() {
   const [searchParams] = useSearchParams();
   const searchQuery = searchParams.get('search') || '';
   const [filter, setFilter] = useState<string>('all');
-  const { incidents, counts, loading, refetch } = useIncidents();
+  const { incidents, loading, refetch } = useIncidents();
   const { role } = useAuth();
   const canModifyIncidents = role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(role);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -52,10 +52,10 @@ export default function Incidents() {
     : searchFiltered.filter(i => i.status.toLowerCase().replace(' ', '-') === filter);
 
   const filters = [
-    { key: 'all', label: 'All', count: counts.all },
-    { key: 'open', label: 'Open', count: counts.open },
-    { key: 'in-progress', label: 'In Progress', count: counts.inProgress },
-    { key: 'closed', label: 'Closed', count: counts.closed },
+    { key: 'all', label: 'All', count: incidents.length },
+    { key: 'open', label: 'Open', count: incidents.filter(i => i.status === 'Open').length },
+    { key: 'in-progress', label: 'In Progress', count: incidents.filter(i => i.status === 'In Progress').length },
+    { key: 'closed', label: 'Closed', count: incidents.filter(i => i.status === 'Closed').length },
   ];
 
   const handleSubmitLog = async () => {

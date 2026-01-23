@@ -17,107 +17,7 @@ interface LogData {
   rawLog?: Record<string, unknown>;
 }
 
-// ============================================
-// BENIGN EVENT WHITELIST - Common Windows Telemetry
-// ============================================
-const BENIGN_PROVIDERS: string[] = [
-  'nhi', 'BTHUSB', 'Netwtw10', 'Netwtw08', 'Netwtw06', 
-  'NDIS', 'e1i65x64', 'iaStorA', 'WMI', 'FilterManager',
-  'Microsoft-Windows-Time-Service', 'Microsoft-Windows-Kernel-General',
-  'Microsoft-Windows-Power', 'Microsoft-Windows-Kernel-Power',
-  'Microsoft-Windows-DistributedCOM', 'Microsoft-Windows-DNS-Client',
-  'Service Control Manager', 'Application Popup', 'volmgr',
-  'Microsoft-Windows-UserModePowerService', 'Microsoft-Windows-WindowsUpdateClient',
-  'Microsoft-Windows-Winlogon', 'Microsoft-Windows-Security-SPP',
-  'Intel', 'Realtek', 'NVIDIA', 'AMD'
-];
-
-const BENIGN_EVENT_IDS: number[] = [
-  // Common informational Windows events
-  4624,  // Successful logon (Type 5 = Service)
-  4634,  // Logoff
-  4672,  // Special privileges assigned (admin logon - normal for system)
-  7036,  // Service state change
-  7040,  // Service config change
-  4798,  // User's local group membership was enumerated
-  4799,  // Security-enabled local group membership was enumerated
-  4688,  // Process creation (normal)
-  4689,  // Process exit
-  1,     // WMI provider started
-  10,    // WMI filter
-  5379,  // Credential Manager read (normal for Windows)
-  5061,  // Cryptographic operation (normal)
-  5058,  // Key file operation (normal)
-];
-
-// Benign message patterns (regex)
-const BENIGN_PATTERNS: RegExp[] = [
-  /Driver\s+(exit|entry)\s+RTD3/i,
-  /All\s+the\s+connected\s+devices\s+will\s+now\s+cause/i,
-  /service\s+(started|stopped)\s+successfully/i,
-  /Windows\s+is\s+starting\s+up/i,
-  /Logon\s+Type:\s*(5|7|11)/i,  // Service, unlock, cached logon - normal
-  /An\s+account\s+was\s+successfully\s+logged\s+on.*Logon\s+Type:\s*5/si,
-  /local\s+group\s+membership\s+was\s+enumerated/i,
-  /Special\s+privileges\s+assigned.*WORKGROUP/si,
-  /SYSTEM\s+account/i,
-  /S-1-5-18/i,  // Local SYSTEM SID
-  /S-1-5-19/i,  // Local SERVICE SID
-  /S-1-5-20/i,  // NETWORK SERVICE SID
-];
-
-// ============================================
-// SUSPICIOUS EVENT PATTERNS - Require Investigation
-// ============================================
-const SUSPICIOUS_PATTERNS: RegExp[] = [
-  /failed\s+login/i,
-  /authentication\s+fail/i,
-  /access\s+denied/i,
-  /privilege\s+escalation/i,
-  /unauthorized/i,
-  /suspicious/i,
-  /malware/i,
-  /virus/i,
-  /trojan/i,
-  /ransomware/i,
-  /encrypt/i,
-  /exfiltrat/i,
-  /lateral\s+movement/i,
-  /pass.?the.?hash/i,
-  /mimikatz/i,
-  /credential\s+dump/i,
-  /reverse\s+shell/i,
-  /c2|command\s*&?\s*control/i,
-  /beacon/i,
-  /powershell.*-enc|-encodedcommand/i,
-  /invoke-expression|iex\s*\(/i,
-  /new-object\s+net\.webclient/i,
-  /downloadstring|downloadfile/i,
-  /frombase64string/i,
-];
-
-const HIGH_RISK_EVENT_IDS: number[] = [
-  4625,  // Failed logon
-  4648,  // Explicit credential logon
-  4768,  // Kerberos TGT request
-  4769,  // Kerberos service ticket request
-  4771,  // Kerberos pre-auth failed
-  4776,  // Credential validation
-  4720,  // User account created
-  4722,  // User account enabled
-  4724,  // Password reset attempt
-  4728,  // Member added to security group
-  4732,  // Member added to local security group
-  4756,  // Member added to universal group
-  1102,  // Audit log cleared
-  4616,  // System time changed
-  4657,  // Registry value modified
-  4697,  // Service installed
-];
-
-// ============================================
 // MITRE ATT&CK Mapping Database
-// ============================================
 const MITRE_MAPPING: Record<string, { technique: string; tactic: string; name: string }[]> = {
   // Execution
   'command_execution': [{ technique: 'T1059', tactic: 'Execution', name: 'Command and Scripting Interpreter' }],
@@ -205,71 +105,6 @@ const KEYWORD_PATTERNS: { pattern: RegExp; techniques: string[] }[] = [
   { pattern: /outbound.*connection|suspicious.*domain|unknown.*host/i, techniques: ['c2'] },
 ];
 
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
-
-/**
- * Check if the log event is a known benign Windows telemetry event
- */
-function isBenignEvent(log: LogData): { isBenign: boolean; reason: string } {
-  const content = `${log.eventType} ${log.msg} ${log.action || ''}`;
-  const rawLog = log.rawLog || {};
-  const provider = (rawLog as any).provider || '';
-  const eventId = (rawLog as any).event_id || (rawLog as any).eventId || 0;
-  
-  // Check if provider is in benign list
-  for (const benignProvider of BENIGN_PROVIDERS) {
-    if (provider.toLowerCase().includes(benignProvider.toLowerCase()) ||
-        content.toLowerCase().includes(benignProvider.toLowerCase())) {
-      return { isBenign: true, reason: `Known benign provider: ${benignProvider}` };
-    }
-  }
-  
-  // Check if event ID is in benign list (only for low severity)
-  if (log.severity <= 2 && BENIGN_EVENT_IDS.includes(eventId)) {
-    // But check if there are suspicious patterns in the message
-    for (const pattern of SUSPICIOUS_PATTERNS) {
-      if (pattern.test(content)) {
-        return { isBenign: false, reason: `Suspicious pattern detected despite benign event ID` };
-      }
-    }
-    return { isBenign: true, reason: `Known benign event ID: ${eventId}` };
-  }
-  
-  // Check benign message patterns (only for low severity)
-  if (log.severity <= 2) {
-    for (const pattern of BENIGN_PATTERNS) {
-      if (pattern.test(content)) {
-        return { isBenign: true, reason: `Matched benign pattern` };
-      }
-    }
-  }
-  
-  // Check for high-risk event IDs
-  if (HIGH_RISK_EVENT_IDS.includes(eventId)) {
-    return { isBenign: false, reason: `High-risk event ID: ${eventId}` };
-  }
-  
-  // Check suspicious patterns
-  for (const pattern of SUSPICIOUS_PATTERNS) {
-    if (pattern.test(content)) {
-      return { isBenign: false, reason: `Suspicious pattern matched` };
-    }
-  }
-  
-  // Default: not benign for medium+ severity
-  if (log.severity >= 3) {
-    return { isBenign: false, reason: 'Medium+ severity requires analysis' };
-  }
-  
-  // Low severity without suspicious patterns = likely benign
-  return { isBenign: true, reason: 'Low severity without suspicious patterns' };
-}
-
-/**
- * Detect MITRE techniques from content keywords
- */
 function detectMitreFromContent(log: LogData): { technique: string; tactic: string; name: string; confidence: number }[] {
   const detected: { technique: string; tactic: string; name: string; confidence: number }[] = [];
   const content = `${log.eventType} ${log.msg} ${log.action || ''}`.toLowerCase();
@@ -295,91 +130,6 @@ function detectMitreFromContent(log: LogData): { technique: string; tactic: stri
 
   // Sort by confidence
   return detected.sort((a, b) => b.confidence - a.confidence).slice(0, 3);
-}
-
-/**
- * Calculate confidence based on multiple factors
- */
-function calculateFallbackConfidence(log: LogData, hasMitreTechniques: boolean, isSuspicious: boolean): number {
-  let confidence = 25; // Base low confidence for fallback
-  
-  // Severity affects confidence
-  if (log.severity >= 5) confidence += 35;
-  else if (log.severity >= 4) confidence += 25;
-  else if (log.severity >= 3) confidence += 15;
-  else confidence += 5;
-  
-  // MITRE techniques increase confidence
-  if (hasMitreTechniques) confidence += 20;
-  
-  // Suspicious patterns increase confidence
-  if (isSuspicious) confidence += 15;
-  
-  // File hash present increases confidence
-  if (log.fileHash) confidence += 10;
-  
-  return Math.min(95, confidence);
-}
-
-/**
- * Determine classification based on heuristics
- */
-function determineClassification(log: LogData, keywordMitre: any[], isSuspicious: boolean): {
-  classification: string;
-  riskLevel: string;
-  reason: string;
-} {
-  // High severity + suspicious patterns = True Positive
-  if (log.severity >= 4 && (keywordMitre.length > 0 || isSuspicious)) {
-    return {
-      classification: 'True Positive',
-      riskLevel: log.severity >= 5 ? 'Critical' : 'High',
-      reason: 'High severity event with suspicious indicators'
-    };
-  }
-  
-  // High severity alone = needs investigation
-  if (log.severity >= 4) {
-    return {
-      classification: 'Suspicious',
-      riskLevel: 'High',
-      reason: 'High severity event requires investigation'
-    };
-  }
-  
-  // Medium severity + MITRE techniques = Suspicious
-  if (log.severity >= 3 && keywordMitre.length > 0) {
-    return {
-      classification: 'Suspicious',
-      riskLevel: 'Medium',
-      reason: 'Medium severity with MITRE technique indicators'
-    };
-  }
-  
-  // Medium severity + suspicious patterns = needs review
-  if (log.severity >= 3 && isSuspicious) {
-    return {
-      classification: 'Suspicious',
-      riskLevel: 'Medium',
-      reason: 'Medium severity with suspicious patterns detected'
-    };
-  }
-  
-  // Low severity with suspicious patterns = low priority review
-  if (isSuspicious) {
-    return {
-      classification: 'Suspicious',
-      riskLevel: 'Low',
-      reason: 'Suspicious patterns detected in low severity event'
-    };
-  }
-  
-  // Default: Benign
-  return {
-    classification: 'Benign',
-    riskLevel: 'Low',
-    reason: 'No suspicious indicators detected'
-  };
 }
 
 async function verifyAuth(req: Request, isInternal: boolean): Promise<{ user: any; error?: string }> {
@@ -414,16 +164,13 @@ async function verifyAuth(req: Request, isInternal: boolean): Promise<{ user: an
     .eq('user_id', user.id)
     .single();
 
-  if (!roleData || !['admin', 'soc_analyst', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(roleData.role)) {
+  if (!roleData || !['admin', 'soc_analyst'].includes(roleData.role)) {
     return { user: null, error: 'Insufficient permissions. Admin or SOC Analyst role required.' };
   }
 
   return { user };
 }
 
-// ============================================
-// MAIN HANDLER
-// ============================================
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -442,55 +189,13 @@ serve(async (req) => {
       });
     }
 
-    console.log(`Analyzing log for ${user.type === 'service' ? 'internal call' : `user ${user.id}`}:`, JSON.stringify(log).substring(0, 200));
+    console.log(`Analyzing log for ${user.type === 'service' ? 'internal call' : `user ${user.id}`}:`, JSON.stringify(log));
 
-    // ============================================
-    // STEP 1: Check if event is known benign
-    // ============================================
-    const benignCheck = isBenignEvent(log);
-    if (benignCheck.isBenign) {
-      console.log(`✅ Skipping benign event: ${benignCheck.reason}`);
-      return new Response(JSON.stringify({
-        ai_analysis: {
-          classification: 'Benign',
-          confidence: 95,
-          reason: benignCheck.reason,
-          risk_level: 'Low',
-          mitre_techniques: [],
-          recommended_actions: [],
-          evidence: [],
-          kill_chain_phase: null
-        },
-        sandbox_result: null,
-        classification: 'Benign',
-        confidence: 95,
-        risk_level: 'Low',
-        recommended_actions: [],
-        evidence: [],
-        mitre_technique: null,
-        mitre_tactic: null,
-        mitre_techniques: [],
-        kill_chain_phase: null,
-        is_benign: true,
-        benign_reason: benignCheck.reason
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // ============================================
-    // STEP 2: Detect MITRE techniques from keywords
-    // ============================================
+    // First, detect MITRE techniques from keywords
     const keywordMitre = detectMitreFromContent(log);
-    console.log('Keyword-based MITRE detection:', keywordMitre.length > 0 ? keywordMitre : 'None');
+    console.log('Keyword-based MITRE detection:', keywordMitre);
 
-    // Check for suspicious patterns
-    const content = `${log.eventType} ${log.msg} ${log.action || ''}`;
-    const isSuspicious = SUSPICIOUS_PATTERNS.some(p => p.test(content));
-
-    // ============================================
-    // STEP 3: Try AI Analysis
-    // ============================================
+    // Build AI prompt
     const aiPrompt = `Analyze this security log and provide a threat assessment:
 
 Event Type: ${log.eventType}
@@ -501,13 +206,9 @@ Message: ${log.msg}
 ${log.fileHash ? `File Hash: ${log.fileHash}` : ''}
 ${log.action ? `Action: ${log.action}` : ''}
 
-IMPORTANT: Be conservative with classifications. Only mark as "True Positive" if there are clear indicators of malicious activity.
-Mark as "Benign" for normal system operations, routine Windows events, and expected user activities.
-Mark as "Suspicious" if the event warrants investigation but isn't clearly malicious.
-
 Respond with JSON containing:
 {
-  "classification": "True Positive" | "Suspicious" | "False Positive" | "Benign",
+  "classification": "True Positive" | "False Positive" | "Benign",
   "confidence": 0-100,
   "reason": "explanation",
   "risk_level": "Critical" | "High" | "Medium" | "Low",
@@ -533,10 +234,10 @@ Respond with JSON containing:
           body: JSON.stringify({
             model: 'google/gemini-2.5-flash',
             messages: [
-              { role: 'system', content: 'You are a conservative SOC analyst expert in MITRE ATT&CK. Only flag events as True Positive if there are clear indicators of malicious activity. Return only valid JSON.' },
+              { role: 'system', content: 'You are a SOC analyst expert in MITRE ATT&CK. Return only valid JSON. Always include mitre_techniques array.' },
               { role: 'user', content: aiPrompt }
             ],
-            temperature: 0.1,
+            temperature: 0.2,
           }),
         });
 
@@ -572,10 +273,10 @@ Respond with JSON containing:
             body: JSON.stringify({
               model: 'gpt-4o-mini',
               messages: [
-                { role: 'system', content: 'You are a conservative SOC analyst expert in MITRE ATT&CK. Only flag events as True Positive if there are clear indicators. Return only valid JSON.' },
+                { role: 'system', content: 'You are a SOC analyst expert in MITRE ATT&CK. Return only valid JSON. Always include mitre_techniques array.' },
                 { role: 'user', content: aiPrompt }
               ],
-              temperature: 0.1,
+              temperature: 0.2,
               response_format: { type: "json_object" }
             }),
           });
@@ -594,20 +295,26 @@ Respond with JSON containing:
       }
     }
 
-    // ============================================
-    // STEP 4: Intelligent Fallback Analysis
-    // ============================================
+    // 3. Final Fallback: Rule-based / Static Analysis
     if (!aiAnalysis) {
-      console.log('⚠️ All AI models unavailable. Using intelligent rule-based fallback.');
+      console.log('⚠️ All AI models unavailable. Using rule-based fallback.');
 
-      const classification = determineClassification(log, keywordMitre, isSuspicious);
-      const confidence = calculateFallbackConfidence(log, keywordMitre.length > 0, isSuspicious);
+      let fallbackRisk = 'Low';
+      let fallbackClass = 'False Positive';
+
+      // Simple heuristic: High severity + keyword match = True Positive
+      if (log.severity >= 4 && keywordMitre.length > 0) {
+        fallbackRisk = 'High';
+        fallbackClass = 'True Positive';
+      } else if (log.severity >= 3) {
+        fallbackRisk = 'Medium';
+      }
 
       aiAnalysis = {
-        classification: classification.classification,
-        confidence: confidence,
-        reason: `${classification.reason}. (Automated analysis - AI services unavailable)`,
-        risk_level: classification.riskLevel,
+        classification: fallbackClass,
+        confidence: 50,
+        reason: 'AI services unavailable. Automated fallback analysis applied based on rules.',
+        risk_level: fallbackRisk,
         mitre_techniques: keywordMitre.map(m => ({
           technique_id: m.technique,
           technique_name: m.name,
@@ -615,14 +322,10 @@ Respond with JSON containing:
           confidence: m.confidence,
           evidence: 'Detected via keyword matching'
         })),
-        recommended_actions: classification.classification !== 'Benign' 
-          ? ['Manual review recommended', 'Verify AI service connectivity']
-          : [],
-        evidence: isSuspicious ? ['Suspicious patterns detected in log content'] : [],
+        recommended_actions: ['Manual review required', 'Check AI Service Status'],
+        evidence: [],
         kill_chain_phase: 'Unknown'
       };
-      
-      console.log(`📊 Fallback result: ${aiAnalysis.classification} (${aiAnalysis.confidence}%) - ${aiAnalysis.reason}`);
     }
 
     // Ensure mitre_techniques is always an array
@@ -646,9 +349,7 @@ Respond with JSON containing:
       }
     }
 
-    // ============================================
-    // STEP 5: Check hash with VirusTotal if available
-    // ============================================
+    // Check hash with VirusTotal if available
     let sandboxResult = null;
     if (log.fileHash) {
       const VT_API_KEY = Deno.env.get('VIRUSTOTAL_API_KEY');
@@ -676,10 +377,9 @@ Respond with JSON containing:
               if (!aiAnalysis.evidence.includes('Malicious hash detected by VirusTotal')) {
                 aiAnalysis.evidence.push('Malicious hash detected by VirusTotal');
               }
-              if ((aiAnalysis.classification === 'Benign' || aiAnalysis.classification === 'False Positive') && sandboxResult.malicious > 5) {
+              if (aiAnalysis.classification === 'False Positive' && sandboxResult.malicious > 5) {
                 aiAnalysis.classification = 'True Positive';
                 aiAnalysis.reason = 'Hash flagged as malicious by multiple vendors';
-                aiAnalysis.risk_level = 'High';
               }
               // Add malware technique if not present
               if (!aiAnalysis.mitre_techniques.find((t: any) => t.technique_id === 'T1204.002')) {
@@ -701,27 +401,18 @@ Respond with JSON containing:
       }
     }
 
-    // ============================================
-    // STEP 6: Calculate final risk score
-    // ============================================
+    // Calculate final risk score
     let riskScore = 0;
-    if (log.severity >= 5) riskScore += 5;
-    else if (log.severity >= 4) riskScore += 3;
-    else if (log.severity >= 3) riskScore += 1;
-    
+    if (log.severity >= 4) riskScore += 3;
     if (aiAnalysis.classification === 'True Positive') riskScore += 5;
-    else if (aiAnalysis.classification === 'Suspicious') riskScore += 2;
-    
     if (sandboxResult?.malicious > 0) riskScore += 7;
     if (aiAnalysis.mitre_techniques.length > 2) riskScore += 2;
-    else if (aiAnalysis.mitre_techniques.length > 0) riskScore += 1;
 
     const calculatedRiskLevel = riskScore >= 10 ? 'Critical' :
       riskScore >= 7 ? 'High' :
         riskScore >= 4 ? 'Medium' : 'Low';
 
-    // Only override if AI didn't provide risk level
-    if (!aiAnalysis.risk_level || aiAnalysis.risk_level === 'Unknown') {
+    if (!aiAnalysis.risk_level) {
       aiAnalysis.risk_level = calculatedRiskLevel;
     }
 
@@ -744,10 +435,9 @@ Respond with JSON containing:
       // Full MITRE techniques array
       mitre_techniques: aiAnalysis.mitre_techniques,
       kill_chain_phase: aiAnalysis.kill_chain_phase || null,
-      is_benign: aiAnalysis.classification === 'Benign',
     };
 
-    console.log(`📊 Final Analysis: ${result.classification} (${result.confidence}%) Risk: ${result.risk_level} MITRE: ${result.mitre_techniques?.length || 0}`);
+    console.log('Analysis complete with MITRE techniques:', result.mitre_techniques?.length || 0);
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
