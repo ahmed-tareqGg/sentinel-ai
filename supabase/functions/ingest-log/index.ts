@@ -25,17 +25,15 @@ interface RawLog {
 }
 
 // ============================================
-// INCIDENT CREATION POLICY
+// INCIDENT CREATION POLICY - HIGH SEVERITY ONLY
 // ============================================
-// Higher threshold = fewer incidents (less noise)
-const INCIDENT_CONFIDENCE_THRESHOLD = 65;  // Minimum confidence to create incident
-const INCIDENT_SEVERITY_THRESHOLD = 3;      // Minimum severity (1-5 scale)
-
-// Classifications that should create incidents
-const INCIDENT_CLASSIFICATIONS = ['True Positive', 'Malicious', 'Suspicious'];
+// Only create incidents for high/critical severity events
+// All other logs will be analyzed but NOT create incidents
+const INCIDENT_SEVERITY_THRESHOLD = 4;      // Minimum severity (4 = High, 5 = Critical)
+const INCIDENT_CONFIDENCE_THRESHOLD = 70;   // Higher confidence required
 
 // Classifications that should NOT create incidents (noise reduction)
-const SKIP_CLASSIFICATIONS = ['Benign', 'False Positive'];
+const SKIP_CLASSIFICATIONS = ['Benign', 'False Positive', 'Info', 'Normal'];
 
 async function verifyAuth(
   req: Request,
@@ -136,7 +134,7 @@ function getRequestPublicIp(req: Request) {
 // INCIDENT CREATION POLICY DECISION
 // ============================================
 function shouldCreateIncident(analysis: any, severity: number): { create: boolean; reason: string } {
-  // If marked as benign, skip incident creation
+  // If marked as benign, NEVER create incident
   if (analysis?.is_benign === true) {
     return { create: false, reason: `Benign event: ${analysis?.benign_reason || 'Known safe event'}` };
   }
@@ -146,68 +144,50 @@ function shouldCreateIncident(analysis: any, severity: number): { create: boolea
   const riskLevel = (analysis?.risk_level || '').toLowerCase();
   
   // ============================================
-  // SKIP CONDITIONS (Noise Reduction)
+  // SKIP CONDITIONS (Strict Noise Reduction)
   // ============================================
   
-  // Skip benign/false positive classifications
+  // Skip benign/false positive/info classifications
   if (SKIP_CLASSIFICATIONS.some(c => classification.includes(c.toLowerCase()))) {
     return { create: false, reason: `Classification: ${analysis?.classification}` };
   }
   
-  // Skip low confidence events (< threshold)
-  if (confidence < INCIDENT_CONFIDENCE_THRESHOLD && severity < 4) {
+  // Skip low/medium severity (severity < 4) - STRICT POLICY
+  if (severity < INCIDENT_SEVERITY_THRESHOLD) {
+    return { create: false, reason: `Low/Medium severity (${severity}) - requires manual review` };
+  }
+  
+  // Skip low confidence events even with high severity
+  if (confidence < INCIDENT_CONFIDENCE_THRESHOLD && riskLevel !== 'critical') {
     return { create: false, reason: `Low confidence (${confidence}%) below threshold (${INCIDENT_CONFIDENCE_THRESHOLD}%)` };
   }
   
-  // Skip low severity events without strong indicators
-  if (severity < INCIDENT_SEVERITY_THRESHOLD && classification !== 'true positive') {
-    return { create: false, reason: `Low severity (${severity}) without True Positive classification` };
-  }
-  
   // ============================================
-  // CREATE CONDITIONS
+  // CREATE CONDITIONS (High Severity Only)
   // ============================================
   
-  // Critical/High risk always creates incident (regardless of classification)
+  // Critical risk ALWAYS creates incident
   if (riskLevel === 'critical') {
     return { create: true, reason: 'Critical risk level detected' };
   }
   
-  // High severity (4+) creates incident
-  if (severity >= 4) {
-    return { create: true, reason: `High severity event (${severity})` };
+  // High/Critical severity (4+) with high confidence
+  if (severity >= INCIDENT_SEVERITY_THRESHOLD && confidence >= INCIDENT_CONFIDENCE_THRESHOLD) {
+    return { create: true, reason: `High severity (${severity}) with ${confidence}% confidence` };
   }
   
-  // True Positive/Malicious classification
-  if (classification === 'true positive' || classification === 'malicious') {
-    return { create: true, reason: `AI classified as: ${analysis?.classification}` };
+  // True Positive/Malicious + High severity
+  if ((classification === 'true positive' || classification === 'malicious') && severity >= 4) {
+    return { create: true, reason: `AI classified as: ${analysis?.classification} with high severity` };
   }
   
-  // Suspicious with high confidence
-  if (classification === 'suspicious' && confidence >= 70) {
-    return { create: true, reason: `Suspicious event with high confidence (${confidence}%)` };
-  }
-  
-  // High risk level with medium+ confidence
-  if (riskLevel === 'high' && confidence >= 60) {
-    return { create: true, reason: `High risk with ${confidence}% confidence` };
-  }
-  
-  // VirusTotal hit
-  if (analysis?.sandbox_result?.malicious > 0) {
+  // VirusTotal malicious hit + High severity
+  if (analysis?.sandbox_result?.malicious > 0 && severity >= 4) {
     return { create: true, reason: `VirusTotal: ${analysis.sandbox_result.malicious} malicious detections` };
   }
   
-  // Medium severity + confident MITRE technique
-  if (severity >= 3 && (analysis?.mitre_technique || analysis?.mitre_techniques?.length > 0)) {
-    const techniqueConfidence = analysis?.mitre_techniques?.[0]?.confidence || 0;
-    if (techniqueConfidence >= 80) {
-      return { create: true, reason: `MITRE technique detected with ${techniqueConfidence}% confidence` };
-    }
-  }
-  
-  // Default: Don't create incident
-  return { create: false, reason: 'Does not meet incident creation criteria' };
+  // Default: Don't create incident - requires manual review
+  return { create: false, reason: 'Does not meet high-severity incident criteria - requires manual review' };
 }
 
 serve(async (req) => {
