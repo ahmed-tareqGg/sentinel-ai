@@ -25,11 +25,10 @@ interface RawLog {
 }
 
 // ============================================
-// INCIDENT CREATION POLICY - HIGH SEVERITY ONLY
+// INCIDENT CREATION POLICY - MEDIUM+ SEVERITY
 // ============================================
-// Only create incidents for high/critical severity events
-// All other logs will be analyzed but NOT create incidents
-const INCIDENT_SEVERITY_THRESHOLD = 4;      // Minimum severity (4 = High, 5 = Critical)
+// Create incidents for medium/high/critical severity events
+const INCIDENT_SEVERITY_THRESHOLD = 2;      // Minimum severity (2 = Medium, 3+ = High/Critical)
 const INCIDENT_CONFIDENCE_THRESHOLD = 70;   // Higher confidence required
 
 // Classifications that should NOT create incidents (noise reduction)
