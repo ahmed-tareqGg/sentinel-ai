@@ -38,3 +38,6 @@ verify_jwt = false
 
 [functions.agent-gateway]
 verify_jwt = false
+
+[functions.reprocess-benign-logs]
+verify_jwt = false
