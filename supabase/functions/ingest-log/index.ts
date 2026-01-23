@@ -20,13 +20,22 @@ interface RawLog {
   action?: string;
   time?: string;
   timestamp?: string;
-  // When upstream already inserted into raw_logs, it can pass the raw log row id here
   raw_log_id?: string;
   [key: string]: unknown;
 }
 
-// Risk threshold for creating incidents (0-100)
-const INCIDENT_RISK_THRESHOLD = 50;
+// ============================================
+// INCIDENT CREATION POLICY
+// ============================================
+// Higher threshold = fewer incidents (less noise)
+const INCIDENT_CONFIDENCE_THRESHOLD = 65;  // Minimum confidence to create incident
+const INCIDENT_SEVERITY_THRESHOLD = 3;      // Minimum severity (1-5 scale)
+
+// Classifications that should create incidents
+const INCIDENT_CLASSIFICATIONS = ['True Positive', 'Malicious', 'Suspicious'];
+
+// Classifications that should NOT create incidents (noise reduction)
+const SKIP_CLASSIFICATIONS = ['Benign', 'False Positive'];
 
 async function verifyAuth(
   req: Request,
@@ -76,7 +85,7 @@ async function verifyAuth(
     return { user: null, isApiKey: false, error: 'Invalid or expired token' };
   }
 
-  // Check if user has required role (admin or soc_analyst)
+  // Check if user has required role
   const { data: roleData } = await supabase
     .from('user_roles')
     .select('role')
@@ -123,38 +132,82 @@ function getRequestPublicIp(req: Request) {
   return cfIP || forwardedFor || xRealIP || null;
 }
 
-// Decide if an incident should be created based on analysis
+// ============================================
+// INCIDENT CREATION POLICY DECISION
+// ============================================
 function shouldCreateIncident(analysis: any, severity: number): { create: boolean; reason: string } {
-  // High severity always creates incident
-  if (severity >= 4) {
-    return { create: true, reason: 'High severity event' };
+  // If marked as benign, skip incident creation
+  if (analysis?.is_benign === true) {
+    return { create: false, reason: `Benign event: ${analysis?.benign_reason || 'Known safe event'}` };
   }
   
-  // Check AI classification
   const classification = (analysis?.classification || '').toLowerCase();
-  if (classification === 'true positive' || classification === 'malicious') {
-    return { create: true, reason: 'AI classified as True Positive/Malicious' };
-  }
-  
-  // Check risk level
-  const riskLevel = (analysis?.risk_level || '').toLowerCase();
-  if (riskLevel === 'critical' || riskLevel === 'high') {
-    return { create: true, reason: `Risk level: ${riskLevel}` };
-  }
-  
-  // Check confidence score
   const confidence = analysis?.confidence || 0;
-  if (confidence >= INCIDENT_RISK_THRESHOLD && classification !== 'benign') {
-    return { create: true, reason: `Confidence ${confidence}% exceeds threshold` };
+  const riskLevel = (analysis?.risk_level || '').toLowerCase();
+  
+  // ============================================
+  // SKIP CONDITIONS (Noise Reduction)
+  // ============================================
+  
+  // Skip benign/false positive classifications
+  if (SKIP_CLASSIFICATIONS.some(c => classification.includes(c.toLowerCase()))) {
+    return { create: false, reason: `Classification: ${analysis?.classification}` };
   }
   
-  // Check for MITRE techniques (always interesting)
-  if (analysis?.mitre_technique || analysis?.mitre_techniques?.length > 0) {
-    return { create: true, reason: 'MITRE technique detected' };
+  // Skip low confidence events (< threshold)
+  if (confidence < INCIDENT_CONFIDENCE_THRESHOLD && severity < 4) {
+    return { create: false, reason: `Low confidence (${confidence}%) below threshold (${INCIDENT_CONFIDENCE_THRESHOLD}%)` };
   }
   
-  // Low severity/benign events don't create incidents
-  return { create: false, reason: 'Low risk, no incident needed' };
+  // Skip low severity events without strong indicators
+  if (severity < INCIDENT_SEVERITY_THRESHOLD && classification !== 'true positive') {
+    return { create: false, reason: `Low severity (${severity}) without True Positive classification` };
+  }
+  
+  // ============================================
+  // CREATE CONDITIONS
+  // ============================================
+  
+  // Critical/High risk always creates incident (regardless of classification)
+  if (riskLevel === 'critical') {
+    return { create: true, reason: 'Critical risk level detected' };
+  }
+  
+  // High severity (4+) creates incident
+  if (severity >= 4) {
+    return { create: true, reason: `High severity event (${severity})` };
+  }
+  
+  // True Positive/Malicious classification
+  if (classification === 'true positive' || classification === 'malicious') {
+    return { create: true, reason: `AI classified as: ${analysis?.classification}` };
+  }
+  
+  // Suspicious with high confidence
+  if (classification === 'suspicious' && confidence >= 70) {
+    return { create: true, reason: `Suspicious event with high confidence (${confidence}%)` };
+  }
+  
+  // High risk level with medium+ confidence
+  if (riskLevel === 'high' && confidence >= 60) {
+    return { create: true, reason: `High risk with ${confidence}% confidence` };
+  }
+  
+  // VirusTotal hit
+  if (analysis?.sandbox_result?.malicious > 0) {
+    return { create: true, reason: `VirusTotal: ${analysis.sandbox_result.malicious} malicious detections` };
+  }
+  
+  // Medium severity + confident MITRE technique
+  if (severity >= 3 && (analysis?.mitre_technique || analysis?.mitre_techniques?.length > 0)) {
+    const techniqueConfidence = analysis?.mitre_techniques?.[0]?.confidence || 0;
+    if (techniqueConfidence >= 80) {
+      return { create: true, reason: `MITRE technique detected with ${techniqueConfidence}% confidence` };
+    }
+  }
+  
+  // Default: Don't create incident
+  return { create: false, reason: 'Does not meet incident creation criteria' };
 }
 
 serve(async (req) => {
@@ -246,7 +299,6 @@ serve(async (req) => {
     for (let i = 0; i < logsArray.length; i++) {
       const rawLog = logsArray[i];
       const normalizedLog = normalizeLog(rawLog);
-      // If upstream already inserted raw_logs, it should pass raw_log_id so we can update status.
       const providedRawLogId = (rawLog as any).raw_log_id || (rawLog as any).rawLogId || null;
       const rawLogRowId = skipRawLogInsert ? (providedRawLogId || null) : (rawLogIds[i] || null);
 
@@ -267,6 +319,7 @@ serve(async (req) => {
               dstIP: normalizedLog.dstIP,
               msg: normalizedLog.msg,
               fileHash: normalizedLog.fileHash,
+              rawLog: normalizedLog.rawLog,
             },
             internal: true
           }),
@@ -274,7 +327,7 @@ serve(async (req) => {
 
         if (analyzeResponse.ok) {
           analysis = await analyzeResponse.json();
-          console.log(`🔍 Analyzed: ${normalizedLog.eventType} -> ${analysis?.classification || 'Unknown'} (${analysis?.confidence || 0}%)`);
+          console.log(`🔍 Analyzed: ${normalizedLog.eventType} -> ${analysis?.classification || 'Unknown'} (${analysis?.confidence || 0}%) ${analysis?.is_benign ? '✅ BENIGN' : ''}`);
         } else {
           console.error('Analysis failed:', await analyzeResponse.text());
         }
@@ -282,12 +335,13 @@ serve(async (req) => {
         console.error('Analysis error:', analysisError);
       }
 
-      // Update raw log with analysis results (mark as analyzed)
+      // Update raw log with analysis results
       if (rawLogRowId) {
+        const newStatus = analysis?.is_benign ? 'benign' : 'analyzed';
         await supabase
           .from('raw_logs')
           .update({
-            processing_status: 'analyzed',
+            processing_status: newStatus,
             analyzed_at: new Date().toISOString(),
             mitre_technique: analysis?.mitre_technique || null,
           })
@@ -300,23 +354,25 @@ serve(async (req) => {
     console.log(`✅ Step 2 complete: Analyzed ${analyzedLogs.length} logs`);
 
     // ===== STEP 3: CREATE INCIDENTS ONLY FOR HIGH-RISK LOGS =====
-    console.log('🚨 Step 3: Creating incidents for high-risk logs...');
+    console.log('🚨 Step 3: Evaluating incident creation policy...');
     
     let incidentsCreated = 0;
     let incidentsSkipped = 0;
+    let benignSkipped = 0;
 
     for (const { normalizedLog, rawLogRowId, analysis, rawLog } of analyzedLogs) {
       const decision = shouldCreateIncident(analysis, normalizedLog.severity);
       
       if (!decision.create) {
         incidentsSkipped++;
-        console.log(`⏭️ Skipping incident: ${decision.reason} - ${normalizedLog.eventType}`);
+        if (analysis?.is_benign) benignSkipped++;
+        console.log(`⏭️ Skip: ${decision.reason} - ${normalizedLog.eventType}`);
         
         // Mark as ignored (analyzed but no incident)
         if (rawLogRowId) {
           await supabase
             .from('raw_logs')
-            .update({ processing_status: 'ignored' })
+            .update({ processing_status: analysis?.is_benign ? 'benign' : 'ignored' })
             .eq('id', rawLogRowId);
         }
         continue;
@@ -389,7 +445,7 @@ serve(async (req) => {
       await supabase.from('incident_timeline').insert({
         incident_id: incident.id,
         stage: 'AI Analyzed',
-        details: `Classification: ${analysis?.classification || 'Pending'}, Confidence: ${analysis?.confidence || 0}%`,
+        details: `Classification: ${analysis?.classification || 'Pending'}, Confidence: ${analysis?.confidence || 0}%, Risk: ${analysis?.risk_level || 'Unknown'}`,
       });
 
       if (analysis?.sandbox_result) {
@@ -420,110 +476,114 @@ serve(async (req) => {
         }
       }
 
-      // Auto-generate playbook suggestion for new attack types
-      const existingPlaybook = await supabase
-        .from('playbooks')
-        .select('id')
-        .or(`conditions->event_type.eq.${normalizedLog.eventType},conditions->event_type.ilike.%${normalizedLog.eventType}%`)
-        .eq('is_active', true)
-        .limit(1);
+      // Auto-generate playbook suggestion only for True Positive
+      if (analysis?.classification === 'True Positive') {
+        const existingPlaybook = await supabase
+          .from('playbooks')
+          .select('id')
+          .or(`conditions->event_type.eq.${normalizedLog.eventType},conditions->event_type.ilike.%${normalizedLog.eventType}%`)
+          .eq('is_active', true)
+          .limit(1);
 
-      if (!existingPlaybook.data?.length) {
+        if (!existingPlaybook.data?.length) {
+          try {
+            const generateResponse = await fetch(`${supabaseUrl}/functions/v1/generate-playbook`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${supabaseKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                autoGenerate: true,
+                eventType: normalizedLog.eventType,
+                riskLevel: analysis?.risk_level || 'Medium',
+                severity: normalizedLog.severity,
+              }),
+            });
+
+            if (generateResponse.ok) {
+              const generatedPlaybook = await generateResponse.json();
+              await supabase.from('playbook_suggestions').insert({
+                name: generatedPlaybook.name,
+                description: generatedPlaybook.description || `Auto-generated for ${normalizedLog.eventType}`,
+                suggested_conditions: generatedPlaybook.conditions,
+                suggested_actions: generatedPlaybook.actions,
+                reasoning: `Automatically suggested based on True Positive ${normalizedLog.eventType} incident (${incident.incident_number})`,
+                confidence_score: analysis?.confidence || 70,
+                pattern_source: 'auto_detection',
+                sample_incident_ids: [incident.id],
+                incident_count: 1,
+                status: 'pending',
+              });
+            }
+          } catch (genError) {
+            console.error('Failed to generate playbook suggestion:', genError);
+          }
+        }
+      }
+
+      // Trigger Autonomous SOC Pipeline (only for True Positive or Critical)
+      if (analysis?.classification === 'True Positive' || analysis?.risk_level === 'Critical') {
+        console.log('🤖 Triggering Autonomous SOC Pipeline...');
         try {
-          const generateResponse = await fetch(`${supabaseUrl}/functions/v1/generate-playbook`, {
+          const autonomousResponse = await fetch(`${supabaseUrl}/functions/v1/autonomous-soc`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${supabaseKey}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              autoGenerate: true,
-              eventType: normalizedLog.eventType,
-              riskLevel: analysis?.risk_level || 'Medium',
-              severity: normalizedLog.severity,
+              incident_id: incident.id,
+              mode: analysis?.risk_level === 'Critical' ? 'autonomous' : 'supervised',
             }),
           });
 
-          if (generateResponse.ok) {
-            const generatedPlaybook = await generateResponse.json();
-            await supabase.from('playbook_suggestions').insert({
-              name: generatedPlaybook.name,
-              description: generatedPlaybook.description || `Auto-generated for ${normalizedLog.eventType}`,
-              suggested_conditions: generatedPlaybook.conditions,
-              suggested_actions: generatedPlaybook.actions,
-              reasoning: `Automatically suggested based on detected ${normalizedLog.eventType} incident (${incident.incident_number})`,
-              confidence_score: analysis?.confidence || 70,
-              pattern_source: 'auto_detection',
-              sample_incident_ids: [incident.id],
-              incident_count: 1,
-              status: 'pending',
+          if (autonomousResponse.ok) {
+            const pipelineResult = await autonomousResponse.json();
+            results.push({
+              id: incident.id,
+              incident_number: incident.incident_number,
+              classification: analysis?.classification,
+              confidence: analysis?.confidence,
+              risk_level: analysis?.risk_level,
+              pipeline_status: pipelineResult?.summary || 'completed',
             });
           }
-        } catch (genError) {
-          console.error('Failed to generate playbook suggestion:', genError);
+        } catch (pipelineError) {
+          console.error('Autonomous SOC pipeline error:', pipelineError);
         }
-      }
-
-      // Trigger Autonomous SOC Pipeline
-      console.log('🤖 Triggering Autonomous SOC Pipeline...');
-      try {
-        const autonomousResponse = await fetch(`${supabaseUrl}/functions/v1/autonomous-soc`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${supabaseKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            incident_id: incident.id,
-            mode: (analysis?.risk_level === 'Critical' || analysis?.classification === 'True Positive')
-              ? 'autonomous'
-              : 'supervised',
-          }),
-        });
-
-        if (autonomousResponse.ok) {
-          const pipelineResult = await autonomousResponse.json();
-          results.push({
-            id: incident.id,
-            incident_number: incident.incident_number,
-            classification: analysis?.classification,
-            risk_level: analysis?.risk_level,
-            jira_ticket: pipelineResult.jira_ticket?.jira_key,
-            pipeline_status: pipelineResult.summary,
-          });
-        } else {
-          results.push({
-            id: incident.id,
-            incident_number: incident.incident_number,
-            classification: analysis?.classification,
-            risk_level: analysis?.risk_level,
-          });
-        }
-      } catch (pipelineError) {
-        console.error('Pipeline error:', pipelineError);
+      } else {
         results.push({
           id: incident.id,
           incident_number: incident.incident_number,
           classification: analysis?.classification,
+          confidence: analysis?.confidence,
           risk_level: analysis?.risk_level,
         });
       }
     }
 
-    console.log(`✅ Step 3 complete: Created ${incidentsCreated} incidents, skipped ${incidentsSkipped}`);
+    console.log(`✅ Step 3 complete: Created ${incidentsCreated} incidents, Skipped ${incidentsSkipped} (${benignSkipped} benign)`);
 
     return new Response(JSON.stringify({
       success: true,
-      processed: logsArray.length,
-      stored_in_raw_logs: rawLogIds.length,
-      incidents_created: incidentsCreated,
-      incidents_skipped: incidentsSkipped,
-      incidents: results
+      message: `Ingested ${logsArray.length} logs`,
+      summary: {
+        total_logs: logsArray.length,
+        raw_logs_stored: rawLogIds.length,
+        incidents_created: incidentsCreated,
+        incidents_skipped: incidentsSkipped,
+        benign_events: benignSkipped,
+        noise_reduction_rate: logsArray.length > 0 
+          ? `${Math.round((incidentsSkipped / logsArray.length) * 100)}%` 
+          : '0%',
+      },
+      incidents: results,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Error in ingest-log function:', error);
+    console.error('Ingestion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
