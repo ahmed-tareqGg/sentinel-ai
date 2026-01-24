@@ -888,290 +888,222 @@ https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
 
       {/* Agent Download Dialog */}
       <Dialog open={agentDownloadOpen} onOpenChange={setAgentDownloadOpen}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Download SOCMind Agent</DialogTitle>
             <DialogDescription>
               Download the agent and configure it with your API credentials
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-6 py-4">
-            {/* API Endpoint Section */}
-            <div className="rounded-lg border border-primary/50 bg-primary/5 p-4">
-              <p className="text-sm font-semibold text-primary mb-3 flex items-center gap-2">
-                <Key className="h-4 w-4" />
-                API Configuration
-              </p>
-              <div className="space-y-3">
-                <div>
-                  <Label className="text-xs text-muted-foreground">API Endpoint</Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <code className="flex-1 bg-background p-2 rounded text-sm font-mono border border-border overflow-x-auto">
-                      https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
-                    </code>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => copyToClipboard('https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway')}
-                    >
-                      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                </div>
-                <div className="border-t border-border pt-3">
-                  <Label className="text-xs text-muted-foreground">Agent API Key</Label>
-                  {dataSources && dataSources.length > 0 && dataSources[0].agent_api_keys && dataSources[0].agent_api_keys.length > 0 ? (
-                    <div className="mt-1">
-                      <p className="text-sm text-muted-foreground">
-                        Your existing key: <code className="bg-background px-2 py-1 rounded">{dataSources[0].agent_api_keys[0].key_prefix}...</code>
-                      </p>
+          <ScrollArea className="flex-1 pr-4">
+            <div className="space-y-4 py-2">
+              {/* API Endpoint Section */}
+              <div className="rounded-lg border border-primary/50 bg-primary/5 p-3">
+                <p className="text-sm font-semibold text-primary mb-2 flex items-center gap-2">
+                  <Key className="h-4 w-4" />
+                  API Configuration
+                </p>
+                <div className="space-y-2">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">API Endpoint</Label>
+                    <div className="flex items-center gap-2 mt-1">
+                      <code className="flex-1 bg-background p-2 rounded text-xs font-mono border border-border overflow-x-auto">
+                        https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
+                      </code>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="mt-2 gap-2"
-                        onClick={() => {
-                          if (dataSources[0]) {
-                            generateKeyMutation.mutate(dataSources[0].id);
-                          }
-                        }}
+                        onClick={() => copyToClipboard('https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway')}
                       >
-                        <Key className="h-3 w-3" />
-                        Generate New Key
+                        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                       </Button>
                     </div>
-                  ) : (
-                    <div className="mt-1">
-                      <p className="text-sm text-yellow-500 bg-yellow-500/10 p-2 rounded flex items-center gap-2">
-                        <AlertCircle className="h-4 w-4" />
-                        No agent registered yet. Register an agent first to get an API key.
-                      </p>
-                      <Button
-                        className="mt-2 gap-2"
-                        onClick={() => {
-                          setAgentDownloadOpen(false);
-                          setAddDialogOpen(true);
-                        }}
-                      >
-                        <Plus className="h-4 w-4" />
-                        Register Agent
-                      </Button>
-                    </div>
-                  )}
-                </div>
-                
-                {/* License Key Section */}
-                <div className="border-t border-border pt-3">
-                  <Label className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Shield className="h-3 w-3" />
-                    License Key
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-1 mb-2">
-                    A valid license key is required to activate the agent
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => {
-                      setAgentDownloadOpen(false);
-                      // Navigate to license management section
-                      const licenseSection = document.getElementById('license-section');
-                      if (licenseSection) {
-                        licenseSection.scrollIntoView({ behavior: 'smooth' });
-                      }
-                    }}
-                  >
-                    <Shield className="h-3 w-3" />
-                    Manage Licenses
-                  </Button>
+                  </div>
+                  <div className="border-t border-border pt-2">
+                    <Label className="text-xs text-muted-foreground">Agent API Key</Label>
+                    {dataSources && dataSources.length > 0 && dataSources[0].agent_api_keys && dataSources[0].agent_api_keys.length > 0 ? (
+                      <div className="mt-1">
+                        <p className="text-xs text-muted-foreground">
+                          Your existing key: <code className="bg-background px-2 py-1 rounded">{dataSources[0].agent_api_keys[0].key_prefix}...</code>
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 gap-2"
+                          onClick={() => {
+                            if (dataSources[0]) {
+                              generateKeyMutation.mutate(dataSources[0].id);
+                            }
+                          }}
+                        >
+                          <Key className="h-3 w-3" />
+                          Generate New Key
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="mt-1">
+                        <p className="text-xs text-yellow-500 bg-yellow-500/10 p-2 rounded flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4" />
+                          No agent registered. Register an agent first.
+                        </p>
+                        <Button
+                          size="sm"
+                          className="mt-2 gap-2"
+                          onClick={() => {
+                            setAgentDownloadOpen(false);
+                            setAddDialogOpen(true);
+                          }}
+                        >
+                          <Plus className="h-4 w-4" />
+                          Register Agent
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* License Key Section */}
+                  <div className="border-t border-border pt-2">
+                    <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Shield className="h-3 w-3" />
+                      License Key
+                    </Label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2 gap-2"
+                      onClick={() => {
+                        setAgentDownloadOpen(false);
+                        const licenseSection = document.getElementById('license-section');
+                        if (licenseSection) {
+                          licenseSection.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }}
+                    >
+                      <Shield className="h-3 w-3" />
+                      Manage Licenses
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Download Agents */}
-            <Tabs defaultValue="basic" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="basic">Basic Agents</TabsTrigger>
-                <TabsTrigger value="universal">Universal Agent + Plugins</TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="basic" className="mt-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <a
-                    href="/agents/socmind-agent-linux.sh"
-                    download="socmind-agent-linux.sh"
-                    className="flex flex-col items-center gap-3 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center"
-                  >
-                    <Terminal className="h-10 w-10 text-orange-500" />
-                    <div>
-                      <p className="font-medium">Linux Agent</p>
-                      <p className="text-xs text-muted-foreground">Ubuntu, Debian, RHEL</p>
-                    </div>
-                    <Download className="h-4 w-4 text-muted-foreground" />
-                  </a>
-
-                  <a
-                    href="/agents/socmind-agent-windows.ps1"
-                    download="socmind-agent-windows.ps1"
-                    className="flex flex-col items-center gap-3 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center"
-                  >
-                    <Monitor className="h-10 w-10 text-blue-500" />
-                    <div>
-                      <p className="font-medium">Windows Agent</p>
-                      <p className="text-xs text-muted-foreground">Windows Server 2016+</p>
-                    </div>
-                    <Download className="h-4 w-4 text-muted-foreground" />
-                  </a>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="universal" className="mt-4 space-y-4">
-                {/* Universal Agent */}
-                <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
-                  <div className="flex items-center gap-3 mb-3">
-                    <Package className="h-6 w-6 text-primary" />
-                    <div>
-                      <p className="font-medium">Universal Agent v2.2.0</p>
-                      <p className="text-xs text-muted-foreground">Python-based with multi-vendor support</p>
-                    </div>
-                  </div>
-                  <a
-                    href="/agents/socmind-universal-agent.py"
-                    download="socmind-universal-agent.py"
-                    className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm"
-                  >
-                    <Download className="h-4 w-4" />
-                    Download Universal Agent
-                  </a>
-                </div>
+              {/* Download Agents */}
+              <Tabs defaultValue="basic" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="basic">Basic Agents</TabsTrigger>
+                  <TabsTrigger value="universal">Universal Agent</TabsTrigger>
+                </TabsList>
                 
-                {/* Vendor Plugins */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Network className="h-4 w-4" />
-                    Vendor Plugins (Parsers + MITRE Mapping)
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <TabsContent value="basic" className="mt-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <a
-                      href="/agents/plugins/base.py"
-                      download="base.py"
-                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
+                      href="/agents/socmind-agent-linux.sh"
+                      download="socmind-agent-linux.sh"
+                      className="flex flex-col items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center"
                     >
-                      <Package className="h-4 w-4 text-gray-500" />
-                      <span>base.py</span>
+                      <Terminal className="h-8 w-8 text-orange-500" />
+                      <div>
+                        <p className="font-medium text-sm">Linux Agent</p>
+                        <p className="text-xs text-muted-foreground">Ubuntu, Debian, RHEL</p>
+                      </div>
                     </a>
+
                     <a
-                      href="/agents/plugins/__init__.py"
-                      download="__init__.py"
-                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
+                      href="/agents/socmind-agent-windows.ps1"
+                      download="socmind-agent-windows.ps1"
+                      className="flex flex-col items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center"
                     >
-                      <Package className="h-4 w-4 text-gray-500" />
-                      <span>__init__.py</span>
-                    </a>
-                    <a
-                      href="/agents/plugins/fortinet.py"
-                      download="fortinet.py"
-                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
-                    >
-                      <Shield className="h-4 w-4 text-red-500" />
-                      <span>Fortinet</span>
-                    </a>
-                    <a
-                      href="/agents/plugins/paloalto.py"
-                      download="paloalto.py"
-                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
-                    >
-                      <Shield className="h-4 w-4 text-orange-500" />
-                      <span>Palo Alto</span>
-                    </a>
-                    <a
-                      href="/agents/plugins/cisco.py"
-                      download="cisco.py"
-                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
-                    >
-                      <Shield className="h-4 w-4 text-blue-500" />
-                      <span>Cisco</span>
-                    </a>
-                    <a
-                      href="/agents/plugins/sophos.py"
-                      download="sophos.py"
-                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
-                    >
-                      <Shield className="h-4 w-4 text-blue-400" />
-                      <span>Sophos</span>
-                    </a>
-                    <a
-                      href="/agents/plugins/checkpoint.py"
-                      download="checkpoint.py"
-                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
-                    >
-                      <Shield className="h-4 w-4 text-purple-500" />
-                      <span>Check Point</span>
-                    </a>
-                    <a
-                      href="/agents/plugins/syslog_listener.py"
-                      download="syslog_listener.py"
-                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
-                    >
-                      <Network className="h-4 w-4 text-green-500" />
-                      <span>Syslog Listener</span>
+                      <Monitor className="h-8 w-8 text-blue-500" />
+                      <div>
+                        <p className="font-medium text-sm">Windows Agent</p>
+                        <p className="text-xs text-muted-foreground">Windows Server 2016+</p>
+                      </div>
                     </a>
                   </div>
-                </div>
-                
-                {/* Setup Instructions */}
-                <div className="rounded-lg border border-border bg-secondary/30 p-4">
-                  <p className="text-sm font-medium mb-2">📁 Directory Structure:</p>
-                  <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground mb-3">
-{`/opt/socmind/
-├── socmind-universal-agent.py
-└── plugins/
-    ├── __init__.py
-    ├── base.py
-    ├── fortinet.py
-    ├── paloalto.py
-    ├── cisco.py
-    ├── sophos.py
-    ├── checkpoint.py
-    └── syslog_listener.py`}
-                  </pre>
-                  <p className="text-sm font-medium mb-2">🚀 Quick Start:</p>
-                  <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground">
-{`# Configure
-python3 socmind-universal-agent.py configure
-
-# Run (with syslog listener on port 514)
-python3 socmind-universal-agent.py run --mode syslog`}
-                  </pre>
-                </div>
-              </TabsContent>
-            </Tabs>
-
-            {/* Quick Start */}
-            <div className="rounded-lg border border-border bg-secondary/30 p-4">
-              <p className="text-sm font-medium mb-3">🚀 Quick Start:</p>
-              <div className="space-y-3 text-xs">
-                <div>
-                  <p className="font-medium mb-1">1. Download and configure:</p>
-                  <pre className="bg-background p-2 rounded overflow-x-auto text-muted-foreground">
+                  
+                  {/* Basic Quick Start */}
+                  <div className="rounded-lg border border-border bg-secondary/30 p-3 mt-3">
+                    <p className="text-xs font-medium mb-2">🚀 Quick Start:</p>
+                    <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground">
 {`# Linux
-chmod +x socmind-agent-linux.sh
-./socmind-agent-linux.sh
+chmod +x socmind-agent-linux.sh && ./socmind-agent-linux.sh
 
 # Windows (Run as Administrator)
 .\\socmind-agent-windows.ps1`}
-                  </pre>
-                </div>
-                <div>
-                  <p className="font-medium mb-1">2. Enter your API Key when prompted</p>
-                  <p className="text-muted-foreground">The agent will connect automatically</p>
-                </div>
-              </div>
+                    </pre>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="universal" className="mt-3 space-y-3">
+                  {/* Universal Agent */}
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+                    <div className="flex items-center gap-3 mb-2">
+                      <Package className="h-5 w-5 text-primary" />
+                      <div>
+                        <p className="font-medium text-sm">Universal Agent v2.2.0</p>
+                        <p className="text-xs text-muted-foreground">Python-based with multi-vendor support</p>
+                      </div>
+                    </div>
+                    <a
+                      href="/agents/socmind-universal-agent.py"
+                      download="socmind-universal-agent.py"
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs"
+                    >
+                      <Download className="h-3 w-3" />
+                      Download Universal Agent
+                    </a>
+                  </div>
+                  
+                  {/* Vendor Plugins */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-medium">
+                      <Network className="h-4 w-4" />
+                      Vendor Plugins (Parsers + MITRE Mapping)
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                      {[
+                        { href: '/agents/plugins/base.py', name: 'base.py', icon: Package, color: 'text-gray-500' },
+                        { href: '/agents/plugins/__init__.py', name: '__init__.py', icon: Package, color: 'text-gray-500' },
+                        { href: '/agents/plugins/fortinet.py', name: 'Fortinet', icon: Shield, color: 'text-red-500' },
+                        { href: '/agents/plugins/paloalto.py', name: 'Palo Alto', icon: Shield, color: 'text-orange-500' },
+                        { href: '/agents/plugins/cisco.py', name: 'Cisco', icon: Shield, color: 'text-blue-500' },
+                        { href: '/agents/plugins/sophos.py', name: 'Sophos', icon: Shield, color: 'text-blue-400' },
+                        { href: '/agents/plugins/checkpoint.py', name: 'Check Point', icon: Shield, color: 'text-purple-500' },
+                        { href: '/agents/plugins/syslog_listener.py', name: 'Syslog', icon: Network, color: 'text-green-500' },
+                      ].map((plugin) => (
+                        <a
+                          key={plugin.name}
+                          href={plugin.href}
+                          download={plugin.href.split('/').pop()}
+                          className="flex items-center gap-1.5 p-2 rounded border border-border hover:border-primary hover:bg-primary/5 transition-colors text-xs"
+                        >
+                          <plugin.icon className={`h-3 w-3 ${plugin.color}`} />
+                          <span className="truncate">{plugin.name}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {/* Setup Instructions */}
+                  <div className="rounded-lg border border-border bg-secondary/30 p-3">
+                    <p className="text-xs font-medium mb-1">📁 Directory Structure:</p>
+                    <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground mb-2">
+{`/opt/socmind/
+├── socmind-universal-agent.py
+└── plugins/ (base.py, fortinet.py, ...)`}
+                    </pre>
+                    <p className="text-xs font-medium mb-1">🚀 Quick Start:</p>
+                    <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground">
+{`python3 socmind-universal-agent.py configure
+python3 socmind-universal-agent.py run --mode syslog`}
+                    </pre>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </div>
-          </div>
+          </ScrollArea>
 
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0 pt-2">
             <Button variant="outline" onClick={() => setAgentDownloadOpen(false)}>
               Close
             </Button>
