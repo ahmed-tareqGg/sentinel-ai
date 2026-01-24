@@ -591,12 +591,17 @@ export default function LiveLogs() {
                   </div>
                 )}
 
-                {/* Error */}
+                {/* Error - Obfuscated for security */}
                 {selectedLog.error_message && (
                   <div>
-                    <p className="text-xs text-muted-foreground mb-2">Error</p>
+                    <p className="text-xs text-muted-foreground mb-2">Status Details</p>
                     <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-                      <p className="text-sm text-red-400">{selectedLog.error_message}</p>
+                      <p className="text-sm text-red-400 font-mono">
+                        [ERR:0x{btoa(selectedLog.error_message).slice(0, 8).toUpperCase()}] Processing exception occurred
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Reference: SM-{Date.now().toString(36).toUpperCase()}-{selectedLog.id.slice(0, 4).toUpperCase()}
+                      </p>
                     </div>
                   </div>
                 )}
