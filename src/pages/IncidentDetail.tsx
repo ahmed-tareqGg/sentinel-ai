@@ -26,13 +26,14 @@ interface TimelineEntry {
 export default function IncidentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { role } = useAuth();
+  const { role, isDemoUser, canModifyData } = useAuth();
 
-  // Permission checks based on role
+  // Permission checks based on role - demo users have NO permissions
   const isTier1 = role === 'soc_tier_1';
-  const canModifyIncidents = role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(role);
-  const canCloseIncident = role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(role);
-  const canRunPlaybook = role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(role);
+  const canModifyIncidents = canModifyData && role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
+  const canCloseIncident = canModifyData && role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
+  const canRunPlaybook = canModifyData && role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
+  const canCreateTicket = canModifyData; // Demo users can't create tickets
 
   const [incident, setIncident] = useState<IIncident | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
@@ -428,7 +429,7 @@ export default function IncidentDetail() {
 
   return (
     <AppLayout title={incident.incident_number} subtitle={headerSummary || 'Security Incident'}>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <Button
           variant="ghost"
           onClick={() => navigate('/incidents')}
@@ -437,7 +438,7 @@ export default function IncidentDetail() {
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Incidents
         </Button>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Jira Ticket Button */}
           {jiraTicketUrl ? (
             <Button
@@ -450,7 +451,7 @@ export default function IncidentDetail() {
               View Jira Ticket
               <ExternalLink className="h-3 w-3 ml-1" />
             </Button>
-          ) : (
+          ) : canCreateTicket ? (
             <Button
               variant="outline"
               size="sm"
@@ -465,7 +466,7 @@ export default function IncidentDetail() {
               )}
               Create Jira Ticket
             </Button>
-          )}
+          ) : null}
 
           <Button
             variant="outline"
@@ -493,15 +494,15 @@ export default function IncidentDetail() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-6 mb-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex-1 min-w-[300px]">
+      <div className="rounded-xl border border-border bg-card p-4 lg:p-6 mb-6">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+          <div className="flex-1 min-w-0">
             {/* Use New Header Component */}
             <IncidentHeader incident={incident} summary={headerSummary} />
 
-            {/* Actions */}
+            {/* Actions - only for non-demo users */}
             {canModifyIncidents && (
-              <div className="flex items-center gap-3 pt-4">
+              <div className="flex flex-wrap items-center gap-3 pt-4">
                 <Select value={incident.status} onValueChange={updateStatus} disabled={updating}>
                   <SelectTrigger className="w-40 bg-secondary/50">
                     <SelectValue />
@@ -514,7 +515,7 @@ export default function IncidentDetail() {
                     )}
                   </SelectContent>
                 </Select>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     variant="outline"
                     onClick={runAnalysis}
@@ -522,7 +523,8 @@ export default function IncidentDetail() {
                     className="border-primary/30 text-primary hover:bg-primary/10"
                   >
                     {updating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Shield className="h-4 w-4 mr-2" />}
-                    Run Analysis
+                    <span className="hidden sm:inline">Run Analysis</span>
+                    <span className="sm:hidden">Analyze</span>
                   </Button>
                   {canRunPlaybook && (
                     <Button
@@ -532,7 +534,8 @@ export default function IncidentDetail() {
                       className="border-primary/30 text-primary hover:bg-primary/10"
                     >
                       {updating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
-                      Run Playbook
+                      <span className="hidden sm:inline">Run Playbook</span>
+                      <span className="sm:hidden">Playbook</span>
                     </Button>
                   )}
                 </div>
