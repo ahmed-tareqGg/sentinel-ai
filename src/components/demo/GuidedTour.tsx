@@ -8,75 +8,75 @@ const TOUR_STEPS: Record<string, Step[]> = {
   '/dashboard': [
     {
       target: 'body',
-      content: 'مرحباً بك في SOCMind! هذه الجولة التعريفية ستساعدك على فهم المنصة خلال دقائق.',
+      content: 'Welcome to SOCMind! This guided tour will help you understand the platform in minutes.',
       placement: 'center',
       disableBeacon: true,
     },
     {
       target: '[data-tour="stat-cards"]',
-      content: 'هنا تجد ملخص سريع لحالة الأمان - إجمالي الحوادث، الحرجة، ومتوسط وقت الاستجابة.',
+      content: 'Here you find a quick summary of security status - total incidents, critical alerts, and average response time.',
     },
     {
       target: '[data-tour="incidents-chart"]',
-      content: 'هذا الرسم البياني يوضح اتجاه الحوادث خلال الفترة الماضية.',
+      content: 'This chart shows the incident trend over the past period.',
     },
     {
       target: '[data-tour="mitre-heatmap"]',
-      content: 'خريطة MITRE ATT&CK توضح أكثر التكتيكات والتقنيات المستخدمة في الهجمات.',
+      content: 'The MITRE ATT&CK heatmap shows the most common tactics and techniques used in attacks.',
     },
   ],
   '/incidents': [
     {
       target: 'body',
-      content: 'صفحة الحوادث - هنا تجد كل الحوادث الأمنية المكتشفة تلقائياً بواسطة الذكاء الاصطناعي.',
+      content: 'Incidents Page - Here you find all security incidents automatically detected by AI.',
       placement: 'center',
       disableBeacon: true,
     },
     {
       target: '[data-tour="incidents-filters"]',
-      content: 'استخدم الفلاتر لتصفية الحوادث حسب الحالة (مفتوحة، قيد العمل، مغلقة).',
+      content: 'Use filters to sort incidents by status (Open, In Progress, Closed).',
     },
     {
       target: '[data-tour="incidents-table"]',
-      content: 'جدول الحوادث يعرض كل التفاصيل: الخطورة، التصنيف، المصدر، والحالة.',
+      content: 'The incidents table displays all details: severity, classification, source, and status.',
     },
     {
       target: '[data-tour="severity-badge"]',
-      content: 'درجة الخطورة محسوبة بالذكاء الاصطناعي مع ربطها بـ MITRE ATT&CK.',
+      content: 'Severity level is calculated by AI and mapped to MITRE ATT&CK framework.',
     },
   ],
   '/playbooks': [
     {
       target: 'body',
-      content: 'صفحة Playbooks - هنا تدير سيناريوهات الاستجابة التلقائية للحوادث.',
+      content: 'Playbooks Page - Manage automated incident response scenarios here.',
       placement: 'center',
       disableBeacon: true,
     },
     {
       target: '[data-tour="playbook-list"]',
-      content: 'قائمة السيناريوهات المُعدة - كل سيناريو يحتوي على شروط وإجراءات محددة.',
+      content: 'List of configured playbooks - each contains specific conditions and actions.',
     },
     {
       target: '[data-tour="run-playbook"]',
-      content: 'هنا يمكنك تشغيل إجراءات الاستجابة (معطلة في Demo Mode).',
+      content: 'Here you can run response actions (disabled in Demo Mode).',
     },
   ],
   '/compliance': [
     {
       target: 'body',
-      content: 'صفحة الامتثال - هنا تتابع سجلات المراجعة والتوافق مع معايير SOC2 و ISO 27001.',
+      content: 'Compliance Page - Track audit logs and compliance with SOC2 and ISO 27001 standards.',
       placement: 'center',
       disableBeacon: true,
     },
     {
       target: '[data-tour="audit-logs"]',
-      content: 'سجلات المراجعة غير قابلة للتعديل وتوثق كل الإجراءات المتخذة.',
+      content: 'Audit logs are immutable and document all actions taken.',
     },
   ],
   '/analytics': [
     {
       target: 'body',
-      content: 'صفحة التحليلات - رؤية شاملة لأداء الأمان والإحصائيات.',
+      content: 'Analytics Page - Comprehensive view of security performance and statistics.',
       placement: 'center',
       disableBeacon: true,
     },
@@ -84,19 +84,19 @@ const TOUR_STEPS: Record<string, Step[]> = {
   '/integrations': [
     {
       target: 'body',
-      content: 'صفحة التكاملات - ربط SOCMind مع أدوات الأمان الأخرى.',
+      content: 'Integrations Page - Connect SOCMind with other security tools.',
       placement: 'center',
       disableBeacon: true,
     },
     {
       target: '[data-tour="integration-cards"]',
-      content: 'كل بطاقة تمثل تكامل مع خدمة خارجية (Slack، Jira، وغيرها).',
+      content: 'Each card represents an integration with an external service (Slack, Jira, etc.).',
     },
   ],
   '/live-logs': [
     {
       target: 'body',
-      content: 'السجلات المباشرة - شاهد الأحداث الأمنية في الوقت الفعلي قبل معالجتها.',
+      content: 'Live Logs - Watch security events in real-time before processing.',
       placement: 'center',
       disableBeacon: true,
     },
@@ -104,7 +104,7 @@ const TOUR_STEPS: Record<string, Step[]> = {
   '/threat-hunting': [
     {
       target: 'body',
-      content: 'صيد التهديدات - ابحث في البيانات باستخدام SQL للكشف عن التهديدات المخفية.',
+      content: 'Threat Hunting - Search through data using SQL to detect hidden threats.',
       placement: 'center',
       disableBeacon: true,
     },
@@ -191,11 +191,11 @@ export function GuidedTour() {
       callback={handleCallback}
       styles={TOUR_STYLES}
       locale={{
-        back: 'السابق',
-        close: 'إغلاق',
-        last: 'إنهاء',
-        next: 'التالي',
-        skip: 'تخطي',
+        back: 'Back',
+        close: 'Close',
+        last: 'Finish',
+        next: 'Next',
+        skip: 'Skip',
       }}
     />
   );
