@@ -161,9 +161,9 @@ export function Header({ title, subtitle }: HeaderProps) {
         {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
       </div>
 
-      <div className="flex items-center gap-4">
-        {/* Search */}
-        <form onSubmit={handleSearch} className="relative">
+      <div className="flex items-center gap-2 sm:gap-4">
+        {/* Desktop Search */}
+        <form onSubmit={handleSearch} className="relative hidden md:block">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input 
             placeholder="Search incidents..." 
@@ -181,6 +181,36 @@ export function Header({ title, subtitle }: HeaderProps) {
             </button>
           )}
         </form>
+
+        {/* Mobile Search - Popover */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="icon" className="md:hidden">
+              <Search className="h-5 w-5 text-muted-foreground" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-72 p-2 bg-card border-border" align="end">
+            <form onSubmit={handleSearch} className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input 
+                placeholder="Search incidents..." 
+                className="w-full bg-secondary/50 border-border pl-9 pr-9 focus:bg-secondary"
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                autoFocus
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </form>
+          </PopoverContent>
+        </Popover>
 
         {/* Notifications */}
         <Popover>
