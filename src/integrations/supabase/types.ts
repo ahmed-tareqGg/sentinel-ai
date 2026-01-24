@@ -61,6 +61,41 @@ export type Database = {
           },
         ]
       }
+      agent_license_bindings: {
+        Row: {
+          first_seen_at: string
+          hardware_id: string
+          id: string
+          is_active: boolean
+          last_seen_at: string
+          license_id: string
+        }
+        Insert: {
+          first_seen_at?: string
+          hardware_id: string
+          id?: string
+          is_active?: boolean
+          last_seen_at?: string
+          license_id: string
+        }
+        Update: {
+          first_seen_at?: string
+          hardware_id?: string
+          id?: string
+          is_active?: boolean
+          last_seen_at?: string
+          license_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_license_bindings_license_id_fkey"
+            columns: ["license_id"]
+            isOneToOne: false
+            referencedRelation: "agent_licenses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_licenses: {
         Row: {
           active_agents: number | null
@@ -1398,7 +1433,7 @@ export type Database = {
         Returns: undefined
       }
       validate_agent_license: {
-        Args: { _license_key: string }
+        Args: { _hardware_id?: string; _license_key: string }
         Returns: {
           active_agents: number
           days_remaining: number
