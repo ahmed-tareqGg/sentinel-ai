@@ -68,13 +68,18 @@ export default function Landing() {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link to="/auth">
+              <Link to="/demo-landing">
                 <Button size="lg" className="gap-2 w-full sm:w-auto">
-                  Get Started <ArrowRight className="h-4 w-4" />
+                  Try Live Demo <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+              <Link to="/auth">
+                <Button size="lg" variant="outline" className="w-full sm:w-auto">
+                  Sign In
                 </Button>
               </Link>
               <Link to="/how-it-works">
-                <Button size="lg" variant="outline" className="w-full sm:w-auto">
+                <Button size="lg" variant="ghost" className="w-full sm:w-auto">
                   See How It Works
                 </Button>
               </Link>
@@ -188,11 +193,18 @@ export default function Landing() {
             <p className="text-lg text-muted-foreground mb-10">
               Experience autonomous security operations with SOCMind
             </p>
-            <Link to="/auth">
-              <Button size="lg" className="gap-2">
-                Get Started <ArrowRight className="h-4 w-4" />
-              </Button>
-            </Link>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link to="/demo-landing">
+                <Button size="lg" className="gap-2">
+                  Try Live Demo <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+              <Link to="/auth">
+                <Button size="lg" variant="outline">
+                  Get Started
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
       </section>
