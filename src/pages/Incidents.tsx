@@ -21,8 +21,8 @@ export default function Incidents() {
   const searchQuery = searchParams.get('search') || '';
   const [filter, setFilter] = useState<string>('all');
   const { incidents, loading, refetch } = useIncidents();
-  const { role } = useAuth();
-  const canModifyIncidents = role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'].includes(role);
+  const { role, isDemoUser, canModifyData } = useAuth();
+  const canModifyIncidents = canModifyData && role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -99,7 +99,7 @@ export default function Incidents() {
   return (
     <AppLayout title="Incidents" subtitle="Security incident management">
       {/* Toolbar */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6" data-tour="incidents-filters">
         <div className="flex items-center gap-2">
           {filters.map((f) => (
             <Button
@@ -110,7 +110,7 @@ export default function Incidents() {
               className={filter === f.key ? 'bg-primary text-primary-foreground' : ''}
             >
               {f.label}
-              <Badge variant="secondary" className="ml-2 bg-secondary/50">
+              <Badge variant="secondary" className="ml-2 bg-secondary/50" data-tour="severity-badge">
                 {f.count}
               </Badge>
             </Button>
@@ -240,7 +240,9 @@ export default function Incidents() {
           )}
         </div>
       ) : (
-        <IncidentTable incidents={filteredIncidents} />
+        <div data-tour="incidents-table">
+          <IncidentTable incidents={filteredIncidents} />
+        </div>
       )}
     </AppLayout>
   );

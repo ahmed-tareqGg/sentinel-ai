@@ -1298,6 +1298,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_demo_user: { Args: { _user_id: string }; Returns: boolean }
       reject_user_access: { Args: { _target_user: string }; Returns: undefined }
       set_user_role: {
         Args: {
@@ -1327,6 +1328,7 @@ export type Database = {
         | "soc_manager"
         | "grc_engineer"
         | "ciso"
+        | "demo_user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1464,6 +1466,7 @@ export const Constants = {
         "soc_manager",
         "grc_engineer",
         "ciso",
+        "demo_user",
       ],
     },
   },

@@ -23,7 +23,7 @@ export default function Dashboard() {
   return (
     <AppLayout title="Dashboard" subtitle="Real-time security operations overview">
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6" data-tour="stat-cards">
         <StatCard
           title="Open Incidents"
           value={openIncidents}
@@ -54,7 +54,7 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6" data-tour="incidents-chart">
         <div className="lg:col-span-2">
           <TrendChart data={metrics.incidentsPerDay} />
         </div>
@@ -62,7 +62,7 @@ export default function Dashboard() {
       </div>
 
       {/* MITRE Heatmap - Full Width for Investors WOW */}
-      <div className="mb-6">
+      <div className="mb-6" data-tour="mitre-heatmap">
         <MitreHeatmap incidents={incidents} />
       </div>
 

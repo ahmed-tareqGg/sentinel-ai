@@ -10,7 +10,8 @@ export type SOCRole =
   | 'soc_tier_3' 
   | 'soc_manager' 
   | 'grc_engineer' 
-  | 'ciso';
+  | 'ciso'
+  | 'demo_user';
 
 // Permission Types
 export type Permission = 
@@ -102,23 +103,29 @@ export const ROLE_METADATA: Record<SOCRole, {
     color: 'red',
     badgeClass: 'bg-destructive/20 text-destructive border-destructive/30',
   },
+  demo_user: {
+    label: 'Demo User',
+    description: 'Read-Only Demo Access',
+    color: 'amber',
+    badgeClass: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  },
 };
 
 // Navigation access by role
 export const NAV_ACCESS: Record<string, SOCRole[]> = {
-  '/dashboard': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso'],
-  '/incidents': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso'],
-  '/data-sources': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
-  '/live-logs': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
-  '/analytics': ['admin', 'soc_manager', 'ciso'],
-  '/reports': ['admin', 'soc_manager', 'grc_engineer', 'ciso'],
-  '/playbooks': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager'],
-  '/approvals': ['admin', 'soc_tier_3', 'soc_manager', 'ciso'],
-  '/integrations': ['admin', 'soc_manager', 'ciso'],
-  '/compliance': ['admin', 'grc_engineer', 'ciso'],
-  '/mitre-coverage': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
-  '/threat-hunting': ['admin', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso'],
-  '/demo': ['admin', 'soc_manager', 'ciso'],
+  '/dashboard': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso', 'demo_user'],
+  '/incidents': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso', 'demo_user'],
+  '/data-sources': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'demo_user'],
+  '/live-logs': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'demo_user'],
+  '/analytics': ['admin', 'soc_manager', 'ciso', 'demo_user'],
+  '/reports': ['admin', 'soc_manager', 'grc_engineer', 'ciso', 'demo_user'],
+  '/playbooks': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'demo_user'],
+  '/approvals': ['admin', 'soc_tier_3', 'soc_manager', 'ciso', 'demo_user'],
+  '/integrations': ['admin', 'soc_manager', 'ciso', 'demo_user'],
+  '/compliance': ['admin', 'grc_engineer', 'ciso', 'demo_user'],
+  '/mitre-coverage': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'demo_user'],
+  '/threat-hunting': ['admin', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'demo_user'],
+  '/demo': ['admin', 'soc_manager', 'ciso', 'demo_user'],
   '/settings': ['admin', 'soc_manager', 'ciso'],
   '/admin/cloud': ['admin', 'ciso', 'soc_manager'],
 };
