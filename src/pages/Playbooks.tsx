@@ -35,6 +35,7 @@ import {
 import { cn } from '@/lib/utils';
 import { PlaybookTemplates } from '@/components/playbooks/PlaybookTemplates';
 import { SimulationMode } from '@/components/playbooks/SimulationMode';
+import { CorrelationRulesEngine } from '@/components/correlation/CorrelationRulesEngine';
 import { useIncidents } from '@/hooks/useIncidents';
 
 interface PlaybookConditions {
@@ -339,6 +340,9 @@ export default function Playbooks() {
   return (
     <AppLayout title="Playbooks" subtitle="Configure automated SOAR response playbooks">
       <div className="space-y-6">
+        {/* Correlation Rules Engine */}
+        <CorrelationRulesEngine />
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
