@@ -521,6 +521,111 @@ export type Database = {
           },
         ]
       }
+      correlation_rule_matches: {
+        Row: {
+          id: string
+          incident_id: string | null
+          match_count: number | null
+          match_key: string | null
+          matched_logs: Json | null
+          rule_id: string
+          triggered_at: string
+        }
+        Insert: {
+          id?: string
+          incident_id?: string | null
+          match_count?: number | null
+          match_key?: string | null
+          matched_logs?: Json | null
+          rule_id: string
+          triggered_at?: string
+        }
+        Update: {
+          id?: string
+          incident_id?: string | null
+          match_count?: number | null
+          match_key?: string | null
+          matched_logs?: Json | null
+          rule_id?: string
+          triggered_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "correlation_rule_matches_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "correlation_rule_matches_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "correlation_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      correlation_rules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          event_type_filter: string[] | null
+          hits_count: number | null
+          id: string
+          incident_title_template: string | null
+          is_active: boolean
+          last_triggered_at: string | null
+          match_field: string
+          match_operator: string
+          match_value: string | null
+          name: string
+          severity_override: number | null
+          threshold_count: number
+          time_window_minutes: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          event_type_filter?: string[] | null
+          hits_count?: number | null
+          id?: string
+          incident_title_template?: string | null
+          is_active?: boolean
+          last_triggered_at?: string | null
+          match_field?: string
+          match_operator?: string
+          match_value?: string | null
+          name: string
+          severity_override?: number | null
+          threshold_count?: number
+          time_window_minutes?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          event_type_filter?: string[] | null
+          hits_count?: number | null
+          id?: string
+          incident_title_template?: string | null
+          is_active?: boolean
+          last_triggered_at?: string | null
+          match_field?: string
+          match_operator?: string
+          match_value?: string | null
+          name?: string
+          severity_override?: number | null
+          threshold_count?: number
+          time_window_minutes?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       data_sources: {
         Row: {
           agent_version: string | null
