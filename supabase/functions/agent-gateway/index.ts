@@ -297,6 +297,7 @@ serve(async (req) => {
       // Validate license
       const { data: licenseResult, error: licenseError } = await supabase.rpc('validate_agent_license', {
         _license_key: licenseKey,
+        _hardware_id: hardwareId || null,
       });
 
       if (licenseError) {
