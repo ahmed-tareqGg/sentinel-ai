@@ -68,6 +68,7 @@ export default function Auth() {
   const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -77,6 +78,62 @@ export default function Auth() {
       navigate('/dashboard');
     }
   }, [user, navigate]);
+
+  // Demo login handler
+  const handleDemoLogin = async () => {
+    setDemoLoading(true);
+    try {
+      // First try to login
+      const { error: loginError } = await supabase.auth.signInWithPassword({
+        email: 'demo@socmind.com',
+        password: 'Demo@123456!',
+      });
+
+      if (loginError) {
+        // If login fails, try to create the account
+        if (loginError.message.includes('Invalid login credentials')) {
+          const { error: signupError } = await supabase.auth.signUp({
+            email: 'demo@socmind.com',
+            password: 'Demo@123456!',
+            options: {
+              emailRedirectTo: `${window.location.origin}/`,
+              data: {
+                full_name: 'Demo User',
+              },
+            },
+          });
+
+          if (signupError) {
+            toast.error('Failed to create demo account');
+            return;
+          }
+
+          toast.success('Demo account created! Logging in...');
+          // Try login again after signup
+          const { error: retryError } = await supabase.auth.signInWithPassword({
+            email: 'demo@socmind.com',
+            password: 'Demo@123456!',
+          });
+
+          if (retryError) {
+            toast.error('Please try again');
+            return;
+          }
+        } else {
+          toast.error(loginError.message);
+          return;
+        }
+      }
+
+      toast.success('Welcome to Demo Mode! 👋');
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Demo login error:', error);
+      toast.error('An unexpected error occurred');
+    } finally {
+      setDemoLoading(false);
+    }
+  };
 
   // Password strength calculation
   const passwordStrength = useMemo(() => calculatePasswordStrength(password), [password]);
@@ -353,6 +410,22 @@ export default function Auth() {
               >
                 {isLogin ? 'Sign up' : 'Sign in'}
               </button>
+            </p>
+          </div>
+
+          {/* Demo Login Button */}
+          <div className="mt-4 pt-4 border-t border-border">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDemoLogin}
+              disabled={demoLoading || loading}
+              className="w-full border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+            >
+              {demoLoading ? 'Loading Demo...' : '🎯 Try Demo Mode (Read-Only)'}
+            </Button>
+            <p className="text-xs text-muted-foreground text-center mt-2">
+              Explore all features without affecting real data
             </p>
           </div>
         </div>
