@@ -56,7 +56,8 @@ export function LicenseManagement({ dataSourceId, dataSourceName }: LicenseManag
     organization_name: '',
     license_type: 'standard',
     max_agents: 1,
-    expires_days: 365,
+    expires_value: 365,
+    expires_unit: 'days' as 'days' | 'hours',
   });
 
   // Fetch licenses
@@ -81,12 +82,16 @@ export function LicenseManagement({ dataSourceId, dataSourceName }: LicenseManag
   // Generate new license
   const generateMutation = useMutation({
     mutationFn: async () => {
+      const expiresDays = formData.expires_unit === 'days' ? formData.expires_value : null;
+      const expiresHours = formData.expires_unit === 'hours' ? formData.expires_value : null;
+
       const { data, error } = await supabase.rpc('generate_agent_license', {
         _data_source_id: dataSourceId || null,
         _organization_name: formData.organization_name || 'Unknown Organization',
         _license_type: formData.license_type,
         _max_agents: formData.max_agents,
-        _expires_days: formData.expires_days,
+        _expires_days: expiresDays,
+        _expires_hours: expiresHours,
       });
       
       if (error) throw error;
@@ -95,7 +100,8 @@ export function LicenseManagement({ dataSourceId, dataSourceName }: LicenseManag
     onSuccess: (result) => {
       setNewLicenseKey(result.license_key);
       setCreateDialogOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['agent-licenses'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-licenses'], exact: false });
+      queryClient.refetchQueries({ queryKey: ['agent-licenses'], exact: false });
       toast.success('License generated successfully');
     },
     onError: (error) => {
@@ -114,7 +120,8 @@ export function LicenseManagement({ dataSourceId, dataSourceName }: LicenseManag
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agent-licenses'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-licenses'], exact: false });
+      queryClient.refetchQueries({ queryKey: ['agent-licenses'], exact: false });
       toast.success('License revoked');
     },
     onError: (error) => {
@@ -247,7 +254,9 @@ export function LicenseManagement({ dataSourceId, dataSourceName }: LicenseManag
                         <div className="flex items-center gap-2">
                           <Calendar className="h-4 w-4 text-muted-foreground" />
                           <span className="text-sm">
-                            {format(new Date(license.expires_at), 'MMM dd, yyyy')}
+                      {daysRemaining <= 1
+                        ? format(new Date(license.expires_at), 'MMM dd, yyyy HH:mm')
+                        : format(new Date(license.expires_at), 'MMM dd, yyyy')}
                           </span>
                           {daysRemaining > 0 && daysRemaining <= 30 && (
                             <span className="text-xs text-yellow-500">({daysRemaining}d left)</span>
@@ -345,14 +354,37 @@ export function LicenseManagement({ dataSourceId, dataSourceName }: LicenseManag
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="expires_days">Expires In (Days)</Label>
-                <Input
-                  id="expires_days"
-                  type="number"
-                  min={1}
-                  value={formData.expires_days}
-                  onChange={(e) => setFormData({ ...formData, expires_days: parseInt(e.target.value) || 365 })}
-                />
+                <Label>Expires In</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  <Input
+                    id="expires_value"
+                    type="number"
+                    min={1}
+                    value={formData.expires_value}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        expires_value: parseInt(e.target.value) || 1,
+                      })
+                    }
+                    className="col-span-2"
+                  />
+                  <Select
+                    value={formData.expires_unit}
+                    onValueChange={(value) => setFormData({ ...formData, expires_unit: value as 'days' | 'hours' })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hours">Hours</SelectItem>
+                      <SelectItem value="days">Days</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Tip: set Hours = 1 for a 1-hour license.
+                </p>
               </div>
             </div>
           </div>

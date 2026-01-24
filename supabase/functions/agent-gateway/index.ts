@@ -253,6 +253,17 @@ serve(async (req) => {
   try {
     // License validation endpoint (agent key required)
     if (action === 'validate-license') {
+      const keyCheck = await verifyAgentKey(req, supabase);
+      if (!keyCheck.valid) {
+        return new Response(JSON.stringify({
+          is_valid: false,
+          error_message: keyCheck.error || 'Invalid agent key'
+        }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       const body = await req.json();
       const payload = body.payload;
       
