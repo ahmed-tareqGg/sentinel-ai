@@ -17,6 +17,8 @@ import {
   Clock,
   Activity,
   Download,
+  Package,
+  Network,
   Terminal,
   Shield
 } from 'lucide-react';
@@ -988,33 +990,163 @@ https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
             </div>
 
             {/* Download Agents */}
-            <div className="grid grid-cols-2 gap-4">
-              <a
-                href="/agents/socmind-agent-linux.sh"
-                download="socmind-agent-linux.sh"
-                className="flex flex-col items-center gap-3 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center"
-              >
-                <Terminal className="h-10 w-10 text-orange-500" />
-                <div>
-                  <p className="font-medium">Linux Agent</p>
-                  <p className="text-xs text-muted-foreground">Ubuntu, Debian, RHEL</p>
-                </div>
-                <Download className="h-4 w-4 text-muted-foreground" />
-              </a>
+            <Tabs defaultValue="basic" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="basic">Basic Agents</TabsTrigger>
+                <TabsTrigger value="universal">Universal Agent + Plugins</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="basic" className="mt-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <a
+                    href="/agents/socmind-agent-linux.sh"
+                    download="socmind-agent-linux.sh"
+                    className="flex flex-col items-center gap-3 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center"
+                  >
+                    <Terminal className="h-10 w-10 text-orange-500" />
+                    <div>
+                      <p className="font-medium">Linux Agent</p>
+                      <p className="text-xs text-muted-foreground">Ubuntu, Debian, RHEL</p>
+                    </div>
+                    <Download className="h-4 w-4 text-muted-foreground" />
+                  </a>
 
-              <a
-                href="/agents/socmind-agent-windows.ps1"
-                download="socmind-agent-windows.ps1"
-                className="flex flex-col items-center gap-3 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center"
-              >
-                <Monitor className="h-10 w-10 text-blue-500" />
-                <div>
-                  <p className="font-medium">Windows Agent</p>
-                  <p className="text-xs text-muted-foreground">Windows Server 2016+</p>
+                  <a
+                    href="/agents/socmind-agent-windows.ps1"
+                    download="socmind-agent-windows.ps1"
+                    className="flex flex-col items-center gap-3 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center"
+                  >
+                    <Monitor className="h-10 w-10 text-blue-500" />
+                    <div>
+                      <p className="font-medium">Windows Agent</p>
+                      <p className="text-xs text-muted-foreground">Windows Server 2016+</p>
+                    </div>
+                    <Download className="h-4 w-4 text-muted-foreground" />
+                  </a>
                 </div>
-                <Download className="h-4 w-4 text-muted-foreground" />
-              </a>
-            </div>
+              </TabsContent>
+              
+              <TabsContent value="universal" className="mt-4 space-y-4">
+                {/* Universal Agent */}
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <Package className="h-6 w-6 text-primary" />
+                    <div>
+                      <p className="font-medium">Universal Agent v2.2.0</p>
+                      <p className="text-xs text-muted-foreground">Python-based with multi-vendor support</p>
+                    </div>
+                  </div>
+                  <a
+                    href="/agents/socmind-universal-agent.py"
+                    download="socmind-universal-agent.py"
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm"
+                  >
+                    <Download className="h-4 w-4" />
+                    Download Universal Agent
+                  </a>
+                </div>
+                
+                {/* Vendor Plugins */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <Network className="h-4 w-4" />
+                    Vendor Plugins (Parsers + MITRE Mapping)
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <a
+                      href="/agents/plugins/base.py"
+                      download="base.py"
+                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
+                    >
+                      <Package className="h-4 w-4 text-gray-500" />
+                      <span>base.py</span>
+                    </a>
+                    <a
+                      href="/agents/plugins/__init__.py"
+                      download="__init__.py"
+                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
+                    >
+                      <Package className="h-4 w-4 text-gray-500" />
+                      <span>__init__.py</span>
+                    </a>
+                    <a
+                      href="/agents/plugins/fortinet.py"
+                      download="fortinet.py"
+                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
+                    >
+                      <Shield className="h-4 w-4 text-red-500" />
+                      <span>Fortinet</span>
+                    </a>
+                    <a
+                      href="/agents/plugins/paloalto.py"
+                      download="paloalto.py"
+                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
+                    >
+                      <Shield className="h-4 w-4 text-orange-500" />
+                      <span>Palo Alto</span>
+                    </a>
+                    <a
+                      href="/agents/plugins/cisco.py"
+                      download="cisco.py"
+                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
+                    >
+                      <Shield className="h-4 w-4 text-blue-500" />
+                      <span>Cisco</span>
+                    </a>
+                    <a
+                      href="/agents/plugins/sophos.py"
+                      download="sophos.py"
+                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
+                    >
+                      <Shield className="h-4 w-4 text-blue-400" />
+                      <span>Sophos</span>
+                    </a>
+                    <a
+                      href="/agents/plugins/checkpoint.py"
+                      download="checkpoint.py"
+                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
+                    >
+                      <Shield className="h-4 w-4 text-purple-500" />
+                      <span>Check Point</span>
+                    </a>
+                    <a
+                      href="/agents/plugins/syslog_listener.py"
+                      download="syslog_listener.py"
+                      className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-sm"
+                    >
+                      <Network className="h-4 w-4 text-green-500" />
+                      <span>Syslog Listener</span>
+                    </a>
+                  </div>
+                </div>
+                
+                {/* Setup Instructions */}
+                <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                  <p className="text-sm font-medium mb-2">📁 Directory Structure:</p>
+                  <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground mb-3">
+{`/opt/socmind/
+├── socmind-universal-agent.py
+└── plugins/
+    ├── __init__.py
+    ├── base.py
+    ├── fortinet.py
+    ├── paloalto.py
+    ├── cisco.py
+    ├── sophos.py
+    ├── checkpoint.py
+    └── syslog_listener.py`}
+                  </pre>
+                  <p className="text-sm font-medium mb-2">🚀 Quick Start:</p>
+                  <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground">
+{`# Configure
+python3 socmind-universal-agent.py configure
+
+# Run (with syslog listener on port 514)
+python3 socmind-universal-agent.py run --mode syslog`}
+                  </pre>
+                </div>
+              </TabsContent>
+            </Tabs>
 
             {/* Quick Start */}
             <div className="rounded-lg border border-border bg-secondary/30 p-4">
