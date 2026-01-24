@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
+import { MobileSidebar } from './MobileSidebar';
 import { Header } from './Header';
 import { GlobalFooter } from './GlobalFooter';
 import { DemoBanner } from '@/components/demo/DemoBanner';
@@ -17,9 +18,10 @@ export function AppLayout({ children, title, subtitle }: AppLayoutProps) {
       <DemoBanner />
       <GuidedTour />
       <Sidebar />
-      <div className="ml-64 flex flex-col flex-1">
+      <MobileSidebar />
+      <div className="lg:ml-64 flex flex-col flex-1">
         <Header title={title} subtitle={subtitle} />
-        <main className="p-6 flex-1">
+        <main className="p-4 lg:p-6 flex-1">
           {children}
         </main>
         <GlobalFooter />
