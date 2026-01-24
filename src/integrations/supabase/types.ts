@@ -1344,19 +1344,34 @@ export type Database = {
           key_id: string
         }[]
       }
-      generate_agent_license: {
-        Args: {
-          _data_source_id: string
-          _expires_days?: number
-          _license_type?: string
-          _max_agents?: number
-          _organization_name: string
-        }
-        Returns: {
-          license_id: string
-          license_key: string
-        }[]
-      }
+      generate_agent_license:
+        | {
+            Args: {
+              _data_source_id: string
+              _expires_days?: number
+              _license_type?: string
+              _max_agents?: number
+              _organization_name: string
+            }
+            Returns: {
+              license_id: string
+              license_key: string
+            }[]
+          }
+        | {
+            Args: {
+              _data_source_id: string
+              _expires_days?: number
+              _expires_hours?: number
+              _license_type?: string
+              _max_agents?: number
+              _organization_name: string
+            }
+            Returns: {
+              license_id: string
+              license_key: string
+            }[]
+          }
       get_user_permissions: { Args: { _user_id: string }; Returns: string[] }
       get_user_role: {
         Args: { _user_id: string }

@@ -212,7 +212,7 @@ def _init_agent():
         print(f"[FATAL] Configuration error: {e}")
         sys.exit(1)
     
-    if not all([api_key, api_endpoint, license_key]):
+    if not all([api_key, api_endpoint]):
         print("\n" + "="*60)
         print("[FATAL] Missing required configuration!")
         print("="*60)
@@ -221,6 +221,21 @@ def _init_agent():
         print("  - api_endpoint: SOCMind API endpoint")
         print("  - license_key: Your SOCMind license key (SOCM-XXXX-XXXX-XXXX-XXXX)")
         print("\n" + "="*60)
+        sys.exit(1)
+
+    # Allow entering license anytime (prompt if missing)
+    if not license_key:
+        try:
+            print("\n" + "="*60)
+            print("[INFO] License key not set in agent.conf")
+            license_key = input("Enter license key (SOCM-XXXX-XXXX-XXXX-XXXX): ").strip()
+        except Exception:
+            license_key = None
+
+    if not license_key:
+        print("\n" + "="*60)
+        print("[FATAL] Missing license_key")
+        print("="*60)
         sys.exit(1)
     
     # License Validation
