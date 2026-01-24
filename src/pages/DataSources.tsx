@@ -888,7 +888,7 @@ https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
 
       {/* Agent Download Dialog */}
       <Dialog open={agentDownloadOpen} onOpenChange={setAgentDownloadOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogContent className="sm:max-w-2xl h-[90vh] max-h-[90vh] flex flex-col overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Download SOCMind Agent</DialogTitle>
             <DialogDescription>
@@ -896,7 +896,7 @@ https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 pr-4">
+          <ScrollArea className="flex-1 min-h-0 pr-4">
             <div className="space-y-4 py-2">
               {/* API Endpoint Section */}
               <div className="rounded-lg border border-primary/50 bg-primary/5 p-3">
