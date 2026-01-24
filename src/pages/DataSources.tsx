@@ -17,9 +17,11 @@ import {
   Clock,
   Activity,
   Download,
-  Terminal
+  Terminal,
+  Shield
 } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { LicenseManagement } from '@/components/licenses/LicenseManagement';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -385,6 +387,13 @@ export default function DataSources() {
           Download Agent
         </Button>
       </div>
+
+      {/* License Management Section */}
+      {canManage && (
+        <div id="license-section" className="mb-6">
+          <LicenseManagement />
+        </div>
+      )}
 
       {/* Data Sources Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -947,6 +956,33 @@ https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
                       </Button>
                     </div>
                   )}
+                </div>
+                
+                {/* License Key Section */}
+                <div className="border-t border-border pt-3">
+                  <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Shield className="h-3 w-3" />
+                    License Key
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1 mb-2">
+                    A valid license key is required to activate the agent
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => {
+                      setAgentDownloadOpen(false);
+                      // Navigate to license management section
+                      const licenseSection = document.getElementById('license-section');
+                      if (licenseSection) {
+                        licenseSection.scrollIntoView({ behavior: 'smooth' });
+                      }
+                    }}
+                  >
+                    <Shield className="h-3 w-3" />
+                    Manage Licenses
+                  </Button>
                 </div>
               </div>
             </div>

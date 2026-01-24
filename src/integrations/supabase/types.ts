@@ -61,6 +61,68 @@ export type Database = {
           },
         ]
       }
+      agent_licenses: {
+        Row: {
+          active_agents: number | null
+          created_at: string
+          created_by: string | null
+          data_source_id: string | null
+          expires_at: string
+          id: string
+          is_active: boolean | null
+          issued_at: string
+          last_validated: string | null
+          license_hash: string
+          license_key: string
+          license_type: string
+          max_agents: number | null
+          organization_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          active_agents?: number | null
+          created_at?: string
+          created_by?: string | null
+          data_source_id?: string | null
+          expires_at: string
+          id?: string
+          is_active?: boolean | null
+          issued_at?: string
+          last_validated?: string | null
+          license_hash: string
+          license_key: string
+          license_type?: string
+          max_agents?: number | null
+          organization_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active_agents?: number | null
+          created_at?: string
+          created_by?: string | null
+          data_source_id?: string | null
+          expires_at?: string
+          id?: string
+          is_active?: boolean | null
+          issued_at?: string
+          last_validated?: string | null
+          license_hash?: string
+          license_key?: string
+          license_type?: string
+          max_agents?: number | null
+          organization_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_licenses_data_source_id_fkey"
+            columns: ["data_source_id"]
+            isOneToOne: false
+            referencedRelation: "data_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       approval_requests: {
         Row: {
           action_params: Json | null
@@ -1282,6 +1344,19 @@ export type Database = {
           key_id: string
         }[]
       }
+      generate_agent_license: {
+        Args: {
+          _data_source_id: string
+          _expires_days?: number
+          _license_type?: string
+          _max_agents?: number
+          _organization_name: string
+        }
+        Returns: {
+          license_id: string
+          license_key: string
+        }[]
+      }
       get_user_permissions: { Args: { _user_id: string }; Returns: string[] }
       get_user_role: {
         Args: { _user_id: string }
@@ -1306,6 +1381,19 @@ export type Database = {
           _target_user: string
         }
         Returns: undefined
+      }
+      validate_agent_license: {
+        Args: { _license_key: string }
+        Returns: {
+          active_agents: number
+          days_remaining: number
+          error_message: string
+          expires_at: string
+          is_valid: boolean
+          license_type: string
+          max_agents: number
+          organization_name: string
+        }[]
       }
       verify_agent_api_key: {
         Args: { _api_key: string }
