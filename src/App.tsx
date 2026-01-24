@@ -24,6 +24,7 @@ import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import Trust from "./pages/Trust";
 import Landing from "./pages/Landing";
+import DemoLanding from "./pages/DemoLanding";
 import NotFound from "./pages/NotFound";
 import MitreCoverage from "./pages/MitreCoverage";
 import CloudAdmin from "./pages/CloudAdmin";
@@ -50,6 +51,9 @@ const App = () => (
               <Route path="/terms" element={<Terms />} />
               <Route path="/privacy" element={<Privacy />} />
             </Route>
+            
+            {/* Demo Landing (standalone - no layout) */}
+            <Route path="/demo-landing" element={<DemoLanding />} />
             
             {/* Auth Route (standalone) */}
             <Route path="/auth" element={<Auth />} />
