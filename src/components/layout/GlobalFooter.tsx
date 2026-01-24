@@ -97,6 +97,14 @@ export function GlobalFooter() {
               >
                 Privacy Policy
               </Link>
+              <a
+                href="/SOCMind-Demo-Guide.pdf"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-1"
+              >
+                📘 Demo Guide
+              </a>
             </nav>
           </div>
 

@@ -10,7 +10,8 @@ export type AppRole =
   | 'soc_tier_3' 
   | 'soc_manager' 
   | 'grc_engineer' 
-  | 'ciso';
+  | 'ciso'
+  | 'demo_user';
 
 interface Profile {
   id: string;
@@ -34,8 +35,10 @@ interface AuthContextType {
   isTier2: boolean;
   isTier1: boolean;
   isGRC: boolean;
+  isDemoUser: boolean;
   canManageUsers: boolean;
   canExecutePlaybooks: boolean;
+  canModifyData: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -127,10 +130,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isTier2 = role === 'soc_tier_2' || isTier3;
   const isTier1 = role === 'soc_tier_1' || isTier2;
   const isGRC = role === 'grc_engineer';
+  const isDemoUser = role === 'demo_user';
   
   // Permission-based checks
-  const canManageUsers = isCISO || isManager || isAdmin;
-  const canExecutePlaybooks = isCISO || isManager || isTier3 || isAdmin;
+  const canManageUsers = (isCISO || isManager || isAdmin) && !isDemoUser;
+  const canExecutePlaybooks = (isCISO || isManager || isTier3 || isAdmin) && !isDemoUser;
+  const canModifyData = !isDemoUser; // Demo users cannot modify any data
 
   return (
     <AuthContext.Provider value={{
@@ -147,8 +152,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isTier2,
       isTier1,
       isGRC,
+      isDemoUser,
       canManageUsers,
       canExecutePlaybooks,
+      canModifyData,
     }}>
       {children}
     </AuthContext.Provider>

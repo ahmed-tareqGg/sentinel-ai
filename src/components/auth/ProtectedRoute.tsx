@@ -38,6 +38,7 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
       soc_manager: 4,
       grc_engineer: 3, // GRC is parallel to Tier 3 in hierarchy
       ciso: 5,
+      demo_user: 0, // Demo users have lowest access level
     };
     
     const userLevel = roleHierarchy[role as SOCRole] || 0;
