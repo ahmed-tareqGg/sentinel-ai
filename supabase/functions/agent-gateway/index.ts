@@ -251,6 +251,72 @@ serve(async (req) => {
   const action = url.pathname.split('/').pop();
 
   try {
+    // License validation endpoint (agent key required)
+    if (action === 'validate-license') {
+      const body = await req.json();
+      const payload = body.payload;
+      
+      // Decode payload if obfuscated
+      let licenseData;
+      try {
+        if (typeof payload === 'string') {
+          const decoded = atob(payload);
+          // Decompress if needed (simple base64 for now)
+          licenseData = JSON.parse(decoded);
+        } else {
+          licenseData = body;
+        }
+      } catch {
+        licenseData = body;
+      }
+
+      const licenseKey = licenseData.license_key || body.license_key;
+      const hardwareId = licenseData.hardware_id || body.hardware_id;
+      
+      if (!licenseKey) {
+        return new Response(JSON.stringify({ 
+          is_valid: false, 
+          error_message: 'Missing license key' 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Validate license
+      const { data: licenseResult, error: licenseError } = await supabase.rpc('validate_agent_license', {
+        _license_key: licenseKey,
+      });
+
+      if (licenseError) {
+        console.error('License validation error:', licenseError);
+        return new Response(JSON.stringify({ 
+          is_valid: false, 
+          error_message: 'License validation failed' 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const result = licenseResult?.[0] || {};
+      
+      console.log(`🔑 License validation: ${licenseKey.slice(0, 9)}... - ${result.is_valid ? 'VALID' : 'INVALID'}`);
+
+      return new Response(JSON.stringify({
+        is_valid: result.is_valid || false,
+        license_type: result.license_type,
+        organization_name: result.organization_name,
+        expires_at: result.expires_at,
+        days_remaining: result.days_remaining,
+        max_agents: result.max_agents,
+        active_agents: result.active_agents,
+        error_message: result.error_message,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Actions that require user authentication (management)
     if (['register', 'generate-key', 'list', 'delete', 'simulate', 'control'].includes(action || '')) {
       const auth = await verifyUserAuth(req);
