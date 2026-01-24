@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/backend/client';
@@ -515,14 +515,16 @@ export default function LiveLogs() {
               <FileJson2 className="h-5 w-5 text-primary" />
               Log Details
               {selectedLog && (
-                <Badge
-                  variant="outline"
-                  className={`${STATUS_CONFIG[selectedLog.processing_status]?.color || 'bg-gray-500'} bg-opacity-20 border-0 text-white ml-2`}
+                <span
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium ${STATUS_CONFIG[selectedLog.processing_status]?.color || 'bg-gray-500'} bg-opacity-20 border-0 text-white ml-2`}
                 >
                   {STATUS_CONFIG[selectedLog.processing_status]?.label || selectedLog.processing_status}
-                </Badge>
+                </span>
               )}
             </DialogTitle>
+            <DialogDescription>
+              View raw log payload and metadata details
+            </DialogDescription>
           </DialogHeader>
 
           {selectedLog && (
