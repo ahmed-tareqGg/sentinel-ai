@@ -410,11 +410,11 @@ export default function Auth() {
             <Button
               type="button"
               variant="outline"
-              onClick={handleDemoLogin}
-              disabled={demoLoading || loading}
+              onClick={() => navigate('/demo-landing')}
+              disabled={loading}
               className="w-full border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
             >
-              {demoLoading ? 'Loading Demo...' : '🎯 Try Demo Mode (Read-Only)'}
+              🎯 Try Demo Mode (Read-Only)
             </Button>
             <p className="text-xs text-muted-foreground text-center mt-2">
               Explore all features without affecting real data
