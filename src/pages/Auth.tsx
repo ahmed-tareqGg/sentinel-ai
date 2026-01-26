@@ -1,9 +1,18 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Mail, Lock, User, Eye, EyeOff, Check, X, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -69,15 +78,36 @@ export default function Auth() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
+
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
+
+  const isRecoveryFlow = useMemo(() => {
+    const hash = location.hash || '';
+    // Recovery links typically look like: /auth#access_token=...&type=recovery
+    return hash.includes('type=recovery');
+  }, [location.hash]);
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (user) {
+    if (user && !isRecoveryFlow) {
       navigate('/dashboard');
     }
-  }, [user, navigate]);
+  }, [user, isRecoveryFlow, navigate]);
+
+  useEffect(() => {
+    // Convenience: prefill forgot email from the login email input
+    if (!forgotEmail && email) setForgotEmail(email);
+  }, [email, forgotEmail]);
 
   // Demo login handler
   const handleDemoLogin = async () => {
@@ -132,6 +162,10 @@ export default function Auth() {
   const strengthLabel = getStrengthLabel(passwordStrength);
   const strengthColor = getStrengthColor(passwordStrength);
 
+  const newPasswordStrength = useMemo(() => calculatePasswordStrength(newPassword), [newPassword]);
+  const newStrengthLabel = getStrengthLabel(newPasswordStrength);
+  const newStrengthColor = getStrengthColor(newPasswordStrength);
+
   // Password requirement checks
   const passwordChecks = useMemo(() => ({
     length: password.length >= 12,
@@ -141,6 +175,15 @@ export default function Auth() {
     special: /[^a-zA-Z0-9]/.test(password),
     notCommon: !COMMON_PASSWORDS.some(common => password.toLowerCase().includes(common)),
   }), [password]);
+
+  const newPasswordChecks = useMemo(() => ({
+    length: newPassword.length >= 12,
+    lowercase: /[a-z]/.test(newPassword),
+    uppercase: /[A-Z]/.test(newPassword),
+    number: /[0-9]/.test(newPassword),
+    special: /[^a-zA-Z0-9]/.test(newPassword),
+    notCommon: !COMMON_PASSWORDS.some(common => newPassword.toLowerCase().includes(common)),
+  }), [newPassword]);
 
   const validateInputs = (isSignup: boolean) => {
     try {
@@ -238,6 +281,73 @@ export default function Auth() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    setForgotLoading(true);
+    try {
+      emailSchema.parse(forgotEmail);
+
+      const redirectTo = `${window.location.origin}/auth`;
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+        redirectTo,
+      });
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      toast.success('Reset link sent. Check your email.');
+      setForgotOpen(false);
+    } catch (e) {
+      if (e instanceof z.ZodError) {
+        toast.error(e.errors[0].message);
+      } else {
+        toast.error('Failed to send reset email');
+      }
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (newPassword !== confirmNewPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+
+    // Enforce strong passwords for reset as well
+    try {
+      passwordSchema.parse(newPassword);
+      if (!newPasswordChecks.notCommon) {
+        toast.error('Password is too common. Choose a stronger password.');
+        return;
+      }
+    } catch (e) {
+      if (e instanceof z.ZodError) {
+        toast.error(e.errors[0].message);
+        return;
+      }
+    }
+
+    setResetLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success('Password updated successfully');
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Password update error:', error);
+      toast.error('Failed to update password');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background bg-grid flex flex-col items-center justify-center p-4">
       {/* Back to Home Button */}
@@ -263,16 +373,141 @@ export default function Auth() {
 
         {/* Auth Card */}
         <div className="rounded-2xl border border-border bg-card p-8 shadow-xl">
-          <div className="text-center mb-6">
-            <h2 className="text-xl font-semibold text-foreground">
-              {isLogin ? 'Welcome Back' : 'Create Account'}
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {isLogin ? 'Sign in to access your SOC dashboard' : 'Get started with SOCMind'}
-            </p>
-          </div>
+          {isRecoveryFlow ? (
+            <>
+              <div className="text-center mb-6">
+                <h2 className="text-xl font-semibold text-foreground">Set a New Password</h2>
+                <p className="text-sm text-muted-foreground mt-1">Choose a strong password to secure your account.</p>
+              </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleUpdatePassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="newPassword" className="text-sm font-medium text-foreground">
+                    New Password
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="newPassword"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="••••••••••••"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="pl-10 pr-10 bg-secondary/50 border-border"
+                      required
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+
+                  {newPassword.length > 0 && (
+                    <div className="space-y-2 mt-2">
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                          <div
+                            key={i}
+                            className={`h-1.5 flex-1 rounded-full transition-colors ${
+                              newPasswordStrength >= i ? newStrengthColor : 'bg-muted'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Password strength:{' '}
+                        <span className={newPasswordStrength >= 3 ? 'text-green-500' : 'text-orange-500'}>
+                          {newStrengthLabel}
+                        </span>
+                      </p>
+
+                      <div className="grid grid-cols-2 gap-1 text-xs">
+                        <div className={`flex items-center gap-1 ${newPasswordChecks.length ? 'text-green-500' : 'text-muted-foreground'}`}>
+                          {newPasswordChecks.length ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                          12+ characters
+                        </div>
+                        <div className={`flex items-center gap-1 ${newPasswordChecks.uppercase ? 'text-green-500' : 'text-muted-foreground'}`}>
+                          {newPasswordChecks.uppercase ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                          Uppercase letter
+                        </div>
+                        <div className={`flex items-center gap-1 ${newPasswordChecks.lowercase ? 'text-green-500' : 'text-muted-foreground'}`}>
+                          {newPasswordChecks.lowercase ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                          Lowercase letter
+                        </div>
+                        <div className={`flex items-center gap-1 ${newPasswordChecks.number ? 'text-green-500' : 'text-muted-foreground'}`}>
+                          {newPasswordChecks.number ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                          Number
+                        </div>
+                        <div className={`flex items-center gap-1 ${newPasswordChecks.special ? 'text-green-500' : 'text-muted-foreground'}`}>
+                          {newPasswordChecks.special ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                          Special character
+                        </div>
+                        <div className={`flex items-center gap-1 ${newPasswordChecks.notCommon ? 'text-green-500' : 'text-destructive'}`}>
+                          {newPasswordChecks.notCommon ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                          Not common
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="confirmNewPassword" className="text-sm font-medium text-foreground">
+                    Confirm New Password
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="confirmNewPassword"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="••••••••••••"
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      className="pl-10 pr-10 bg-secondary/50 border-border"
+                      required
+                      autoComplete="new-password"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={resetLoading}
+                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {resetLoading ? 'Updating...' : 'Update Password'}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setNewPassword('');
+                    setConfirmNewPassword('');
+                    navigate('/auth');
+                  }}
+                  className="w-full"
+                >
+                  Back to Sign In
+                </Button>
+              </form>
+            </>
+          ) : (
+            <>
+              <div className="text-center mb-6">
+                <h2 className="text-xl font-semibold text-foreground">
+                  {isLogin ? 'Welcome Back' : 'Create Account'}
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {isLogin ? 'Sign in to access your SOC dashboard' : 'Get started with SOCMind'}
+                </p>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
               <div className="space-y-2">
                 <Label htmlFor="fullName" className="text-sm font-medium text-foreground">
@@ -383,6 +618,50 @@ export default function Auth() {
               )}
             </div>
 
+            {isLogin && (
+              <div className="flex items-center justify-end">
+                <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+                  <DialogTrigger asChild>
+                    <button
+                      type="button"
+                      className="text-xs text-primary hover:underline font-medium"
+                      onClick={() => setForgotOpen(true)}
+                    >
+                      Forgot password?
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Reset your password</DialogTitle>
+                      <DialogDescription>
+                        Enter your email and we’ll send you a password reset link.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="forgotEmail">Email</Label>
+                      <Input
+                        id="forgotEmail"
+                        type="email"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        placeholder="you@company.com"
+                      />
+                    </div>
+
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setForgotOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="button" onClick={handleForgotPassword} disabled={forgotLoading}>
+                        {forgotLoading ? 'Sending...' : 'Send reset link'}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            )}
+
             <Button
               type="submit"
               disabled={loading}
@@ -420,6 +699,8 @@ export default function Auth() {
               Explore all features without affecting real data
             </p>
           </div>
+            </>
+          )}
         </div>
 
         <p className="text-center text-xs text-muted-foreground mt-6">
