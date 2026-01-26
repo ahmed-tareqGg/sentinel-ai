@@ -13,8 +13,8 @@ interface AgentRegistration {
   agent_version: string;
   ip_address: string;
   log_types: string[];
-  source_type?: string;  // firewall, edr, ndr, cloud
-  vendor?: string;       // fortinet, crowdstrike, etc.
+  source_type?: string;
+  vendor?: string;
 }
 
 interface AgentHeartbeat {
@@ -56,7 +56,21 @@ interface LogBatch {
   vendor?: string;
 }
 
-// Agent command queue (in-memory for simplicity, would use DB in production)
+interface CorrelationRule {
+  id: string;
+  name: string;
+  match_field: string;
+  match_operator: string;
+  match_value: string | null;
+  event_type_filter: string[] | null;
+  threshold_count: number;
+  time_window_minutes: number;
+  severity_override: number | null;
+  incident_title_template: string | null;
+  is_active: boolean;
+}
+
+// Agent command queue
 const agentCommands = new Map<string, string>();
 
 // Simulation mode data
@@ -98,17 +112,6 @@ const SIMULATED_LOGS = {
   ],
 };
 
-// Hash function for deduplication
-async function hashLog(log: any): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(
-    `${log.source_ip || log.srcIP || ''}:${log.event_id || log.eventType || ''}:${log.message || log.msg || ''}:${log.timestamp || ''}`
-  );
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
 async function verifyAgentKey(req: Request, supabase: any): Promise<{ valid: boolean; dataSourceId?: string; dataSourceName?: string; error?: string }> {
   const agentKey = req.headers.get('x-agent-key');
 
@@ -116,7 +119,6 @@ async function verifyAgentKey(req: Request, supabase: any): Promise<{ valid: boo
     return { valid: false, error: 'Missing X-Agent-Key header' };
   }
 
-  // Use the verify function
   const { data, error } = await supabase.rpc('verify_agent_api_key', { _api_key: agentKey });
 
   if (error) {
@@ -153,7 +155,6 @@ async function verifyUserAuth(req: Request): Promise<{ valid: boolean; userId?: 
     return { valid: false, error: 'Invalid token' };
   }
 
-  // Check role
   const { data: roleData } = await supabase
     .from('user_roles')
     .select('role')
@@ -168,74 +169,280 @@ async function verifyUserAuth(req: Request): Promise<{ valid: boolean; userId?: 
   return { valid: true, userId: user.id };
 }
 
-// Correlation: Check if similar logs exist within time window
-async function shouldCreateIncident(
-  supabase: any,
-  log: NormalizedLog,
-  dataSourceId: string
-): Promise<{ create: boolean; reason: string; correlatedCount: number }> {
-  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+// Extract field value from log for correlation matching
+function extractFieldValue(log: any, field: string): string | null {
+  const fieldMap: Record<string, string[]> = {
+    'src_ip': ['source_ip', 'srcIP', 'src_ip', 'host_ip', 'ip_address'],
+    'dst_ip': ['destination_ip', 'dstIP', 'dst_ip'],
+    'hostname': ['hostname', 'host', 'computer_name'],
+    'event_type': ['eventType', 'event_type', 'log_type', 'type'],
+    'user': ['user', 'username', 'account_name', 'user_name'],
+    'mitre_technique': ['mitre_technique', 'technique_id', 'mitre_id'],
+  };
 
-  // Check for existing similar raw logs (use received_at so "Live" works even if log.timestamp is old)
-  const { data: recentLogs, error } = await supabase
-    .from('raw_logs')
-    .select('id, received_at, parsed_message')
-    .eq('data_source_id', dataSourceId)
-    .eq('log_type', log.log_type)
-    .gte('received_at', tenMinutesAgo)
-    .order('received_at', { ascending: false })
-    .limit(10);
-
-  if (error) {
-    console.error('Correlation check failed:', error);
-    return { create: true, reason: 'Correlation check failed, creating incident', correlatedCount: 1 };
+  const possibleFields = fieldMap[field] || [field];
+  
+  for (const f of possibleFields) {
+    if (log[f] !== undefined && log[f] !== null) {
+      return String(log[f]);
+    }
   }
-
-  const similarLogs = recentLogs?.filter((l: any) => 
-    l.parsed_message?.includes(log.event_id || '') || 
-    l.parsed_message?.includes(log.source_ip || '')
-  ) || [];
-
-  // If >= 3 similar logs in 10 mins from same host, create incident
-  if (similarLogs.length >= 2) {
-    return { 
-      create: true, 
-      reason: `Correlated ${similarLogs.length + 1} similar events within 10 minutes`,
-      correlatedCount: similarLogs.length + 1
-    };
-  }
-
-  // High severity always creates incident
-  if (log.severity >= 4) {
-    return { create: true, reason: 'High severity log', correlatedCount: 1 };
-  }
-
-  // Low severity without correlation - just store as raw log
-  if (log.severity <= 2 && similarLogs.length < 2) {
-    return { create: false, reason: 'Low severity, no correlation pattern detected', correlatedCount: similarLogs.length + 1 };
-  }
-
-  return { create: true, reason: 'Standard processing', correlatedCount: 1 };
+  return null;
 }
 
-// Check for duplicate logs
-async function isDuplicate(supabase: any, logHash: string, dataSourceId: string): Promise<boolean> {
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  
-  const { data, error } = await supabase
-    .from('raw_logs')
-    .select('id')
-    .eq('data_source_id', dataSourceId)
-    .eq('mitre_technique', logHash) // Using mitre_technique temporarily to store hash
-    .gte('created_at', oneHourAgo)
-    .limit(1);
-
-  if (error) {
-    console.error('Duplicate check failed:', error);
-    return false;
+// Check if a log matches a correlation rule's conditions
+function matchesRule(log: any, rule: CorrelationRule): { matches: boolean; matchKey: string | null } {
+  // Check event type filter first
+  if (rule.event_type_filter && rule.event_type_filter.length > 0) {
+    const logEventType = extractFieldValue(log, 'event_type')?.toLowerCase() || '';
+    const matchesEventType = rule.event_type_filter.some(
+      (et) => logEventType.includes(et.toLowerCase().replace('_', ' ')) || 
+              logEventType.includes(et.toLowerCase())
+    );
+    if (!matchesEventType) {
+      return { matches: false, matchKey: null };
+    }
   }
 
-  return data && data.length > 0;
+  // Get the field value to match
+  const fieldValue = extractFieldValue(log, rule.match_field);
+  
+  if (fieldValue === null && rule.match_operator !== 'any') {
+    return { matches: false, matchKey: null };
+  }
+
+  let matches = false;
+  
+  switch (rule.match_operator) {
+    case 'any':
+      matches = true;
+      break;
+    case 'equals':
+      matches = fieldValue === rule.match_value;
+      break;
+    case 'contains':
+      matches = fieldValue?.includes(rule.match_value || '') || false;
+      break;
+    case 'starts_with':
+      matches = fieldValue?.startsWith(rule.match_value || '') || false;
+      break;
+    case 'regex':
+      try {
+        const regex = new RegExp(rule.match_value || '');
+        matches = regex.test(fieldValue || '');
+      } catch {
+        matches = false;
+      }
+      break;
+    default:
+      matches = false;
+  }
+
+  // The match key is used to group events (e.g., same src_ip)
+  const matchKey = fieldValue || 'any';
+
+  return { matches, matchKey };
+}
+
+// Generate incident title from template
+function generateIncidentTitle(template: string | null, log: any, rule: CorrelationRule, matchCount: number): string {
+  if (!template) {
+    return `[Correlation] ${rule.name}: ${matchCount} events detected`;
+  }
+
+  let title = template;
+  
+  // Replace {{field}} placeholders with actual values
+  const fieldPattern = /\{\{(\w+)\}\}/g;
+  title = title.replace(fieldPattern, (_, field) => {
+    return extractFieldValue(log, field) || 'N/A';
+  });
+  
+  // Add count if not in template
+  if (!title.includes(String(matchCount))) {
+    title = `${title} (${matchCount} events)`;
+  }
+
+  return title;
+}
+
+// Check correlation rules and create incidents if thresholds are met
+async function checkCorrelationRules(
+  supabase: any,
+  logs: any[],
+  dataSourceId: string,
+  dataSourceName: string
+): Promise<{ incidentsCreated: any[]; rulesTriggered: string[] }> {
+  const incidentsCreated: any[] = [];
+  const rulesTriggered: string[] = [];
+
+  // Fetch active correlation rules
+  const { data: rules, error: rulesError } = await supabase
+    .from('correlation_rules')
+    .select('*')
+    .eq('is_active', true);
+
+  if (rulesError || !rules || rules.length === 0) {
+    console.log('📊 No active correlation rules found');
+    return { incidentsCreated, rulesTriggered };
+  }
+
+  console.log(`📊 Checking ${logs.length} logs against ${rules.length} correlation rules`);
+
+  for (const rule of rules as CorrelationRule[]) {
+    const matchKeyGroups = new Map<string, any[]>();
+
+    // Group matching logs by their match key
+    for (const log of logs) {
+      const { matches, matchKey } = matchesRule(log, rule);
+      if (matches && matchKey) {
+        if (!matchKeyGroups.has(matchKey)) {
+          matchKeyGroups.set(matchKey, []);
+        }
+        matchKeyGroups.get(matchKey)!.push(log);
+      }
+    }
+
+    // For each group, check historical counts within time window
+    for (const [matchKey, matchingLogs] of matchKeyGroups) {
+      const windowStart = new Date(Date.now() - rule.time_window_minutes * 60 * 1000).toISOString();
+
+      // Check for existing matches in the time window
+      const { data: existingMatches, error: matchError } = await supabase
+        .from('correlation_rule_matches')
+        .select('id, match_count, matched_logs')
+        .eq('rule_id', rule.id)
+        .eq('match_key', matchKey)
+        .gte('triggered_at', windowStart)
+        .order('triggered_at', { ascending: false })
+        .limit(1);
+
+      if (matchError) {
+        console.error(`Correlation match check failed for rule ${rule.name}:`, matchError);
+        continue;
+      }
+
+      // Calculate total count (existing + new)
+      const existingCount = existingMatches?.[0]?.match_count || 0;
+      const newCount = matchingLogs.length;
+      const totalCount = existingCount + newCount;
+
+      console.log(`📊 Rule "${rule.name}" [${matchKey}]: ${existingCount} existing + ${newCount} new = ${totalCount} (threshold: ${rule.threshold_count})`);
+
+      // Store the match
+      const matchedLogIds = matchingLogs.map(l => l.raw_log_id || l.ingest_id).filter(Boolean);
+      
+      if (existingMatches && existingMatches.length > 0) {
+        // Update existing match record
+        const existingLogIds = existingMatches[0].matched_logs || [];
+        await supabase
+          .from('correlation_rule_matches')
+          .update({
+            match_count: totalCount,
+            matched_logs: [...existingLogIds, ...matchedLogIds].slice(-100), // Keep last 100
+          })
+          .eq('id', existingMatches[0].id);
+      } else if (newCount > 0) {
+        // Create new match record
+        await supabase
+          .from('correlation_rule_matches')
+          .insert({
+            rule_id: rule.id,
+            match_key: matchKey,
+            match_count: newCount,
+            matched_logs: matchedLogIds,
+          });
+      }
+
+      // Check if threshold is met
+      if (totalCount >= rule.threshold_count) {
+        console.log(`🚨 Correlation rule "${rule.name}" triggered! Creating incident...`);
+
+        // Generate incident number
+        const { data: maxIncident } = await supabase
+          .from('incidents')
+          .select('incident_number')
+          .order('created_at', { ascending: false })
+          .limit(1);
+        
+        const lastNum = maxIncident?.[0]?.incident_number 
+          ? parseInt(maxIncident[0].incident_number.replace('INC-', '')) 
+          : 0;
+        const incidentNumber = `INC-${String(lastNum + 1).padStart(4, '0')}`;
+
+        // Use the most recent matching log as reference
+        const refLog = matchingLogs[matchingLogs.length - 1];
+        const incidentTitle = generateIncidentTitle(
+          rule.incident_title_template,
+          refLog,
+          rule,
+          totalCount
+        );
+
+        // Create the incident
+        const { data: incident, error: incidentError } = await supabase
+          .from('incidents')
+          .insert({
+            incident_number: incidentNumber,
+            event_type: `correlation_${rule.match_field}`,
+            severity: rule.severity_override || 4,
+            status: 'open',
+            src_ip: extractFieldValue(refLog, 'src_ip'),
+            dst_ip: extractFieldValue(refLog, 'dst_ip'),
+            message: incidentTitle,
+            classification: 'Correlated Alert',
+            confidence: 85,
+            risk_level: rule.severity_override && rule.severity_override >= 4 ? 'High' : 'Medium',
+            mitre_tactic: 'Collection',
+            mitre_technique: 'Automated Collection',
+            recommended_actions: [
+              `Review ${totalCount} correlated events from ${matchKey}`,
+              `Check rule: ${rule.name}`,
+              `Time window: last ${rule.time_window_minutes} minutes`,
+            ],
+            ai_analysis: {
+              correlation_rule: rule.name,
+              match_field: rule.match_field,
+              match_key: matchKey,
+              event_count: totalCount,
+              time_window_minutes: rule.time_window_minutes,
+              source: dataSourceName,
+            },
+          })
+          .select()
+          .single();
+
+        if (incidentError) {
+          console.error(`Failed to create correlation incident:`, incidentError);
+          continue;
+        }
+
+        // Update the match record with incident ID
+        await supabase
+          .from('correlation_rule_matches')
+          .update({ incident_id: incident.id })
+          .eq('rule_id', rule.id)
+          .eq('match_key', matchKey)
+          .is('incident_id', null);
+
+        // Update rule stats
+        await supabase
+          .from('correlation_rules')
+          .update({
+            hits_count: (rule as any).hits_count ? (rule as any).hits_count + 1 : 1,
+            last_triggered_at: new Date().toISOString(),
+          })
+          .eq('id', rule.id);
+
+        incidentsCreated.push(incident);
+        rulesTriggered.push(rule.name);
+
+        console.log(`✅ Created correlation incident: ${incidentNumber} for rule "${rule.name}"`);
+      }
+    }
+  }
+
+  return { incidentsCreated, rulesTriggered };
 }
 
 serve(async (req) => {
@@ -251,7 +458,7 @@ serve(async (req) => {
   const action = url.pathname.split('/').pop();
 
   try {
-    // License validation endpoint (agent key required)
+    // License validation endpoint
     if (action === 'validate-license') {
       const keyCheck = await verifyAgentKey(req, supabase);
       if (!keyCheck.valid) {
@@ -267,12 +474,10 @@ serve(async (req) => {
       const body = await req.json();
       const payload = body.payload;
       
-      // Decode payload if obfuscated
       let licenseData;
       try {
         if (typeof payload === 'string') {
           const decoded = atob(payload);
-          // Decompress if needed (simple base64 for now)
           licenseData = JSON.parse(decoded);
         } else {
           licenseData = body;
@@ -294,7 +499,6 @@ serve(async (req) => {
         });
       }
 
-      // Validate license
       const { data: licenseResult, error: licenseError } = await supabase.rpc('validate_agent_license', {
         _license_key: licenseKey,
         _hardware_id: hardwareId || null,
@@ -329,7 +533,7 @@ serve(async (req) => {
       });
     }
 
-    // Actions that require user authentication (management)
+    // Actions that require user authentication
     if (['register', 'generate-key', 'list', 'delete', 'simulate', 'control'].includes(action || '')) {
       const auth = await verifyUserAuth(req);
       if (!auth.valid) {
@@ -342,7 +546,6 @@ serve(async (req) => {
       if (action === 'register') {
         const body = await req.json() as AgentRegistration;
 
-        // Determine type based on source_type
         let agentType = body.os_type === 'windows' ? 'windows_agent' : 'linux_agent';
         if (body.source_type) {
           switch (body.source_type.toLowerCase()) {
@@ -354,7 +557,6 @@ serve(async (req) => {
           }
         }
 
-        // Create data source
         const { data: dataSource, error } = await supabase
           .from('data_sources')
           .insert({
@@ -375,7 +577,6 @@ serve(async (req) => {
 
         if (error) throw error;
 
-        // Generate API key
         const { data: keyData, error: keyError } = await supabase.rpc('generate_agent_api_key', {
           _data_source_id: dataSource.id,
           _name: `Initial key for ${body.hostname}`,
@@ -391,7 +592,7 @@ serve(async (req) => {
           data_source_id: dataSource.id,
           api_key: keyData[0].api_key,
           key_id: keyData[0].key_id,
-          message: 'Agent registered successfully. Store the API key securely - it will not be shown again.',
+          message: 'Agent registered successfully.',
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -412,7 +613,7 @@ serve(async (req) => {
           success: true,
           api_key: keyData[0].api_key,
           key_id: keyData[0].key_id,
-          message: 'API key generated. Store securely - it will not be shown again.',
+          message: 'API key generated.',
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -446,14 +647,11 @@ serve(async (req) => {
         });
       }
 
-      // Agent control endpoint (start/pause/stop)
       if (action === 'control') {
         const body = await req.json() as AgentControl;
         
-        // Store command for agent to pick up on next heartbeat
         agentCommands.set(body.agent_id, body.action);
         
-        // Update data source status based on action
         let newStatus = 'active';
         switch (body.action) {
           case 'pause': newStatus = 'paused'; break;
@@ -463,7 +661,6 @@ serve(async (req) => {
           case 'resume': newStatus = 'active'; break;
         }
 
-        // Store command in database config for persistent command delivery
         const { error: updateError } = await supabase
           .from('data_sources')
           .update({ 
@@ -475,12 +672,9 @@ serve(async (req) => {
           })
           .eq('id', body.agent_id);
 
-        if (updateError) {
-          console.error('Failed to update agent status:', updateError);
-          throw updateError;
-        }
+        if (updateError) throw updateError;
 
-        console.log(`🎮 Agent control: ${body.action} for ${body.agent_id} - New status: ${newStatus}`);
+        console.log(`🎮 Agent control: ${body.action} for ${body.agent_id}`);
 
         return new Response(JSON.stringify({
           success: true,
@@ -494,7 +688,6 @@ serve(async (req) => {
       if (action === 'simulate') {
         const { data_source_id, log_type, count = 5 } = await req.json();
 
-        // Get data source
         const { data: dataSource, error: dsError } = await supabase
           .from('data_sources')
           .select('*')
@@ -505,10 +698,9 @@ serve(async (req) => {
           throw new Error('Data source not found');
         }
 
-        // Support all log types including new ones
         const logPool = SIMULATED_LOGS[log_type as keyof typeof SIMULATED_LOGS] || SIMULATED_LOGS.security;
-        const simulatedLogs = [];
-        const rawLogsToInsert = [];
+        const simulatedLogs: any[] = [];
+        const rawLogsToInsert: any[] = [];
 
         for (let i = 0; i < Math.min(count, 10); i++) {
           const baseLog = logPool[Math.floor(Math.random() * logPool.length)];
@@ -525,7 +717,6 @@ serve(async (req) => {
             time: timestamp,
           });
 
-          // Prepare raw log entry
           rawLogsToInsert.push({
             data_source_id: data_source_id,
             timestamp: timestamp,
@@ -539,7 +730,7 @@ serve(async (req) => {
           });
         }
 
-        // Insert raw logs first
+        // Insert raw logs
         if (rawLogsToInsert.length > 0) {
           const { data: insertedLogs, error: rawError } = await supabase
             .from('raw_logs')
@@ -553,7 +744,15 @@ serve(async (req) => {
           }
         }
 
-        // Send to ingest-log for analysis
+        // Check correlation rules for simulated logs
+        const { incidentsCreated: correlationIncidents, rulesTriggered } = await checkCorrelationRules(
+          supabase,
+          simulatedLogs.map((l, i) => ({ ...l, raw_log_id: rawLogsToInsert[i]?.id })),
+          data_source_id,
+          dataSource.name
+        );
+
+        // Send to ingest-log for AI analysis
         const ingestResponse = await fetch(`${supabaseUrl}/functions/v1/ingest-log`, {
           method: 'POST',
           headers: {
@@ -572,17 +771,6 @@ serve(async (req) => {
 
         const ingestResult = await ingestResponse.json();
 
-        // Update raw logs status
-        if (ingestResult.incidents?.length > 0) {
-          await supabase
-            .from('raw_logs')
-            .update({ processing_status: 'incident_created', analyzed_at: new Date().toISOString() })
-            .eq('data_source_id', data_source_id)
-            .eq('processing_status', 'pending')
-            .order('created_at', { ascending: false })
-            .limit(rawLogsToInsert.length);
-        }
-
         // Update data source stats
         await supabase
           .from('data_sources')
@@ -599,7 +787,8 @@ serve(async (req) => {
         return new Response(JSON.stringify({
           success: true,
           logs_sent: simulatedLogs.length,
-          incidents: ingestResult.incidents,
+          incidents: [...(ingestResult.incidents || []), ...correlationIncidents],
+          correlation_rules_triggered: rulesTriggered,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -619,25 +808,21 @@ serve(async (req) => {
       if (action === 'heartbeat') {
         const body = await req.json() as any;
 
-        // Normalize status values coming from different agent versions
         const rawStatus = (body.status || 'active').toString().toLowerCase();
         const normalizedStatus = rawStatus === 'online' ? 'active' : rawStatus;
 
-        // Extract public IP from headers (priority: CF → X-Forwarded-For → agent-provided)
         const cfIP = req.headers.get('cf-connecting-ip');
         const forwardedFor = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
         const xRealIP = req.headers.get('x-real-ip');
         const agentReportedIp = body.ip_address || body.ip || body.host_ip;
         const publicIP = cfIP || xRealIP || forwardedFor || agentReportedIp || 'Unknown';
 
-        // Fetch current config once so we don't overwrite vendor/etc
         const { data: dsRow } = await supabase
           .from('data_sources')
           .select('config')
           .eq('id', auth.dataSourceId)
           .single();
 
-        // Check for pending commands from database
         const pendingCommand = dsRow?.config?.last_command || agentCommands.get(auth.dataSourceId!);
         if (pendingCommand) {
           agentCommands.delete(auth.dataSourceId!);
@@ -649,7 +834,6 @@ serve(async (req) => {
           ...(body.error_message ? { last_error: body.error_message } : {}),
         };
 
-        // Update data source with full heartbeat info including public IP
         await supabase
           .from('data_sources')
           .update({
@@ -663,12 +847,12 @@ serve(async (req) => {
           })
           .eq('id', auth.dataSourceId);
 
-        console.log(`💓 Heartbeat from ${auth.dataSourceName}: ${body.status} (Public IP: ${publicIP})`);
+        console.log(`💓 Heartbeat from ${auth.dataSourceName}: ${body.status} (IP: ${publicIP})`);
 
         return new Response(JSON.stringify({
           success: true,
           message: 'Heartbeat recorded',
-          command: pendingCommand || null, // Send any pending command back to agent
+          command: pendingCommand || null,
           public_ip: publicIP,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -678,14 +862,9 @@ serve(async (req) => {
       if (action === 'ingest') {
         const body = await req.json() as LogBatch;
         
-        // CRITICAL FIX: Separate ingestion from incident creation.
-        // - ALWAYS store every received log in raw_logs (no filtering, no dedup skipping).
-        // - AI analysis + incident creation happens AFTER storage.
-
         const rawLogsToInsert: any[] = [];
         const transformedLogs: any[] = [];
 
-        // Extract public IP once for this request
         const cfIP = req.headers.get('cf-connecting-ip');
         const forwardedFor = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
         const xRealIP = req.headers.get('x-real-ip');
@@ -726,23 +905,15 @@ serve(async (req) => {
             processing_status: 'pending',
           });
 
-          // Send ALL logs for analysis AFTER storage. We will attach raw_log_id after insert.
           transformedLogs.push({
             raw_log_id: null,
             ingest_id: ingestId,
             data_source_id: auth.dataSourceId,
             hostname,
             log_type: logType,
-
             eventType: (log as any).eventType || (log as any).event_type || logType || 'Unknown',
             severity: log.severity,
-            srcIP:
-              log.source_ip ||
-              (log as any).srcIP ||
-              (log as any).src_ip ||
-              (log as any).host_ip ||
-              hostname ||
-              auth.dataSourceName,
+            srcIP: log.source_ip || (log as any).srcIP || (log as any).src_ip || hostname || auth.dataSourceName,
             dstIP: log.destination_ip || (log as any).dstIP || (log as any).dst_ip || 'Unknown',
             msg: log.message || (log as any).msg || '',
             fileHash: log.file_hash,
@@ -753,7 +924,7 @@ serve(async (req) => {
           });
         }
 
-        // Insert raw logs (ALL logs)
+        // Insert raw logs
         let insertedIds: string[] = [];
         const idByIngestId = new Map<string, string>();
 
@@ -776,7 +947,7 @@ serve(async (req) => {
             if (ingestId) idByIngestId.set(ingestId, r.id);
           }
 
-          console.log(`📝 Stored ${rows.length} raw logs (all pending)`);
+          console.log(`📝 Stored ${rows.length} raw logs`);
         }
 
         // Attach raw_log_id to the analysis payload
@@ -784,7 +955,15 @@ serve(async (req) => {
           t.raw_log_id = idByIngestId.get(t.ingest_id) || null;
         }
 
-        // Analyze AFTER storage (non-blocking from an ingestion standpoint: failure won't hide logs)
+        // 🔥 CHECK CORRELATION RULES FIRST
+        const { incidentsCreated: correlationIncidents, rulesTriggered } = await checkCorrelationRules(
+          supabase,
+          transformedLogs,
+          auth.dataSourceId!,
+          auth.dataSourceName!
+        );
+
+        // Analyze via ingest-log
         let analyzedCount = 0;
         let incidentsCreated: any[] = [];
         let incidentsCreatedCount = 0;
@@ -822,6 +1001,10 @@ serve(async (req) => {
           }
         }
 
+        // Combine correlation incidents with AI incidents
+        const allIncidents = [...correlationIncidents, ...incidentsCreated];
+        const totalIncidentsCreated = incidentsCreatedCount + correlationIncidents.length;
+
         // Update data source stats
         const { data: currentSource } = await supabase
           .from('data_sources')
@@ -850,21 +1033,24 @@ serve(async (req) => {
               hour: currentHour,
               log_type: log.log_type,
               count: 1,
-              incidents_created: incidentsCreated.length > 0 ? 1 : 0,
+              incidents_created: allIncidents.length > 0 ? 1 : 0,
             }, {
               onConflict: 'data_source_id,date,hour,log_type',
             });
         }
+
+        console.log(`📊 Correlation: ${rulesTriggered.length} rules triggered, ${correlationIncidents.length} incidents created`);
 
         return new Response(JSON.stringify({
           success: true,
           logs_received: body.logs.length,
           logs_ingested: rawLogsToInsert.length,
           logs_analyzed: analyzedCount,
-          incidents_created: incidentsCreatedCount,
+          incidents_created: totalIncidentsCreated,
           incidents_skipped: incidentsSkippedCount,
-          incidents: incidentsCreated,
-          message: `Successfully sent ${body.logs.length} logs (Ingested: ${rawLogsToInsert.length}, Analyzed: ${analyzedCount}, Incidents: ${incidentsCreatedCount})`,
+          incidents: allIncidents,
+          correlation_rules_triggered: rulesTriggered,
+          message: `Processed ${body.logs.length} logs (Incidents: ${totalIncidentsCreated}, Correlation: ${correlationIncidents.length})`,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
