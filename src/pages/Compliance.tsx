@@ -25,13 +25,18 @@ import {
   AlertTriangle,
   Server,
   Eye,
-  Filter
+  Filter,
+  Target
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useComplianceData, type ComplianceControl, type ComplianceEvidence } from '@/hooks/useComplianceData';
+import { useGRCData } from '@/hooks/useGRCData';
 import { ControlDetailsDialog } from '@/components/compliance/ControlDetailsDialog';
+import { RiskRegisterTab } from '@/components/compliance/RiskRegisterTab';
+import { GapsTab } from '@/components/compliance/GapsTab';
+import { GRCAuditTrailTab } from '@/components/compliance/GRCAuditTrailTab';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts';
 
 const ACTOR_ICONS: Record<string, typeof User> = {
@@ -91,6 +96,23 @@ export default function Compliance() {
     addEvidence,
     deleteEvidence,
   } = useComplianceData();
+
+  const {
+    risks,
+    gaps,
+    auditTrail: grcAuditTrail,
+    riskStats,
+    gapStats,
+    riskByCategory,
+    loading: grcLoading,
+    refetch: refetchGRC,
+    addRisk,
+    updateRisk,
+    deleteRisk,
+    updateGap,
+    closeGap,
+    identifyGaps,
+  } = useGRCData();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterAction, setFilterAction] = useState<string>('all');
@@ -213,12 +235,15 @@ export default function Compliance() {
   ].filter(d => d.value > 0);
 
   return (
-    <AppLayout title="Compliance & Audit" subtitle="SOC2 / ISO 27001 / GDPR - NIST Framework Compliance Management">
-      <Tabs defaultValue="controls" className="space-y-6">
-        <TabsList>
+    <AppLayout title="GRC Hub" subtitle="Governance, Risk & Compliance - ISO 27001 / SOC2 / GDPR Framework">
+      <Tabs defaultValue="dashboard" className="space-y-6">
+        <TabsList className="flex-wrap">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="controls">Controls ({controls.length})</TabsTrigger>
-          <TabsTrigger value="audit-trail">Audit Trail</TabsTrigger>
+          <TabsTrigger value="risks">Risk Register ({risks.length})</TabsTrigger>
+          <TabsTrigger value="gaps">Gaps ({gaps.length})</TabsTrigger>
+          <TabsTrigger value="audit-trail">Compliance Audit</TabsTrigger>
+          <TabsTrigger value="grc-audit">GRC Audit Trail</TabsTrigger>
         </TabsList>
 
         {/* Dashboard Tab */}
@@ -915,6 +940,39 @@ export default function Compliance() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Risk Register Tab */}
+        <TabsContent value="risks">
+          <RiskRegisterTab
+            risks={risks}
+            riskStats={riskStats}
+            riskByCategory={riskByCategory}
+            onAddRisk={addRisk}
+            onUpdateRisk={updateRisk}
+            onDeleteRisk={deleteRisk}
+            loading={grcLoading}
+          />
+        </TabsContent>
+
+        {/* Gaps Tab */}
+        <TabsContent value="gaps">
+          <GapsTab
+            gaps={gaps}
+            gapStats={gapStats}
+            onUpdateGap={updateGap}
+            onCloseGap={closeGap}
+            onIdentifyGaps={identifyGaps}
+            loading={grcLoading}
+          />
+        </TabsContent>
+
+        {/* GRC Audit Trail Tab */}
+        <TabsContent value="grc-audit">
+          <GRCAuditTrailTab
+            auditTrail={grcAuditTrail}
+            loading={grcLoading}
+          />
         </TabsContent>
       </Tabs>
 

@@ -318,16 +318,25 @@ export type Database = {
           comments: string | null
           control_category: string | null
           control_code: string
+          control_status: Database["public"]["Enums"]["control_status"] | null
           created_at: string | null
           description: string | null
           evidence_reference: string | null
+          gap_description: string | null
+          gap_identified: boolean | null
           id: string
           implementation_description: string | null
           implemented: boolean | null
           justification: string | null
           last_review: string | null
+          next_review_date: string | null
           owner: string | null
+          owner_user_id: string | null
+          priority: string | null
+          remediation_due_date: string | null
+          remediation_plan: string | null
           risk_reference: string | null
+          sla_days: number | null
           standard: string
           status: string | null
           title: string
@@ -339,16 +348,25 @@ export type Database = {
           comments?: string | null
           control_category?: string | null
           control_code: string
+          control_status?: Database["public"]["Enums"]["control_status"] | null
           created_at?: string | null
           description?: string | null
           evidence_reference?: string | null
+          gap_description?: string | null
+          gap_identified?: boolean | null
           id?: string
           implementation_description?: string | null
           implemented?: boolean | null
           justification?: string | null
           last_review?: string | null
+          next_review_date?: string | null
           owner?: string | null
+          owner_user_id?: string | null
+          priority?: string | null
+          remediation_due_date?: string | null
+          remediation_plan?: string | null
           risk_reference?: string | null
+          sla_days?: number | null
           standard: string
           status?: string | null
           title: string
@@ -360,16 +378,25 @@ export type Database = {
           comments?: string | null
           control_category?: string | null
           control_code?: string
+          control_status?: Database["public"]["Enums"]["control_status"] | null
           created_at?: string | null
           description?: string | null
           evidence_reference?: string | null
+          gap_description?: string | null
+          gap_identified?: boolean | null
           id?: string
           implementation_description?: string | null
           implemented?: boolean | null
           justification?: string | null
           last_review?: string | null
+          next_review_date?: string | null
           owner?: string | null
+          owner_user_id?: string | null
+          priority?: string | null
+          remediation_due_date?: string | null
+          remediation_plan?: string | null
           risk_reference?: string | null
+          sla_days?: number | null
           standard?: string
           status?: string | null
           title?: string
@@ -482,6 +509,106 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "control_evidence_control_id_fkey"
+            columns: ["control_id"]
+            isOneToOne: false
+            referencedRelation: "compliance_controls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      control_gaps: {
+        Row: {
+          closed_at: string | null
+          closed_by: string | null
+          control_id: string | null
+          gap_description: string | null
+          gap_severity: string | null
+          gap_status: string | null
+          id: string
+          identified_at: string | null
+          identified_by: string | null
+          remediation_owner: string | null
+          remediation_plan: string | null
+          target_date: string | null
+        }
+        Insert: {
+          closed_at?: string | null
+          closed_by?: string | null
+          control_id?: string | null
+          gap_description?: string | null
+          gap_severity?: string | null
+          gap_status?: string | null
+          id?: string
+          identified_at?: string | null
+          identified_by?: string | null
+          remediation_owner?: string | null
+          remediation_plan?: string | null
+          target_date?: string | null
+        }
+        Update: {
+          closed_at?: string | null
+          closed_by?: string | null
+          control_id?: string | null
+          gap_description?: string | null
+          gap_severity?: string | null
+          gap_status?: string | null
+          id?: string
+          identified_at?: string | null
+          identified_by?: string | null
+          remediation_owner?: string | null
+          remediation_plan?: string | null
+          target_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "control_gaps_control_id_fkey"
+            columns: ["control_id"]
+            isOneToOne: true
+            referencedRelation: "compliance_controls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      control_mapping_rules: {
+        Row: {
+          control_id: string | null
+          created_at: string | null
+          created_by: string | null
+          evidence_type: string | null
+          id: string
+          is_active: boolean | null
+          match_field: string
+          match_operator: string | null
+          match_value: string
+          source_type: string
+        }
+        Insert: {
+          control_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          evidence_type?: string | null
+          id?: string
+          is_active?: boolean | null
+          match_field: string
+          match_operator?: string | null
+          match_value: string
+          source_type: string
+        }
+        Update: {
+          control_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          evidence_type?: string | null
+          id?: string
+          is_active?: boolean | null
+          match_field?: string
+          match_operator?: string | null
+          match_value?: string
+          source_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "control_mapping_rules_control_id_fkey"
             columns: ["control_id"]
             isOneToOne: false
             referencedRelation: "compliance_controls"
@@ -689,6 +816,54 @@ export type Database = {
           status?: string
           type?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      grc_audit_trail: {
+        Row: {
+          action: string
+          actor_email: string | null
+          actor_id: string | null
+          change_summary: string | null
+          entity_id: string | null
+          entity_name: string | null
+          entity_type: string
+          id: string
+          ip_address: string | null
+          new_value: Json | null
+          old_value: Json | null
+          timestamp: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          actor_email?: string | null
+          actor_id?: string | null
+          change_summary?: string | null
+          entity_id?: string | null
+          entity_name?: string | null
+          entity_type: string
+          id?: string
+          ip_address?: string | null
+          new_value?: Json | null
+          old_value?: Json | null
+          timestamp?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          actor_email?: string | null
+          actor_id?: string | null
+          change_summary?: string | null
+          entity_id?: string | null
+          entity_name?: string | null
+          entity_type?: string
+          id?: string
+          ip_address?: string | null
+          new_value?: Json | null
+          old_value?: Json | null
+          timestamp?: string | null
+          user_agent?: string | null
         }
         Relationships: []
       }
@@ -1292,6 +1467,86 @@ export type Database = {
           },
         ]
       }
+      risk_register: {
+        Row: {
+          control_id: string | null
+          created_at: string | null
+          created_by: string | null
+          id: string
+          impact: Database["public"]["Enums"]["risk_impact"] | null
+          inherent_risk_score: number | null
+          likelihood: Database["public"]["Enums"]["risk_likelihood"] | null
+          mitigation_status: string | null
+          mitigation_strategy: string | null
+          residual_impact: Database["public"]["Enums"]["risk_impact"] | null
+          residual_likelihood:
+            | Database["public"]["Enums"]["risk_likelihood"]
+            | null
+          residual_risk_score: number | null
+          risk_category: string | null
+          risk_description: string | null
+          risk_id: string
+          risk_owner: string | null
+          risk_title: string
+          treatment_option: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          control_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          impact?: Database["public"]["Enums"]["risk_impact"] | null
+          inherent_risk_score?: number | null
+          likelihood?: Database["public"]["Enums"]["risk_likelihood"] | null
+          mitigation_status?: string | null
+          mitigation_strategy?: string | null
+          residual_impact?: Database["public"]["Enums"]["risk_impact"] | null
+          residual_likelihood?:
+            | Database["public"]["Enums"]["risk_likelihood"]
+            | null
+          residual_risk_score?: number | null
+          risk_category?: string | null
+          risk_description?: string | null
+          risk_id: string
+          risk_owner?: string | null
+          risk_title: string
+          treatment_option?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          control_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          impact?: Database["public"]["Enums"]["risk_impact"] | null
+          inherent_risk_score?: number | null
+          likelihood?: Database["public"]["Enums"]["risk_likelihood"] | null
+          mitigation_status?: string | null
+          mitigation_strategy?: string | null
+          residual_impact?: Database["public"]["Enums"]["risk_impact"] | null
+          residual_likelihood?:
+            | Database["public"]["Enums"]["risk_likelihood"]
+            | null
+          residual_risk_score?: number | null
+          risk_category?: string | null
+          risk_description?: string | null
+          risk_id?: string
+          risk_owner?: string | null
+          risk_title?: string
+          treatment_option?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "risk_register_control_id_fkey"
+            columns: ["control_id"]
+            isOneToOne: false
+            referencedRelation: "compliance_controls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       role_permissions: {
         Row: {
           created_at: string | null
@@ -1477,6 +1732,19 @@ export type Database = {
         }
         Returns: undefined
       }
+      calculate_control_coverage: {
+        Args: { _standard?: string }
+        Returns: {
+          applicable_controls: number
+          coverage_percentage: number
+          gap_count: number
+          implemented_controls: number
+          not_implemented: number
+          partially_implemented: number
+          planned_controls: number
+          total_controls: number
+        }[]
+      }
       generate_agent_api_key: {
         Args: { _data_source_id: string; _expires_days?: number; _name: string }
         Returns: {
@@ -1528,7 +1796,20 @@ export type Database = {
         }
         Returns: boolean
       }
+      identify_control_gaps: { Args: never; Returns: number }
       is_demo_user: { Args: { _user_id: string }; Returns: boolean }
+      log_grc_audit: {
+        Args: {
+          _action: string
+          _change_summary?: string
+          _entity_id: string
+          _entity_name?: string
+          _entity_type: string
+          _new_value?: Json
+          _old_value?: Json
+        }
+        Returns: string
+      }
       reject_user_access: { Args: { _target_user: string }; Returns: undefined }
       set_user_role: {
         Args: {
@@ -1572,6 +1853,23 @@ export type Database = {
         | "grc_engineer"
         | "ciso"
         | "demo_user"
+      control_status:
+        | "not_implemented"
+        | "planned"
+        | "partially_implemented"
+        | "fully_implemented"
+      risk_impact:
+        | "negligible"
+        | "minor"
+        | "moderate"
+        | "major"
+        | "catastrophic"
+      risk_likelihood:
+        | "rare"
+        | "unlikely"
+        | "possible"
+        | "likely"
+        | "almost_certain"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1710,6 +2008,20 @@ export const Constants = {
         "grc_engineer",
         "ciso",
         "demo_user",
+      ],
+      control_status: [
+        "not_implemented",
+        "planned",
+        "partially_implemented",
+        "fully_implemented",
+      ],
+      risk_impact: ["negligible", "minor", "moderate", "major", "catastrophic"],
+      risk_likelihood: [
+        "rare",
+        "unlikely",
+        "possible",
+        "likely",
+        "almost_certain",
       ],
     },
   },
