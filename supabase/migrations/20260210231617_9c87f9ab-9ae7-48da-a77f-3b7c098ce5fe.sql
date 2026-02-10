@@ -1,0 +1,2 @@
+ALTER TABLE public.incidents DROP CONSTRAINT incidents_status_check;
+ALTER TABLE public.incidents ADD CONSTRAINT incidents_status_check CHECK (status = ANY (ARRAY['Open'::text, 'Assigned'::text, 'In Progress'::text, 'Escalated'::text, 'Resolved'::text, 'Closed'::text]));
