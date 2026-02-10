@@ -64,14 +64,25 @@ export default function IncidentDetail() {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [closeReason, setCloseReason] = useState('');
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
 
   useEffect(() => {
     if (id) {
       fetchIncident();
       fetchTimeline();
       checkForJiraTicket();
+      fetchPendingApprovals();
     }
   }, [id]);
+
+  const fetchPendingApprovals = async () => {
+    const { data } = await supabase
+      .from('approval_requests')
+      .select('*')
+      .eq('incident_id', id)
+      .eq('status', 'pending');
+    setPendingApprovals(data || []);
+  };
 
   const checkForJiraTicket = async () => {
     const { data } = await supabase
@@ -296,29 +307,68 @@ export default function IncidentDetail() {
     }
   };
 
+  // High-risk actions that require approval
+  const APPROVAL_REQUIRED_ACTIONS = ['blockip', 'isolatehost', 'disableuseraccount', 'killprocess'];
+
   const handleRecommendedAction = async (action: string) => {
     if (!incident) return;
-    setExecutingAction(action);
-
     const actionKey = action.toLowerCase().replace(/\s+/g, '');
 
+    // Check if this action requires approval
+    if (APPROVAL_REQUIRED_ACTIONS.includes(actionKey)) {
+      setExecutingAction(action);
+      try {
+        const actionType = actionKey === 'blockip' ? 'block_ip'
+          : actionKey === 'isolatehost' ? 'isolate_host'
+          : actionKey === 'disableuseraccount' ? 'disable_user'
+          : actionKey === 'killprocess' ? 'kill_process'
+          : actionKey;
+
+        const { error } = await supabase.from('approval_requests').insert({
+          incident_id: incident.id,
+          action_type: actionType,
+          action_params: {
+            target: incident.src_ip || 'Unknown',
+            risk_level: incident.risk_level || 'high',
+            ai_confidence: incident.confidence || null,
+            ai_recommendation: incident.confidence && incident.confidence >= 80 ? 'APPROVE' : 'REVIEW',
+            blast_radius: incident.severity >= 4 ? 'High — may affect multiple systems' : 'Low — isolated target',
+          },
+          status: 'pending',
+          requested_by: profile?.email || 'analyst',
+          sla_deadline: new Date(Date.now() + 30 * 60000).toISOString(),
+        });
+
+        if (error) throw error;
+
+        await supabase.from('incident_timeline').insert({
+          incident_id: incident.id,
+          stage: `Approval Requested: ${action}`,
+          details: `Action requires manager approval before execution`,
+        });
+
+        toast.info(`⏳ ${action} requires approval. Request sent to SOC Manager.`);
+        fetchTimeline();
+        fetchPendingApprovals();
+      } catch (error) {
+        console.error('Approval request failed:', error);
+        toast.error('Failed to create approval request');
+      } finally {
+        setExecutingAction(null);
+      }
+      return;
+    }
+
+    // Non-approval actions execute directly
+    setExecutingAction(action);
     try {
       switch (actionKey) {
-        case 'isolatehost':
-          await soarActions.isolateHost(incident.id, incident.src_ip || 'Unknown');
-          break;
-        case 'blockip':
-          await soarActions.blockIp(incident.id, incident.src_ip || 'Unknown');
-          break;
         case 'resetcredentials':
         case 'forcepasswordreset':
           await soarActions.resetCredentials(incident.id);
           break;
         case 'forensicanalysis':
           await soarActions.forensicAnalysis(incident.id);
-          break;
-        case 'disableuseraccount':
-          await soarActions.disableUser(incident.id);
           break;
         case 'geo-blockip':
         case 'geoblockip':
@@ -795,6 +845,36 @@ export default function IncidentDetail() {
         </TabsContent>
 
         <TabsContent value="actions" className="space-y-4">
+          {/* Pending Approvals for this Incident */}
+          {pendingApprovals.length > 0 && (
+            <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-5">
+              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                <Clock className="h-4 w-4 text-yellow-500" />
+                Pending Approvals
+                <Badge className="bg-yellow-500/20 text-yellow-500 text-[10px]">
+                  {pendingApprovals.length}
+                </Badge>
+              </h3>
+              <div className="space-y-2">
+                {pendingApprovals.map((apr: any) => (
+                  <div key={apr.id} className="flex items-center justify-between p-3 rounded-lg border border-yellow-500/20 bg-card">
+                    <div className="text-sm">
+                      <span className="font-medium text-foreground">
+                        {apr.action_type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                      </span>
+                      <span className="text-xs text-muted-foreground ml-2">
+                        ⏳ Waiting for approval
+                      </span>
+                    </div>
+                    <Badge variant="outline" className="border-yellow-500/30 text-yellow-500 text-[10px]">
+                      Pending
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="rounded-xl border border-border bg-card p-5">
             <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
               <Shield className="h-4 w-4 text-primary" />
@@ -802,28 +882,34 @@ export default function IncidentDetail() {
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { key: 'blockip', label: '🚫 Block IP', icon: 'Block IP' },
-                { key: 'isolatehost', label: '🔒 Isolate Host', icon: 'Isolate Host' },
-                { key: 'disableuseraccount', label: '🛑 Disable User', icon: 'Disable User Account' },
-                { key: 'resetcredentials', label: '🔑 Reset Credentials', icon: 'Reset Credentials' },
-                { key: 'forensicanalysis', label: '🔬 Forensic Analysis', icon: 'Forensic Analysis' },
-                { key: 'networkforensics', label: '📡 Network Forensics', icon: 'Network Forensics' },
-                { key: 'geoblockip', label: '🌍 Geo-Block IP', icon: 'Geo-Block IP' },
-                { key: 'createticket', label: '📤 Create Ticket', icon: 'Create Ticket' },
+                { key: 'blockip', label: '🚫 Block IP', icon: 'Block IP', needsApproval: true },
+                { key: 'isolatehost', label: '🔒 Isolate Host', icon: 'Isolate Host', needsApproval: true },
+                { key: 'disableuseraccount', label: '🛑 Disable User', icon: 'Disable User Account', needsApproval: true },
+                { key: 'resetcredentials', label: '🔑 Reset Credentials', icon: 'Reset Credentials', needsApproval: false },
+                { key: 'forensicanalysis', label: '🔬 Forensic Analysis', icon: 'Forensic Analysis', needsApproval: false },
+                { key: 'networkforensics', label: '📡 Network Forensics', icon: 'Network Forensics', needsApproval: false },
+                { key: 'geoblockip', label: '🌍 Geo-Block IP', icon: 'Geo-Block IP', needsApproval: false },
+                { key: 'createticket', label: '📤 Create Ticket', icon: 'Create Ticket', needsApproval: false },
               ].map((action) => (
-                <Button
-                  key={action.key}
-                  variant="outline"
-                  size="sm"
-                  disabled={!canModifyData || executingAction === action.icon}
-                  onClick={() => handleRecommendedAction(action.icon)}
-                  className="justify-start"
-                >
-                  {executingAction === action.icon ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : null}
-                  {action.label}
-                </Button>
+                <div key={action.key} className="relative">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!canModifyData || executingAction === action.icon}
+                    onClick={() => handleRecommendedAction(action.icon)}
+                    className={cn("justify-start w-full", action.needsApproval && "border-warning/20")}
+                  >
+                    {executingAction === action.icon ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : null}
+                    {action.label}
+                  </Button>
+                  {action.needsApproval && (
+                    <span className="absolute -top-1.5 -right-1.5 text-[9px] bg-warning text-warning-foreground rounded px-1 font-medium">
+                      APPROVAL
+                    </span>
+                  )}
+                </div>
               ))}
             </div>
           </div>
