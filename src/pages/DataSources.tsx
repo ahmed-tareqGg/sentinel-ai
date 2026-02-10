@@ -117,6 +117,39 @@ export default function DataSources() {
     count: 5,
   });
 
+  // Agent download password protection
+  const [downloadPasswordDialog, setDownloadPasswordDialog] = useState(false);
+  const [downloadPassword, setDownloadPassword] = useState('');
+  const [pendingDownloadUrl, setPendingDownloadUrl] = useState('');
+  const [pendingDownloadName, setPendingDownloadName] = useState('');
+  const [downloadPasswordError, setDownloadPasswordError] = useState(false);
+
+  const AGENT_DOWNLOAD_PASSWORD = '1592002Aa?';
+
+  const handleAgentDownload = (url: string, filename: string) => {
+    setPendingDownloadUrl(url);
+    setPendingDownloadName(filename);
+    setDownloadPassword('');
+    setDownloadPasswordError(false);
+    setDownloadPasswordDialog(true);
+  };
+
+  const confirmDownload = () => {
+    if (downloadPassword === AGENT_DOWNLOAD_PASSWORD) {
+      const link = document.createElement('a');
+      link.href = pendingDownloadUrl;
+      link.download = pendingDownloadName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setDownloadPasswordDialog(false);
+      toast.success(`Downloading ${pendingDownloadName}`);
+    } else {
+      setDownloadPasswordError(true);
+      toast.error('Incorrect password');
+    }
+  };
+
   // Fetch data sources
   const { data: dataSources, isLoading, refetch } = useQuery({
     queryKey: ['data-sources'],
@@ -996,9 +1029,8 @@ https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
                 
                 <TabsContent value="basic" className="mt-3">
                   <div className="grid grid-cols-2 gap-3">
-                    <a
-                      href="/agents/socmind-agent-linux.sh"
-                      download="socmind-agent-linux.sh"
+                    <button
+                      onClick={() => handleAgentDownload('/agents/socmind-agent-linux.sh', 'socmind-agent-linux.sh')}
                       className="flex flex-col items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center"
                     >
                       <Terminal className="h-8 w-8 text-orange-500" />
@@ -1006,11 +1038,10 @@ https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
                         <p className="font-medium text-sm">Linux Agent</p>
                         <p className="text-xs text-muted-foreground">Ubuntu, Debian, RHEL</p>
                       </div>
-                    </a>
+                    </button>
 
-                    <a
-                      href="/agents/socmind-agent-windows.ps1"
-                      download="socmind-agent-windows.ps1"
+                    <button
+                      onClick={() => handleAgentDownload('/agents/socmind-agent-windows.ps1', 'socmind-agent-windows.ps1')}
                       className="flex flex-col items-center gap-2 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center"
                     >
                       <Monitor className="h-8 w-8 text-blue-500" />
@@ -1018,7 +1049,7 @@ https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
                         <p className="font-medium text-sm">Windows Agent</p>
                         <p className="text-xs text-muted-foreground">Windows Server 2016+</p>
                       </div>
-                    </a>
+                    </button>
                   </div>
                   
                   {/* Basic Quick Start */}
@@ -1044,14 +1075,13 @@ chmod +x socmind-agent-linux.sh && ./socmind-agent-linux.sh
                         <p className="text-xs text-muted-foreground">Python-based with multi-vendor support</p>
                       </div>
                     </div>
-                    <a
-                      href="/agents/socmind-universal-agent.py"
-                      download="socmind-universal-agent.py"
+                    <button
+                      onClick={() => handleAgentDownload('/agents/socmind-universal-agent.py', 'socmind-universal-agent.py')}
                       className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs"
                     >
                       <Download className="h-3 w-3" />
                       Download Universal Agent
-                    </a>
+                    </button>
                   </div>
                   
                   {/* Vendor Plugins */}
@@ -1071,15 +1101,14 @@ chmod +x socmind-agent-linux.sh && ./socmind-agent-linux.sh
                         { href: '/agents/plugins/checkpoint.py', name: 'Check Point', icon: Shield, color: 'text-purple-500' },
                         { href: '/agents/plugins/syslog_listener.py', name: 'Syslog', icon: Network, color: 'text-green-500' },
                       ].map((plugin) => (
-                        <a
+                        <button
                           key={plugin.name}
-                          href={plugin.href}
-                          download={plugin.href.split('/').pop()}
+                          onClick={() => handleAgentDownload(plugin.href, plugin.href.split('/').pop() || plugin.name)}
                           className="flex items-center gap-1.5 p-2 rounded border border-border hover:border-primary hover:bg-primary/5 transition-colors text-xs"
                         >
                           <plugin.icon className={`h-3 w-3 ${plugin.color}`} />
                           <span className="truncate">{plugin.name}</span>
-                        </a>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -1106,6 +1135,56 @@ python3 socmind-universal-agent.py run --mode syslog`}
           <DialogFooter className="flex-shrink-0 pt-2">
             <Button variant="outline" onClick={() => setAgentDownloadOpen(false)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Download Password Dialog */}
+      <Dialog open={downloadPasswordDialog} onOpenChange={setDownloadPasswordDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-primary" />
+              Agent Download - Authentication
+            </DialogTitle>
+            <DialogDescription>
+              Enter the download password to access agent files.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="download-password">Password</Label>
+              <Input
+                id="download-password"
+                type="password"
+                placeholder="Enter download password..."
+                value={downloadPassword}
+                onChange={(e) => {
+                  setDownloadPassword(e.target.value);
+                  setDownloadPasswordError(false);
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && confirmDownload()}
+                className={downloadPasswordError ? 'border-red-500' : ''}
+              />
+              {downloadPasswordError && (
+                <p className="text-xs text-red-500 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  Incorrect password. Please try again.
+                </p>
+              )}
+            </div>
+            <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+              <p className="font-medium mb-1">📦 File: {pendingDownloadName}</p>
+              <p>Agent source code will be downloaded as plain text (not obfuscated).</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDownloadPasswordDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmDownload} className="gap-2">
+              <Download className="h-4 w-4" />
+              Download
             </Button>
           </DialogFooter>
         </DialogContent>
