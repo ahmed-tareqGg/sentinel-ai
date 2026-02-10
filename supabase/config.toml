@@ -38,3 +38,6 @@ verify_jwt = false
 
 [functions.agent-gateway]
 verify_jwt = false
+
+[functions.generate-investigation-report]
+verify_jwt = false

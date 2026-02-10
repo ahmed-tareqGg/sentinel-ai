@@ -911,6 +911,166 @@ export type Database = {
         }
         Relationships: []
       }
+      incident_evidence: {
+        Row: {
+          added_by: string | null
+          added_by_email: string | null
+          created_at: string
+          description: string | null
+          evidence_type: string
+          file_name: string | null
+          file_size: number | null
+          file_url: string | null
+          id: string
+          incident_id: string
+          linked_ioc_id: string | null
+          source: string | null
+          title: string
+        }
+        Insert: {
+          added_by?: string | null
+          added_by_email?: string | null
+          created_at?: string
+          description?: string | null
+          evidence_type: string
+          file_name?: string | null
+          file_size?: number | null
+          file_url?: string | null
+          id?: string
+          incident_id: string
+          linked_ioc_id?: string | null
+          source?: string | null
+          title: string
+        }
+        Update: {
+          added_by?: string | null
+          added_by_email?: string | null
+          created_at?: string
+          description?: string | null
+          evidence_type?: string
+          file_name?: string | null
+          file_size?: number | null
+          file_url?: string | null
+          id?: string
+          incident_id?: string
+          linked_ioc_id?: string | null
+          source?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incident_evidence_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_evidence_linked_ioc_id_fkey"
+            columns: ["linked_ioc_id"]
+            isOneToOne: false
+            referencedRelation: "incident_iocs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      incident_iocs: {
+        Row: {
+          added_by: string | null
+          added_by_email: string | null
+          confidence: string | null
+          created_at: string
+          id: string
+          incident_id: string
+          ioc_type: string
+          notes: string | null
+          source: string | null
+          value: string
+        }
+        Insert: {
+          added_by?: string | null
+          added_by_email?: string | null
+          confidence?: string | null
+          created_at?: string
+          id?: string
+          incident_id: string
+          ioc_type: string
+          notes?: string | null
+          source?: string | null
+          value: string
+        }
+        Update: {
+          added_by?: string | null
+          added_by_email?: string | null
+          confidence?: string | null
+          created_at?: string
+          id?: string
+          incident_id?: string
+          ioc_type?: string
+          notes?: string | null
+          source?: string | null
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incident_iocs_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      incident_reports: {
+        Row: {
+          ai_model: string | null
+          content: string
+          created_at: string
+          format: string
+          generated_by: string | null
+          generated_by_email: string | null
+          generated_by_role: string | null
+          id: string
+          incident_id: string
+          report_type: string
+          title: string
+        }
+        Insert: {
+          ai_model?: string | null
+          content: string
+          created_at?: string
+          format?: string
+          generated_by?: string | null
+          generated_by_email?: string | null
+          generated_by_role?: string | null
+          id?: string
+          incident_id: string
+          report_type?: string
+          title: string
+        }
+        Update: {
+          ai_model?: string | null
+          content?: string
+          created_at?: string
+          format?: string
+          generated_by?: string | null
+          generated_by_email?: string | null
+          generated_by_role?: string | null
+          id?: string
+          incident_id?: string
+          report_type?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incident_reports_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       incident_timeline: {
         Row: {
           details: string | null
