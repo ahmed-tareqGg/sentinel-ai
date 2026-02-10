@@ -1804,36 +1804,100 @@ export type Database = {
       }
       soar_actions: {
         Row: {
+          action_id: string | null
           action_type: string
+          approved_at: string | null
+          approved_by: string | null
+          completed_at: string | null
           created_at: string
+          data_source_id: string | null
           details: Json | null
+          dispatched_at: string | null
+          duration_seconds: number | null
+          error_message: string | null
+          executed_at: string | null
           execution_mode: string | null
+          execution_result: Json | null
           id: string
           incident_id: string | null
+          parameters: Json | null
+          reason: string | null
+          requested_by: string | null
+          requested_by_role: string | null
+          requires_approval: boolean | null
+          rollback_available: boolean | null
+          rolled_back_at: string | null
           status: string | null
           target: string | null
+          target_type: string | null
+          updated_at: string | null
         }
         Insert: {
+          action_id?: string | null
           action_type: string
+          approved_at?: string | null
+          approved_by?: string | null
+          completed_at?: string | null
           created_at?: string
+          data_source_id?: string | null
           details?: Json | null
+          dispatched_at?: string | null
+          duration_seconds?: number | null
+          error_message?: string | null
+          executed_at?: string | null
           execution_mode?: string | null
+          execution_result?: Json | null
           id?: string
           incident_id?: string | null
+          parameters?: Json | null
+          reason?: string | null
+          requested_by?: string | null
+          requested_by_role?: string | null
+          requires_approval?: boolean | null
+          rollback_available?: boolean | null
+          rolled_back_at?: string | null
           status?: string | null
           target?: string | null
+          target_type?: string | null
+          updated_at?: string | null
         }
         Update: {
+          action_id?: string | null
           action_type?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          completed_at?: string | null
           created_at?: string
+          data_source_id?: string | null
           details?: Json | null
+          dispatched_at?: string | null
+          duration_seconds?: number | null
+          error_message?: string | null
+          executed_at?: string | null
           execution_mode?: string | null
+          execution_result?: Json | null
           id?: string
           incident_id?: string | null
+          parameters?: Json | null
+          reason?: string | null
+          requested_by?: string | null
+          requested_by_role?: string | null
+          requires_approval?: boolean | null
+          rollback_available?: boolean | null
+          rolled_back_at?: string | null
           status?: string | null
           target?: string | null
+          target_type?: string | null
+          updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "soar_actions_data_source_id_fkey"
+            columns: ["data_source_id"]
+            isOneToOne: false
+            referencedRelation: "data_sources"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "soar_actions_incident_id_fkey"
             columns: ["incident_id"]
