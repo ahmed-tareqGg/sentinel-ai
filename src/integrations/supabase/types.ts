@@ -158,6 +158,50 @@ export type Database = {
           },
         ]
       }
+      analyst_notes: {
+        Row: {
+          author_email: string | null
+          author_id: string
+          author_role: string | null
+          content: string
+          created_at: string
+          id: string
+          incident_id: string
+          note_type: string | null
+          updated_at: string
+        }
+        Insert: {
+          author_email?: string | null
+          author_id: string
+          author_role?: string | null
+          content: string
+          created_at?: string
+          id?: string
+          incident_id: string
+          note_type?: string | null
+          updated_at?: string
+        }
+        Update: {
+          author_email?: string | null
+          author_id?: string
+          author_role?: string | null
+          content?: string
+          created_at?: string
+          id?: string
+          incident_id?: string
+          note_type?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analyst_notes_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       approval_requests: {
         Row: {
           action_params: Json | null
@@ -902,23 +946,33 @@ export type Database = {
       incidents: {
         Row: {
           ai_analysis: Json | null
+          assigned_at: string | null
           assigned_to: string | null
           classification: string | null
+          closed_at: string | null
+          closed_reason: string | null
           confidence: number | null
           created_at: string
           deleted_at: string | null
           deleted_by: string | null
           dst_ip: string | null
+          escalated_at: string | null
+          escalated_from: string | null
+          escalated_to: string | null
+          escalation_reason: string | null
           event_type: string
           evidence: string[] | null
           file_hash: string | null
           id: string
           incident_number: string
+          incident_owner_id: string | null
+          incident_owner_role: string | null
           message: string | null
           mitre_tactic: string | null
           mitre_technique: string | null
           raw_log: Json | null
           recommended_actions: string[] | null
+          resolved_at: string | null
           risk_level: string | null
           sandbox_result: Json | null
           severity: number
@@ -929,23 +983,33 @@ export type Database = {
         }
         Insert: {
           ai_analysis?: Json | null
+          assigned_at?: string | null
           assigned_to?: string | null
           classification?: string | null
+          closed_at?: string | null
+          closed_reason?: string | null
           confidence?: number | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: string | null
           dst_ip?: string | null
+          escalated_at?: string | null
+          escalated_from?: string | null
+          escalated_to?: string | null
+          escalation_reason?: string | null
           event_type: string
           evidence?: string[] | null
           file_hash?: string | null
           id?: string
           incident_number: string
+          incident_owner_id?: string | null
+          incident_owner_role?: string | null
           message?: string | null
           mitre_tactic?: string | null
           mitre_technique?: string | null
           raw_log?: Json | null
           recommended_actions?: string[] | null
+          resolved_at?: string | null
           risk_level?: string | null
           sandbox_result?: Json | null
           severity?: number
@@ -956,23 +1020,33 @@ export type Database = {
         }
         Update: {
           ai_analysis?: Json | null
+          assigned_at?: string | null
           assigned_to?: string | null
           classification?: string | null
+          closed_at?: string | null
+          closed_reason?: string | null
           confidence?: number | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: string | null
           dst_ip?: string | null
+          escalated_at?: string | null
+          escalated_from?: string | null
+          escalated_to?: string | null
+          escalation_reason?: string | null
           event_type?: string
           evidence?: string[] | null
           file_hash?: string | null
           id?: string
           incident_number?: string
+          incident_owner_id?: string | null
+          incident_owner_role?: string | null
           message?: string | null
           mitre_tactic?: string | null
           mitre_technique?: string | null
           raw_log?: Json | null
           recommended_actions?: string[] | null
+          resolved_at?: string | null
           risk_level?: string | null
           sandbox_result?: Json | null
           severity?: number

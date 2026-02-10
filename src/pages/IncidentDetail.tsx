@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket, Clock } from 'lucide-react';
+import { ArrowLeft, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket, Clock, CheckCheck } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,12 +9,18 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { soarActions } from '@/lib/soarActions';
 import jsPDF from 'jspdf';
 import { normalizeIncidentContent, Incident as IIncident } from '@/lib/incidentContentUtils';
 import { IncidentHeader } from '@/components/incidents/IncidentHeader';
 import { IncidentDetails } from '@/components/incidents/IncidentDetails';
+import { IncidentAssignment } from '@/components/incidents/IncidentAssignment';
+import { AnalystNotes } from '@/components/incidents/AnalystNotes';
+import { IncidentSLA } from '@/components/incidents/IncidentSLA';
 
 interface TimelineEntry {
   id: string;
@@ -23,19 +29,31 @@ interface TimelineEntry {
   details: string | null;
 }
 
+// Extend incident type for new fields
+interface ExtendedIncident extends IIncident {
+  incident_owner_id?: string | null;
+  incident_owner_role?: string | null;
+  assigned_at?: string | null;
+  escalated_from?: string | null;
+  escalated_to?: string | null;
+  escalation_reason?: string | null;
+  escalated_at?: string | null;
+  closed_reason?: string | null;
+  resolved_at?: string | null;
+  closed_at?: string | null;
+}
+
 export default function IncidentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { role, isDemoUser, canModifyData } = useAuth();
+  const { role, isDemoUser, canModifyData, profile } = useAuth();
 
-  // Permission checks based on role - demo users have NO permissions
-  const isTier1 = role === 'soc_tier_1';
   const canModifyIncidents = canModifyData && role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
   const canCloseIncident = canModifyData && role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
   const canRunPlaybook = canModifyData && role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
-  const canCreateTicket = canModifyData; // Demo users can't create tickets
+  const canCreateTicket = canModifyData;
 
-  const [incident, setIncident] = useState<IIncident | null>(null);
+  const [incident, setIncident] = useState<ExtendedIncident | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -43,6 +61,9 @@ export default function IncidentDetail() {
   const [generatingReport, setGeneratingReport] = useState(false);
   const [creatingTicket, setCreatingTicket] = useState(false);
   const [jiraTicketUrl, setJiraTicketUrl] = useState<string | null>(null);
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [closeReason, setCloseReason] = useState('');
+  const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -53,7 +74,6 @@ export default function IncidentDetail() {
   }, [id]);
 
   const checkForJiraTicket = async () => {
-    // Check timeline for Jira ticket creation
     const { data } = await supabase
       .from('incident_timeline')
       .select('details')
@@ -81,7 +101,18 @@ export default function IncidentDetail() {
       console.error('Error fetching incident:', error);
       toast.error('Failed to load incident');
     } else {
-      setIncident(data as IIncident);
+      const inc = data as ExtendedIncident;
+      setIncident(inc);
+
+      // Fetch owner email if assigned
+      if (inc?.incident_owner_id) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('id', inc.incident_owner_id)
+          .maybeSingle();
+        if (profileData) setOwnerEmail(profileData.email);
+      }
     }
     setLoading(false);
   };
@@ -98,6 +129,13 @@ export default function IncidentDetail() {
 
   const updateStatus = async (newStatus: string) => {
     if (!incident) return;
+
+    // Handle close/resolve with reason
+    if (newStatus === 'Closed' || newStatus === 'Resolved') {
+      setCloseDialogOpen(true);
+      return;
+    }
+
     setUpdating(true);
 
     const { data, error } = await supabase
@@ -108,8 +146,7 @@ export default function IncidentDetail() {
       .maybeSingle();
 
     if (error || !data) {
-      const isNoRow = (error as any)?.code === 'PGRST116';
-      toast.error(isNoRow ? 'مفيش صلاحية لتحديث الـ Status.' : 'Failed to update status');
+      toast.error('Failed to update status');
       setUpdating(false);
       return;
     }
@@ -117,18 +154,49 @@ export default function IncidentDetail() {
     setIncident((prev) => (prev ? { ...prev, status: data.status } : null));
     toast.success(`Status updated to ${data.status}`);
 
-    const { error: timelineError } = await supabase.from('incident_timeline').insert({
+    await supabase.from('incident_timeline').insert({
       incident_id: incident.id,
-      stage: `Status Changed to ${data.status}`,
-      details: 'Manual status update by analyst',
+      stage: `Status → ${data.status}`,
+      details: `Changed by ${profile?.email || 'analyst'}`,
     });
 
-    if (timelineError) {
-      console.warn('Failed to write timeline entry:', timelineError);
-    } else {
-      fetchTimeline();
+    fetchTimeline();
+    setUpdating(false);
+  };
+
+  const handleCloseResolve = async (targetStatus: 'Resolved' | 'Closed') => {
+    if (!incident) return;
+    setUpdating(true);
+
+    const updates: Record<string, unknown> = {
+      status: targetStatus,
+      closed_reason: closeReason || undefined,
+    };
+    if (targetStatus === 'Resolved') updates.resolved_at = new Date().toISOString();
+    if (targetStatus === 'Closed') updates.closed_at = new Date().toISOString();
+
+    const { error } = await supabase
+      .from('incidents')
+      .update(updates)
+      .eq('id', incident.id);
+
+    if (error) {
+      toast.error('Failed to update status');
+      setUpdating(false);
+      return;
     }
 
+    await supabase.from('incident_timeline').insert({
+      incident_id: incident.id,
+      stage: `Status → ${targetStatus}`,
+      details: closeReason ? `${closeReason} — by ${profile?.email}` : `${targetStatus} by ${profile?.email}`,
+    });
+
+    toast.success(`Incident ${targetStatus.toLowerCase()}`);
+    setCloseDialogOpen(false);
+    setCloseReason('');
+    fetchIncident();
+    fetchTimeline();
     setUpdating(false);
   };
 
@@ -156,11 +224,10 @@ export default function IncidentDetail() {
       const status = (error as any)?.context?.status ?? (error as any)?.status;
       const message = String((error as any)?.message || '').toLowerCase();
 
-      // Retry once if the session/JWT is stale
       if (status === 401 || message.includes('jwt')) {
         const refreshed = await supabase.auth.refreshSession();
         if (!refreshed.data.session) {
-          toast.error('جلسة الدخول انتهت. سجّل دخول مرة أخرى.');
+          toast.error('Session expired. Please log in again.');
           navigate('/auth');
           return;
         }
@@ -206,7 +273,7 @@ export default function IncidentDetail() {
       if (status === 401 || message.includes('jwt')) {
         const refreshed = await supabase.auth.refreshSession();
         if (!refreshed.data.session) {
-          toast.error('جلسة الدخول انتهت. سجّل دخول مرة أخرى.');
+          toast.error('Session expired. Please log in again.');
           navigate('/auth');
           return;
         }
@@ -228,7 +295,6 @@ export default function IncidentDetail() {
       setUpdating(false);
     }
   };
-
 
   const handleRecommendedAction = async (action: string) => {
     if (!incident) return;
@@ -309,7 +375,6 @@ export default function IncidentDetail() {
       const pageWidth = pdf.internal.pageSize.getWidth();
       let y = 20;
 
-      // Header
       pdf.setFontSize(20);
       pdf.setTextColor(0, 100, 200);
       pdf.text('SOCMind INCIDENT REPORT', pageWidth / 2, y, { align: 'center' });
@@ -329,7 +394,6 @@ export default function IncidentDetail() {
       pdf.text(`Generated: ${new Date().toLocaleString()}`, 20, y);
       y += 15;
 
-      // Executive Summary
       pdf.setFontSize(14);
       pdf.setTextColor(0, 100, 200);
       pdf.text('EXECUTIVE SUMMARY', 20, y);
@@ -344,6 +408,7 @@ export default function IncidentDetail() {
         `Classification: ${incident.classification}`,
         `AI Confidence: ${incident.confidence}%`,
         `Status: ${incident.status}`,
+        `Owner: ${ownerEmail || 'Unassigned'}`,
       ];
       summaryItems.forEach(item => {
         pdf.text(item, 25, y);
@@ -351,7 +416,6 @@ export default function IncidentDetail() {
       });
       y += 5;
 
-      // Description
       if (incident.message) {
         pdf.setFontSize(14);
         pdf.setTextColor(0, 100, 200);
@@ -366,7 +430,6 @@ export default function IncidentDetail() {
 
       pdf.save(`Incident_Report_${incident.incident_number}.pdf`);
       toast.success('PDF Report downloaded');
-
     } catch (error) {
       console.error('Report generation failed:', error);
       toast.error('Failed to generate report');
@@ -381,9 +444,7 @@ export default function IncidentDetail() {
 
     try {
       const { data, error } = await supabase.functions.invoke('create-jira-ticket', {
-        body: {
-          incident_id: incident.id,
-        },
+        body: { incident_id: incident.id },
       });
 
       if (error) throw error;
@@ -402,6 +463,17 @@ export default function IncidentDetail() {
   };
 
   const { headerSummary, bodyDescription } = incident ? normalizeIncidentContent(incident) : { headerSummary: null, bodyDescription: null };
+
+  // Status color map
+  const statusColors: Record<string, string> = {
+    'New': 'bg-blue-500/10 text-blue-500 border-blue-500/30',
+    'Open': 'bg-blue-500/10 text-blue-500 border-blue-500/30',
+    'Assigned': 'bg-purple-500/10 text-purple-500 border-purple-500/30',
+    'In Progress': 'bg-primary/10 text-primary border-primary/30',
+    'Escalated': 'bg-warning/10 text-warning border-warning/30',
+    'Resolved': 'bg-success/10 text-success border-success/30',
+    'Closed': 'bg-muted text-muted-foreground border-border',
+  };
 
   if (loading) {
     return (
@@ -439,7 +511,6 @@ export default function IncidentDetail() {
           Back to Incidents
         </Button>
         <div className="flex flex-wrap items-center gap-2">
-          {/* Jira Ticket Button */}
           {jiraTicketUrl ? (
             <Button
               variant="outline"
@@ -483,10 +554,6 @@ export default function IncidentDetail() {
             Generate Report
           </Button>
 
-          <Button variant="outline" size="sm" onClick={() => toast.info('Advanced filtering coming soon')}>
-            <Filter className="h-4 w-4 mr-2" />
-            Advanced Filter
-          </Button>
           <Button variant="outline" size="sm" onClick={exportIncident}>
             <Download className="h-4 w-4 mr-2" />
             Export
@@ -497,22 +564,55 @@ export default function IncidentDetail() {
       <div className="rounded-xl border border-border bg-card p-4 lg:p-6 mb-6">
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            {/* Use New Header Component */}
             <IncidentHeader incident={incident} summary={headerSummary} />
 
-            {/* Actions - only for non-demo users */}
+            {/* Status Badge + SLA */}
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <Badge variant="outline" className={cn('text-xs', statusColors[incident.status] || '')}>
+                {incident.status}
+              </Badge>
+              <IncidentSLA
+                severity={incident.severity}
+                createdAt={incident.created_at}
+                status={incident.status}
+                resolvedAt={incident.resolved_at}
+              />
+              {incident.escalated_to && (
+                <Badge variant="outline" className="border-warning/30 text-warning bg-warning/5 text-xs">
+                  Escalated → {incident.escalated_to}
+                </Badge>
+              )}
+            </div>
+
+            {/* Assignment */}
+            <div className="mt-4">
+              <IncidentAssignment
+                incidentId={incident.id}
+                incidentNumber={incident.incident_number}
+                ownerId={incident.incident_owner_id || null}
+                ownerRole={incident.incident_owner_role || null}
+                ownerEmail={ownerEmail}
+                assignedAt={incident.assigned_at || null}
+                status={incident.status}
+                onUpdate={() => { fetchIncident(); fetchTimeline(); }}
+              />
+            </div>
+
+            {/* Actions */}
             {canModifyIncidents && (
               <div className="flex flex-wrap items-center gap-3 pt-4">
                 <Select value={incident.status} onValueChange={updateStatus} disabled={updating}>
-                  <SelectTrigger className="w-40 bg-secondary/50">
+                  <SelectTrigger className="w-44 bg-secondary/50">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="New">New</SelectItem>
                     <SelectItem value="Open">Open</SelectItem>
+                    <SelectItem value="Assigned">Assigned</SelectItem>
                     <SelectItem value="In Progress">In Progress</SelectItem>
-                    {canCloseIncident && (
-                      <SelectItem value="Closed">Closed</SelectItem>
-                    )}
+                    <SelectItem value="Escalated">Escalated</SelectItem>
+                    {canCloseIncident && <SelectItem value="Resolved">Resolved</SelectItem>}
+                    {canCloseIncident && <SelectItem value="Closed">Closed</SelectItem>}
                   </SelectContent>
                 </Select>
                 <div className="flex flex-wrap items-center gap-2">
@@ -588,10 +688,12 @@ export default function IncidentDetail() {
       </div>
 
       <Tabs defaultValue="analysis" className="space-y-6">
-        <TabsList className="bg-secondary/50">
+        <TabsList className="bg-secondary/50 flex-wrap">
           <TabsTrigger value="analysis">AI Analysis</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="sandbox">Sandbox Results</TabsTrigger>
+          <TabsTrigger value="notes">Notes</TabsTrigger>
+          <TabsTrigger value="actions">Actions</TabsTrigger>
+          <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
           <TabsTrigger value="raw">Raw Log</TabsTrigger>
         </TabsList>
 
@@ -648,27 +750,82 @@ export default function IncidentDetail() {
 
         <TabsContent value="timeline">
           <div className="rounded-xl border border-border bg-card p-5">
-            <h3 className="text-sm font-semibold text-foreground mb-4">Incident Timeline</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+              <Clock className="h-4 w-4 text-primary" />
+              Incident Timeline
+              <Badge variant="secondary" className="ml-2">{timeline.length}</Badge>
+            </h3>
             {timeline.length > 0 ? (
               <div className="relative border-l border-border ml-2 space-y-6">
-                {timeline.map((entry) => (
-                  <div key={entry.id} className="ml-4 relative">
-                    <div className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-primary border-2 border-background" />
-                    <div className="text-xs text-muted-foreground mb-1">
-                      {new Date(entry.timestamp).toLocaleString()}
-                    </div>
-                    <div className="text-sm font-medium text-foreground">{entry.stage}</div>
-                    {entry.details && (
-                      <div className="text-xs text-muted-foreground mt-1 bg-secondary/30 p-2 rounded">
-                        {entry.details}
+                {timeline.map((entry) => {
+                  const isEscalation = entry.stage.toLowerCase().includes('escalat');
+                  const isAssignment = entry.stage.toLowerCase().includes('assign');
+                  const isResolution = entry.stage.toLowerCase().includes('resolv') || entry.stage.toLowerCase().includes('close');
+
+                  return (
+                    <div key={entry.id} className="ml-4 relative">
+                      <div className={cn(
+                        'absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-background',
+                        isEscalation ? 'bg-warning' :
+                        isAssignment ? 'bg-purple-500' :
+                        isResolution ? 'bg-success' :
+                        'bg-primary'
+                      )} />
+                      <div className="text-xs text-muted-foreground mb-1">
+                        {new Date(entry.timestamp).toLocaleString()}
                       </div>
-                    )}
-                  </div>
-                ))}
+                      <div className="text-sm font-medium text-foreground">{entry.stage}</div>
+                      {entry.details && (
+                        <div className="text-xs text-muted-foreground mt-1 bg-secondary/30 p-2 rounded">
+                          {entry.details}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-muted-foreground text-sm">No timeline events yet</p>
             )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="notes">
+          <AnalystNotes incidentId={incident.id} />
+        </TabsContent>
+
+        <TabsContent value="actions" className="space-y-4">
+          <div className="rounded-xl border border-border bg-card p-5">
+            <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+              <Shield className="h-4 w-4 text-primary" />
+              Containment Actions
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { key: 'blockip', label: '🚫 Block IP', icon: 'Block IP' },
+                { key: 'isolatehost', label: '🔒 Isolate Host', icon: 'Isolate Host' },
+                { key: 'disableuseraccount', label: '🛑 Disable User', icon: 'Disable User Account' },
+                { key: 'resetcredentials', label: '🔑 Reset Credentials', icon: 'Reset Credentials' },
+                { key: 'forensicanalysis', label: '🔬 Forensic Analysis', icon: 'Forensic Analysis' },
+                { key: 'networkforensics', label: '📡 Network Forensics', icon: 'Network Forensics' },
+                { key: 'geoblockip', label: '🌍 Geo-Block IP', icon: 'Geo-Block IP' },
+                { key: 'createticket', label: '📤 Create Ticket', icon: 'Create Ticket' },
+              ].map((action) => (
+                <Button
+                  key={action.key}
+                  variant="outline"
+                  size="sm"
+                  disabled={!canModifyData || executingAction === action.icon}
+                  onClick={() => handleRecommendedAction(action.icon)}
+                  className="justify-start"
+                >
+                  {executingAction === action.icon ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : null}
+                  {action.label}
+                </Button>
+              ))}
+            </div>
           </div>
         </TabsContent>
 
@@ -694,6 +851,37 @@ export default function IncidentDetail() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Close/Resolve Dialog */}
+      <Dialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>Close / Resolve {incident.incident_number}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="space-y-2">
+              <Label>Reason (optional)</Label>
+              <Textarea
+                placeholder="Why is this incident being closed/resolved?"
+                value={closeReason}
+                onChange={(e) => setCloseReason(e.target.value)}
+                className="bg-secondary/50"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setCloseDialogOpen(false)}>Cancel</Button>
+            <Button onClick={() => handleCloseResolve('Resolved')} disabled={updating} className="bg-success text-success-foreground">
+              {updating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCheck className="h-4 w-4 mr-2" />}
+              Resolve
+            </Button>
+            <Button onClick={() => handleCloseResolve('Closed')} disabled={updating} variant="secondary">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

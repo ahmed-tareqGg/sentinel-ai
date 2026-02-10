@@ -53,8 +53,11 @@ export default function Incidents() {
 
   const filters = [
     { key: 'all', label: 'All', count: incidents.length },
-    { key: 'open', label: 'Open', count: incidents.filter(i => i.status === 'Open').length },
+    { key: 'open', label: 'Open', count: incidents.filter(i => i.status === 'Open' || i.status === 'New').length },
+    { key: 'assigned', label: 'Assigned', count: incidents.filter(i => i.status === 'Assigned').length },
     { key: 'in-progress', label: 'In Progress', count: incidents.filter(i => i.status === 'In Progress').length },
+    { key: 'escalated', label: 'Escalated', count: incidents.filter(i => i.status === 'Escalated').length },
+    { key: 'resolved', label: 'Resolved', count: incidents.filter(i => i.status === 'Resolved').length },
     { key: 'closed', label: 'Closed', count: incidents.filter(i => i.status === 'Closed').length },
   ];
 
