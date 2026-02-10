@@ -795,8 +795,201 @@ serve(async (req) => {
       }
     }
 
+    // ==================== ACTION DISPATCH (User Auth) ====================
+    if (action === 'dispatch-action') {
+      const auth = await verifyUserAuth(req);
+      if (!auth.valid) {
+        return new Response(JSON.stringify({ error: auth.error }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const body = await req.json();
+      const {
+        incident_id, data_source_id, action_type, target, target_type,
+        duration_seconds, parameters, reason, requires_approval, execution_mode
+      } = body;
+
+      if (!action_type || !data_source_id) {
+        return new Response(JSON.stringify({ error: 'action_type and data_source_id required' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // High-risk actions require approval
+      const highRiskActions = ['block_ip', 'disable_user', 'isolate_host', 'kill_process', 'quarantine_file', 'delete_file'];
+      const needsApproval = requires_approval ?? highRiskActions.includes(action_type);
+      const initialStatus = needsApproval ? 'pending' : 'approved';
+
+      const actionId = `ACT-${Date.now().toString(36).toUpperCase()}`;
+
+      const { data: soarAction, error: insertErr } = await supabase
+        .from('soar_actions')
+        .insert({
+          action_id: actionId,
+          incident_id,
+          data_source_id,
+          action_type,
+          target,
+          target_type: target_type || 'ip',
+          duration_seconds,
+          parameters: parameters || {},
+          reason,
+          requires_approval: needsApproval,
+          status: initialStatus,
+          requested_by: auth.userId,
+          execution_mode: execution_mode || 'real',
+          dispatched_at: !needsApproval ? new Date().toISOString() : null,
+        })
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      // Log to incident timeline
+      if (incident_id) {
+        await supabase.from('incident_timeline').insert({
+          incident_id,
+          stage: `SOAR Action ${needsApproval ? 'Pending Approval' : 'Dispatched'}: ${action_type}`,
+          details: `Target: ${target || 'N/A'} | Mode: ${execution_mode || 'real'} | Action ID: ${actionId}`,
+        });
+      }
+
+      // Audit log
+      await supabase.from('audit_logs').insert({
+        user_id: auth.userId,
+        action: 'dispatch_soar_action',
+        resource_type: 'soar_action',
+        resource_id: soarAction.id,
+        details: { action_type, target, execution_mode, requires_approval: needsApproval },
+      });
+
+      console.log(`⚡ SOAR Action dispatched: ${actionId} (${action_type}) -> Agent ${data_source_id}`);
+
+      return new Response(JSON.stringify({
+        success: true,
+        action: soarAction,
+        message: needsApproval 
+          ? `Action ${actionId} requires approval before execution` 
+          : `Action ${actionId} dispatched to agent`,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ==================== APPROVE ACTION (User Auth) ====================
+    if (action === 'approve-action') {
+      const auth = await verifyUserAuth(req);
+      if (!auth.valid) {
+        return new Response(JSON.stringify({ error: auth.error }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { action_id, approved } = await req.json();
+
+      const newStatus = approved ? 'approved' : 'rejected';
+      const { data, error } = await supabase
+        .from('soar_actions')
+        .update({
+          status: newStatus,
+          approved_by: auth.userId,
+          approved_at: new Date().toISOString(),
+          dispatched_at: approved ? new Date().toISOString() : null,
+        })
+        .eq('id', action_id)
+        .eq('status', 'pending')
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (data?.incident_id) {
+        await supabase.from('incident_timeline').insert({
+          incident_id: data.incident_id,
+          stage: `SOAR Action ${approved ? 'Approved' : 'Rejected'}: ${data.action_type}`,
+          details: `Action ID: ${data.action_id} | Target: ${data.target || 'N/A'}`,
+        });
+      }
+
+      console.log(`${approved ? '✅' : '❌'} SOAR Action ${data.action_id} ${newStatus}`);
+
+      return new Response(JSON.stringify({ success: true, action: data }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ==================== ROLLBACK ACTION (User Auth) ====================
+    if (action === 'rollback-action') {
+      const auth = await verifyUserAuth(req);
+      if (!auth.valid) {
+        return new Response(JSON.stringify({ error: auth.error }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { action_id } = await req.json();
+
+      // Create a rollback action
+      const { data: original } = await supabase
+        .from('soar_actions')
+        .select('*')
+        .eq('id', action_id)
+        .single();
+
+      if (!original || !original.rollback_available) {
+        return new Response(JSON.stringify({ error: 'Rollback not available' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Map action to rollback
+      const rollbackMap: Record<string, string> = {
+        'block_ip': 'unblock_ip',
+        'disable_user': 'enable_user',
+        'lock_account': 'unlock_account',
+        'stop_service': 'start_service',
+        'isolate_host': 'unisolate_host',
+      };
+
+      const rollbackType = rollbackMap[original.action_type] || `rollback_${original.action_type}`;
+
+      const { data: rollbackAction, error: rbErr } = await supabase
+        .from('soar_actions')
+        .insert({
+          action_id: `RB-${Date.now().toString(36).toUpperCase()}`,
+          incident_id: original.incident_id,
+          data_source_id: original.data_source_id,
+          action_type: rollbackType,
+          target: original.target,
+          target_type: original.target_type,
+          parameters: { original_action_id: original.id },
+          reason: `Rollback of ${original.action_id}`,
+          status: 'approved',
+          requested_by: auth.userId,
+          execution_mode: original.execution_mode,
+          dispatched_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (rbErr) throw rbErr;
+
+      // Mark original as rolled back
+      await supabase.from('soar_actions')
+        .update({ status: 'rolled_back', rolled_back_at: new Date().toISOString() })
+        .eq('id', action_id);
+
+      console.log(`🔄 Rollback dispatched for ${original.action_id}`);
+
+      return new Response(JSON.stringify({ success: true, rollback: rollbackAction }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Actions that require agent key authentication
-    if (['heartbeat', 'ingest'].includes(action || '')) {
+    if (['heartbeat', 'ingest', 'poll-actions', 'report-action'].includes(action || '')) {
       const auth = await verifyAgentKey(req, supabase);
       if (!auth.valid) {
         return new Response(JSON.stringify({ error: auth.error }), {
@@ -855,6 +1048,96 @@ serve(async (req) => {
           command: pendingCommand || null,
           public_ip: publicIP,
         }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // ==================== POLL ACTIONS (Agent Auth) ====================
+      if (action === 'poll-actions') {
+        // Agent polls for pending actions to execute
+        const { data: pendingActions, error: pollErr } = await supabase
+          .from('soar_actions')
+          .select('*')
+          .eq('data_source_id', auth.dataSourceId)
+          .in('status', ['approved', 'dispatched'])
+          .order('created_at', { ascending: true })
+          .limit(10);
+
+        if (pollErr) throw pollErr;
+
+        // Mark as dispatched
+        if (pendingActions && pendingActions.length > 0) {
+          const ids = pendingActions.map((a: any) => a.id);
+          await supabase
+            .from('soar_actions')
+            .update({ status: 'dispatched', dispatched_at: new Date().toISOString() })
+            .in('id', ids)
+            .eq('status', 'approved');
+        }
+
+        console.log(`📋 Agent ${auth.dataSourceName} polled: ${pendingActions?.length || 0} actions`);
+
+        return new Response(JSON.stringify({
+          actions: (pendingActions || []).map((a: any) => ({
+            id: a.id,
+            action_id: a.action_id,
+            action_type: a.action_type,
+            target: a.target,
+            target_type: a.target_type,
+            duration_seconds: a.duration_seconds,
+            parameters: a.parameters,
+            reason: a.reason,
+            execution_mode: a.execution_mode,
+            incident_id: a.incident_id,
+          })),
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // ==================== REPORT ACTION RESULT (Agent Auth) ====================
+      if (action === 'report-action') {
+        const body = await req.json();
+        const { action_id, status, result, error_message, rollback_available } = body;
+
+        const newStatus = status === 'success' ? 'completed' : 'failed';
+
+        const { data: updated, error: updateErr } = await supabase
+          .from('soar_actions')
+          .update({
+            status: newStatus,
+            executed_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            execution_result: result || {},
+            error_message: error_message || null,
+            rollback_available: rollback_available || false,
+          })
+          .eq('id', action_id)
+          .select()
+          .single();
+
+        if (updateErr) throw updateErr;
+
+        // Log to incident timeline
+        if (updated?.incident_id) {
+          await supabase.from('incident_timeline').insert({
+            incident_id: updated.incident_id,
+            stage: `SOAR Action ${newStatus === 'completed' ? 'Completed' : 'Failed'}: ${updated.action_type}`,
+            details: `Target: ${updated.target || 'N/A'} | ${error_message || 'Success'}`,
+          });
+        }
+
+        // Audit log
+        await supabase.from('audit_logs').insert({
+          action: `soar_action_${newStatus}`,
+          resource_type: 'soar_action',
+          resource_id: updated.id,
+          details: { action_type: updated.action_type, target: updated.target, result, error_message },
+        });
+
+        console.log(`${newStatus === 'completed' ? '✅' : '❌'} Action ${updated.action_id} ${newStatus} on ${auth.dataSourceName}`);
+
+        return new Response(JSON.stringify({ success: true, action: updated }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }

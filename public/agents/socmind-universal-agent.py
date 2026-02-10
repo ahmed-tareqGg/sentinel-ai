@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SOCMind Universal Agent v2.2.0
+SOCMind Universal Agent v3.0.0
 Copyright (c) 2025 SOCMind. All rights reserved.
 
-Universal security agent with plugin system for multi-vendor log collection.
+Universal security agent with plugin system for multi-vendor log collection
+AND action execution (SOAR).
 
 Supported Sources:
 - Windows Event Logs
@@ -12,12 +13,15 @@ Supported Sources:
 - Firewalls (Fortinet, Palo Alto, Cisco, Sophos, Check Point)
 - EDR/NDR/Cloud via API
 
-Features:
-- Plugin-based vendor parsing
+Capabilities:
+- Log Collection (Plugin-based vendor parsing)
+- Action Execution (Block IP, Kill Process, Disable User, etc.)
+- IOC Enforcement
+- Playbook Runner
+- Approval-aware
 - MITRE ATT&CK mapping
 - Syslog listener (UDP/TCP)
 - License validation
-- Offline caching
 """
 
 import os
@@ -41,23 +45,32 @@ except ImportError:
 # ============================================================
 # Configuration
 # ============================================================
-AGENT_VERSION = "2.2.0"
+AGENT_VERSION = "3.0.0"
 CONFIG_FILE = "agent.conf"
 CACHE_FILE = ".socm_license_cache"
 LOG_BATCH_SIZE = 100
 COLLECTION_INTERVAL = 60  # seconds
 HEARTBEAT_INTERVAL = 30  # seconds
+ACTION_POLL_INTERVAL = 10  # seconds
 
 # ============================================================
 # Plugin System Import
 # ============================================================
 PLUGINS_AVAILABLE = False
+ACTION_EXECUTOR_AVAILABLE = False
+
 try:
     from plugins import PluginManager, NormalizedLog
     from plugins.syslog_listener import SyslogListener, SyslogMessage
     PLUGINS_AVAILABLE = True
 except ImportError:
     print("[INFO] Plugins not found, using built-in parsing only")
+
+try:
+    from plugins.action_executor import ActionExecutor, ActionPoller, SOARAction
+    ACTION_EXECUTOR_AVAILABLE = True
+except ImportError:
+    print("[INFO] Action executor not found, execution disabled")
 
 
 # ============================================================
@@ -357,7 +370,8 @@ class UniversalAgent:
         self.api_key = config.get('api_key', config.get('SOCMIND_API_KEY', ''))
         self.license_key = config.get('license_key', '')
         
-        self.mode = config.get('mode', 'local')  # local, syslog, hybrid
+        self.mode = config.get('mode', 'executor')  # local, syslog, hybrid, executor
+        self.dry_run = config.get('dry_run', 'false').lower() == 'true'
         self.running = False
         
         # Collectors
@@ -365,6 +379,13 @@ class UniversalAgent:
         
         # Plugin manager
         self.plugin_manager = PluginManager() if PLUGINS_AVAILABLE else None
+        
+        # Action executor
+        self.action_executor = None
+        self.action_poller = None
+        if ACTION_EXECUTOR_AVAILABLE:
+            self.action_executor = ActionExecutor(dry_run=self.dry_run)
+            self.action_poller = ActionPoller(self.api_endpoint, self.api_key, self.action_executor)
         
         # Syslog listener
         self.syslog_listener = None
@@ -375,17 +396,27 @@ class UniversalAgent:
         self.stats = {
             'logs_sent': 0,
             'incidents_created': 0,
+            'actions_executed': 0,
             'errors': 0,
         }
     
     def start(self):
         """Start the agent."""
+        capabilities = ['Collector']
+        if self.action_executor:
+            capabilities.append('Executor')
+        if self.plugin_manager:
+            capabilities.append('Plugins')
+        
+        cap_str = ' + '.join(capabilities)
+        
         print(f"""
 ╔══════════════════════════════════════════════════════════╗
 ║           SOCMind Universal Agent v{AGENT_VERSION}              ║
 ║                                                          ║
 ║  Mode: {self.mode.upper():<51}║
-║  Plugins: {'ENABLED' if self.plugin_manager else 'DISABLED':<49}║
+║  Capabilities: {cap_str:<43}║
+║  Dry Run: {'YES' if self.dry_run else 'NO':<48}║
 ╚══════════════════════════════════════════════════════════╝
         """)
         
@@ -400,6 +431,11 @@ class UniversalAgent:
         # Start syslog listener if needed
         if self.mode in ['syslog', 'hybrid'] and PLUGINS_AVAILABLE:
             self._start_syslog_listener()
+        
+        # Start action poller
+        if self.action_poller:
+            self.action_poller.start(interval=ACTION_POLL_INTERVAL)
+            print(f"[EXECUTOR] Action polling enabled (every {ACTION_POLL_INTERVAL}s)")
         
         # Start heartbeat thread
         heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
@@ -416,6 +452,8 @@ class UniversalAgent:
         self.running = False
         if self.syslog_listener:
             self.syslog_listener.stop()
+        if self.action_poller:
+            self.action_poller.stop()
         print(f"[INFO] Agent stopped. Stats: {self.stats}")
     
     def _start_syslog_listener(self):
@@ -551,6 +589,8 @@ class UniversalAgent:
                     'os': sys.platform,
                     'agent_version': AGENT_VERSION,
                     'mode': self.mode,
+                    'capabilities': ['collector', 'executor', 'ioc_enforcer', 'playbook_runner'],
+                    'actions_executed': self.stats.get('actions_executed', 0),
                 },
                 headers={
                     'X-Agent-Key': self.api_key,
