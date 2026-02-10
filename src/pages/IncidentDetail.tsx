@@ -21,6 +21,9 @@ import { IncidentDetails } from '@/components/incidents/IncidentDetails';
 import { IncidentAssignment } from '@/components/incidents/IncidentAssignment';
 import { AnalystNotes } from '@/components/incidents/AnalystNotes';
 import { IncidentSLA } from '@/components/incidents/IncidentSLA';
+import { IOCManager } from '@/components/incidents/IOCManager';
+import { EvidenceManager } from '@/components/incidents/EvidenceManager';
+import { AIReportGenerator } from '@/components/incidents/AIReportGenerator';
 
 interface TimelineEntry {
   id: string;
@@ -740,6 +743,7 @@ export default function IncidentDetail() {
       <Tabs defaultValue="analysis" className="space-y-6">
         <TabsList className="bg-secondary/50 flex-wrap">
           <TabsTrigger value="analysis">AI Analysis</TabsTrigger>
+          <TabsTrigger value="investigation">🧪 Investigation</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="actions">Actions</TabsTrigger>
@@ -796,6 +800,13 @@ export default function IncidentDetail() {
               </div>
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="investigation" className="space-y-6">
+          <IOCManager incidentId={incident.id} />
+          <EvidenceManager incidentId={incident.id} />
+          <AnalystNotes incidentId={incident.id} />
+          <AIReportGenerator incidentId={incident.id} incident={incident} />
         </TabsContent>
 
         <TabsContent value="timeline">
