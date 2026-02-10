@@ -1066,50 +1066,146 @@ chmod +x socmind-agent-linux.sh && ./socmind-agent-linux.sh
                 </TabsContent>
                 
                 <TabsContent value="universal" className="mt-3 space-y-3">
-                  {/* Universal Agent */}
+                  {/* Production Agent */}
                   <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
-                    <div className="flex items-center gap-3 mb-2">
+                    <div className="flex items-center gap-3 mb-3">
                       <Package className="h-5 w-5 text-primary" />
                       <div>
-                        <p className="font-medium text-sm">Universal Agent v2.2.0</p>
-                        <p className="text-xs text-muted-foreground">Python-based with multi-vendor support</p>
+                        <p className="font-medium text-sm">SOCMind Universal Agent v3.0.0</p>
+                        <p className="text-xs text-muted-foreground">Production-ready Python SOAR Agent</p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleAgentDownload('/agents/socmind-universal-agent.py', 'socmind-universal-agent.py')}
-                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs"
-                    >
-                      <Download className="h-3 w-3" />
-                      Download Universal Agent
-                    </button>
-                  </div>
-                  
-                  {/* Vendor Plugins */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-medium">
-                      <Network className="h-4 w-4" />
-                      Vendor Plugins (Parsers + MITRE Mapping)
+                    
+                    {/* Core Files */}
+                    <div className="space-y-2 mb-3">
+                      <p className="text-xs font-medium text-muted-foreground">📦 Core</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          { href: '/agents/socmind-agent/agent.py', name: 'agent.py (Entry)', icon: Terminal },
+                          { href: '/agents/socmind-agent/config.yaml', name: 'config.yaml', icon: Package },
+                          { href: '/agents/socmind-agent/requirements.txt', name: 'requirements.txt', icon: Package },
+                        ].map((file) => (
+                          <button
+                            key={file.name}
+                            onClick={() => handleAgentDownload(file.href, file.href.split('/').pop() || file.name)}
+                            className="flex items-center gap-1.5 p-2 rounded border border-border hover:border-primary hover:bg-primary/5 transition-colors text-xs"
+                          >
+                            <file.icon className="h-3 w-3 text-primary" />
+                            <span className="truncate">{file.name}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                      {[
-                        { href: '/agents/plugins/base.py', name: 'base.py', icon: Package, color: 'text-gray-500' },
-                        { href: '/agents/plugins/__init__.py', name: '__init__.py', icon: Package, color: 'text-gray-500' },
-                        { href: '/agents/plugins/fortinet.py', name: 'Fortinet', icon: Shield, color: 'text-red-500' },
-                        { href: '/agents/plugins/paloalto.py', name: 'Palo Alto', icon: Shield, color: 'text-orange-500' },
-                        { href: '/agents/plugins/cisco.py', name: 'Cisco', icon: Shield, color: 'text-blue-500' },
-                        { href: '/agents/plugins/sophos.py', name: 'Sophos', icon: Shield, color: 'text-blue-400' },
-                        { href: '/agents/plugins/checkpoint.py', name: 'Check Point', icon: Shield, color: 'text-purple-500' },
-                        { href: '/agents/plugins/syslog_listener.py', name: 'Syslog', icon: Network, color: 'text-green-500' },
-                      ].map((plugin) => (
-                        <button
-                          key={plugin.name}
-                          onClick={() => handleAgentDownload(plugin.href, plugin.href.split('/').pop() || plugin.name)}
-                          className="flex items-center gap-1.5 p-2 rounded border border-border hover:border-primary hover:bg-primary/5 transition-colors text-xs"
-                        >
-                          <plugin.icon className={`h-3 w-3 ${plugin.color}`} />
-                          <span className="truncate">{plugin.name}</span>
-                        </button>
-                      ))}
+
+                    {/* Core Modules */}
+                    <div className="space-y-2 mb-3">
+                      <p className="text-xs font-medium text-muted-foreground">🧠 core/ — Engine Modules</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          { href: '/agents/socmind-agent/core/collector.py', name: 'collector.py' },
+                          { href: '/agents/socmind-agent/core/executor.py', name: 'executor.py' },
+                          { href: '/agents/socmind-agent/core/playbook_engine.py', name: 'playbook_engine.py' },
+                          { href: '/agents/socmind-agent/core/approval_client.py', name: 'approval_client.py' },
+                          { href: '/agents/socmind-agent/core/audit_logger.py', name: 'audit_logger.py' },
+                          { href: '/agents/socmind-agent/core/heartbeat.py', name: 'heartbeat.py' },
+                        ].map((file) => (
+                          <button
+                            key={file.name}
+                            onClick={() => handleAgentDownload(file.href, file.name)}
+                            className="flex items-center gap-1.5 p-2 rounded border border-border hover:border-primary hover:bg-primary/5 transition-colors text-xs"
+                          >
+                            <Terminal className="h-3 w-3 text-cyan-500" />
+                            <span className="truncate">{file.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Action Handlers */}
+                    <div className="space-y-2 mb-3">
+                      <p className="text-xs font-medium text-muted-foreground">⚔️ actions/ — SOAR Actions</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          { href: '/agents/socmind-agent/actions/block_ip.py', name: 'block_ip' },
+                          { href: '/agents/socmind-agent/actions/unblock_ip.py', name: 'unblock_ip' },
+                          { href: '/agents/socmind-agent/actions/kill_process.py', name: 'kill_process' },
+                          { href: '/agents/socmind-agent/actions/lock_user.py', name: 'lock_user' },
+                          { href: '/agents/socmind-agent/actions/delete_file.py', name: 'delete_file' },
+                          { href: '/agents/socmind-agent/actions/notify_user.py', name: 'notify_user' },
+                        ].map((file) => (
+                          <button
+                            key={file.name}
+                            onClick={() => handleAgentDownload(file.href, file.href.split('/').pop() || file.name)}
+                            className="flex items-center gap-1.5 p-1.5 rounded border border-border hover:border-primary hover:bg-primary/5 transition-colors text-xs"
+                          >
+                            <Shield className="h-3 w-3 text-red-500" />
+                            <span className="truncate">{file.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Vendor Plugins */}
+                    <div className="space-y-2 mb-3">
+                      <p className="text-xs font-medium text-muted-foreground">🌐 vendors/ — Log Parsers + MITRE</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          { href: '/agents/socmind-agent/vendors/fortinet.py', name: 'Fortinet', color: 'text-red-500' },
+                          { href: '/agents/socmind-agent/vendors/paloalto.py', name: 'Palo Alto', color: 'text-orange-500' },
+                          { href: '/agents/socmind-agent/vendors/cisco.py', name: 'Cisco', color: 'text-blue-500' },
+                          { href: '/agents/socmind-agent/vendors/syslog.py', name: 'Syslog', color: 'text-green-500' },
+                        ].map((file) => (
+                          <button
+                            key={file.name}
+                            onClick={() => handleAgentDownload(file.href, file.href.split('/').pop() || file.name)}
+                            className="flex items-center gap-1.5 p-1.5 rounded border border-border hover:border-primary hover:bg-primary/5 transition-colors text-xs"
+                          >
+                            <Network className={`h-3 w-3 ${file.color}`} />
+                            <span className="truncate">{file.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Playbooks */}
+                    <div className="space-y-2 mb-3">
+                      <p className="text-xs font-medium text-muted-foreground">📋 playbooks/ — YAML Playbooks</p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          { href: '/agents/socmind-agent/playbooks/brute_force.yaml', name: 'Brute Force' },
+                          { href: '/agents/socmind-agent/playbooks/malware_c2.yaml', name: 'Malware C2' },
+                          { href: '/agents/socmind-agent/playbooks/suspicious_login.yaml', name: 'Suspicious Login' },
+                        ].map((file) => (
+                          <button
+                            key={file.name}
+                            onClick={() => handleAgentDownload(file.href, file.href.split('/').pop() || file.name)}
+                            className="flex items-center gap-1.5 p-1.5 rounded border border-border hover:border-primary hover:bg-primary/5 transition-colors text-xs"
+                          >
+                            <Activity className="h-3 w-3 text-yellow-500" />
+                            <span className="truncate">{file.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Utils */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">🔧 utils/ — Security Utilities</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          { href: '/agents/socmind-agent/utils/signer.py', name: 'signer.py' },
+                          { href: '/agents/socmind-agent/utils/permissions.py', name: 'permissions.py' },
+                        ].map((file) => (
+                          <button
+                            key={file.name}
+                            onClick={() => handleAgentDownload(file.href, file.href.split('/').pop() || file.name)}
+                            className="flex items-center gap-1.5 p-1.5 rounded border border-border hover:border-primary hover:bg-primary/5 transition-colors text-xs"
+                          >
+                            <Key className="h-3 w-3 text-purple-500" />
+                            <span className="truncate">{file.name}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                   
@@ -1117,14 +1213,38 @@ chmod +x socmind-agent-linux.sh && ./socmind-agent-linux.sh
                   <div className="rounded-lg border border-border bg-secondary/30 p-3">
                     <p className="text-xs font-medium mb-1">📁 Directory Structure:</p>
                     <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground mb-2">
-{`/opt/socmind/
-├── socmind-universal-agent.py
-└── plugins/ (base.py, fortinet.py, ...)`}
+{`socmind-agent/
+├── agent.py              # Entry point
+├── config.yaml           # Configuration
+├── requirements.txt      # Dependencies
+├── core/                 # Engine modules
+│   ├── collector.py      # Log collection
+│   ├── executor.py       # SOAR action execution
+│   ├── playbook_engine.py # Playbook runner
+│   ├── approval_client.py # Approval workflow
+│   ├── audit_logger.py   # Audit trail
+│   └── heartbeat.py      # Health monitoring
+├── actions/              # Action handlers
+│   ├── block_ip.py       # IP blocking
+│   ├── kill_process.py   # Process termination
+│   └── ...               # More actions
+├── vendors/              # Vendor parsers
+│   ├── fortinet.py       # FortiGate
+│   ├── paloalto.py       # PAN-OS
+│   └── cisco.py          # ASA/FTD
+├── playbooks/            # YAML playbooks
+│   ├── brute_force.yaml
+│   └── malware_c2.yaml
+└── utils/                # Utilities
+    ├── signer.py         # Request signing
+    └── permissions.py    # OS permissions`}
                     </pre>
                     <p className="text-xs font-medium mb-1">🚀 Quick Start:</p>
                     <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground">
-{`python3 socmind-universal-agent.py configure
-python3 socmind-universal-agent.py run --mode syslog`}
+{`pip install -r requirements.txt
+python3 agent.py configure
+python3 agent.py run            # Live mode
+python3 agent.py run --dry-run  # Simulation`}
                     </pre>
                   </div>
                 </TabsContent>

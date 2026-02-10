@@ -1,0 +1,28 @@
+# SOCMind Playbook – Suspicious Admin Login
+name: admin_login_alert
+description: >
+  Detects logins from admin/privileged accounts that exhibit anomalous
+  behavior (geo anomaly, off-hours, new device) and triggers enhanced
+  monitoring and SOC notification.
+
+trigger:
+  event: login
+  conditions:
+    user_role: admin
+    geo_anomaly: true
+
+actions:
+  - type: notify_user
+    message: "An unusual login was detected on your admin account from a new location. If this wasn't you, contact security immediately."
+    approval: false
+
+  - type: lock_user
+    duration: 300
+    approval: true
+    reason: "Geo-anomalous admin login – pending verification"
+
+mitre:
+  tactic: Initial Access
+  technique: T1078
+
+severity: high

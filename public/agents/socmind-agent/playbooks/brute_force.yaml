@@ -1,0 +1,32 @@
+# SOCMind Playbook – Brute Force Attack Detection & Response
+name: brute_force_attack
+description: >
+  Detects repeated failed login attempts and automatically locks the
+  targeted user account to prevent unauthorized access.
+
+trigger:
+  event: failed_login
+  threshold: 3
+  window: 120s
+
+actions:
+  - type: lock_user
+    duration: 180
+    approval: false
+    reason: "Brute force attack detected – auto-locking account"
+
+  - type: notify_user
+    message: "Your account has been temporarily locked due to suspicious login activity. Contact your SOC team if this was not you."
+    approval: false
+
+  - type: block_ip
+    duration: 600
+    approval: true
+    reason: "Source IP of brute force attack"
+
+mitre:
+  tactic: Credential Access
+  technique: T1110
+  subtechnique: T1110.001
+
+severity: high

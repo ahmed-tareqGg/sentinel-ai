@@ -1,0 +1,48 @@
+# SOCMind Universal Agent – Configuration Template
+# Copy this file and fill in your credentials
+
+agent:
+  version: "3.0.0"
+  mode: executor          # executor | collector
+  log_level: INFO
+
+api:
+  endpoint: "https://YOUR_PROJECT.supabase.co/functions/v1/agent-gateway"
+  key: "socm_YOUR_API_KEY"
+  license_key: "SOCM-XXXX-XXXX-XXXX-XXXX"
+
+collector:
+  interval_seconds: 60
+  max_lines_per_source: 50
+  sources:
+    - /var/log/auth.log
+    - /var/log/syslog
+    - /var/log/secure
+    - /var/log/messages
+
+executor:
+  poll_interval_seconds: 10
+  dry_run: false
+  allowed_actions:
+    - block_ip
+    - unblock_ip
+    - kill_process
+    - lock_user
+    - delete_file
+    - quarantine_file
+    - stop_service
+    - start_service
+    - isolate_host
+    - unisolate_host
+    - notify_user
+
+heartbeat:
+  interval_seconds: 30
+
+playbooks:
+  enabled: true
+  directory: ./playbooks
+
+audit:
+  local_log_path: ./audit.log
+  send_to_platform: true
