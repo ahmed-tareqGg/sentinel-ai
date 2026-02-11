@@ -70,28 +70,106 @@ validate_license() {
 }
 
 # ========== Log Collection ==========
+POSITION_DIR="/tmp/socmind_positions"
+
 collect_logs() {
     local max_lines=${1:-50}
     local logs="[]"
+    local found_any="false"
+    mkdir -p "$POSITION_DIR"
     
-    for logfile in /var/log/auth.log /var/log/secure /var/log/syslog /var/log/messages; do
+    # Method 1: Traditional log files
+    for logfile in /var/log/auth.log /var/log/secure /var/log/syslog /var/log/messages /var/log/kern.log /var/log/daemon.log /var/log/faillog /var/log/lastlog /var/log/dpkg.log /var/log/apt/history.log; do
         [ ! -f "$logfile" ] && continue
+        [ ! -r "$logfile" ] && continue
+        found_any="true"
+        
+        local pos_file="$POSITION_DIR/$(echo "$logfile" | md5sum | cut -c1-16)"
+        local last_size=0
+        [ -f "$pos_file" ] && last_size=$(cat "$pos_file" 2>/dev/null || echo 0)
+        local current_size=$(stat -c%s "$logfile" 2>/dev/null || stat -f%z "$logfile" 2>/dev/null || echo 0)
+        
+        # File rotated or first run
+        if [ "$current_size" -lt "$last_size" ] 2>/dev/null; then
+            last_size=0
+        fi
+        
+        # No new data
+        if [ "$current_size" -eq "$last_size" ] 2>/dev/null; then
+            continue
+        fi
+        
+        local logtype="system"
+        echo "$logfile" | grep -qi "auth\|secure\|faillog\|lastlog" && logtype="auth"
+        echo "$logfile" | grep -qi "kern" && logtype="kernel"
+        echo "$logfile" | grep -qi "dpkg\|apt" && logtype="package"
+        
+        local new_lines=""
+        if [ "$last_size" -eq 0 ]; then
+            new_lines=$(tail -n "$max_lines" "$logfile" 2>/dev/null)
+        else
+            new_lines=$(dd if="$logfile" bs=1 skip="$last_size" 2>/dev/null | head -n "$max_lines")
+        fi
+        
+        echo "$current_size" > "$pos_file"
+        
         while IFS= read -r line; do
             [ -z "$line" ] && continue
             local severity=2
-            echo "$line" | grep -qi "failed\|denied\|error" && severity=4
-            echo "$line" | grep -qi "warning\|warn" && severity=3
-            local msg=$(echo "$line" | head -c 500)
-            local logtype="auth"
-            echo "$logfile" | grep -q "syslog\|messages" && logtype="system"
+            echo "$line" | grep -qi "critical\|emergency\|panic" && severity=5
+            echo "$line" | grep -qi "failed\|denied\|error\|attack\|blocked\|invalid" && severity=4
+            echo "$line" | grep -qi "warning\|warn\|suspicious" && severity=3
+            local safe_msg=$(echo "$line" | head -c 500 | sed "s/'/\\\\'/g" | sed 's/"/\\"/g')
             logs=$(echo "$logs" | python3 -c "
 import sys, json
 logs = json.load(sys.stdin)
-logs.append({'log_type':'$logtype','timestamp':'$(date -u +%Y-%m-%dT%H:%M:%SZ)','message':'''$msg''','severity':$severity,'source_ip':'$(hostname)','raw_log':{'file':'$logfile'}})
+logs.append({'log_type':'$logtype','timestamp':'$(date -u +%Y-%m-%dT%H:%M:%SZ)','message':'$safe_msg','severity':$severity,'source_ip':'$(hostname)','raw_log':{'file':'$logfile'}})
 print(json.dumps(logs))
 " 2>/dev/null || echo "$logs")
-        done < <(tail -n "$max_lines" "$logfile" 2>/dev/null)
+        done <<< "$new_lines"
     done
+    
+    # Method 2: journalctl fallback (systemd-based systems like Kali, Ubuntu 22+, Fedora)
+    if [ "$found_any" == "false" ] || [ "$logs" == "[]" ]; then
+        if command -v journalctl &> /dev/null; then
+            local journal_pos_file="$POSITION_DIR/journalctl_cursor"
+            local journal_args="--no-pager -o short-iso -q -n $max_lines"
+            
+            if [ -f "$journal_pos_file" ]; then
+                local cursor=$(cat "$journal_pos_file" 2>/dev/null)
+                if [ -n "$cursor" ]; then
+                    journal_args="--no-pager -o short-iso -q --after-cursor=$cursor -n $max_lines"
+                fi
+            fi
+            
+            local journal_output=""
+            journal_output=$(journalctl $journal_args 2>/dev/null)
+            
+            # Save cursor for next run
+            journalctl --no-pager -o export -n 1 2>/dev/null | grep "^__CURSOR=" | cut -d= -f2 > "$journal_pos_file" 2>/dev/null
+            
+            while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                [[ "$line" == *"-- No entries --"* ]] && continue
+                [[ "$line" == *"-- Journal begins"* ]] && continue
+                local severity=2
+                echo "$line" | grep -qi "critical\|emergency\|panic" && severity=5
+                echo "$line" | grep -qi "failed\|denied\|error\|attack\|blocked\|invalid" && severity=4
+                echo "$line" | grep -qi "warning\|warn\|suspicious" && severity=3
+                local logtype="system"
+                echo "$line" | grep -qi "sshd\|sudo\|login\|pam\|auth" && logtype="auth"
+                echo "$line" | grep -qi "kernel" && logtype="kernel"
+                local safe_msg=$(echo "$line" | head -c 500 | sed "s/'/\\\\'/g" | sed 's/"/\\"/g')
+                logs=$(echo "$logs" | python3 -c "
+import sys, json
+logs = json.load(sys.stdin)
+logs.append({'log_type':'$logtype','timestamp':'$(date -u +%Y-%m-%dT%H:%M:%SZ)','message':'$safe_msg','severity':$severity,'source_ip':'$(hostname)','raw_log':{'source':'journalctl'}})
+print(json.dumps(logs))
+" 2>/dev/null || echo "$logs")
+            done <<< "$journal_output"
+        fi
+    fi
+    
     echo "$logs"
 }
 
