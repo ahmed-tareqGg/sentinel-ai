@@ -4,7 +4,9 @@
 # Contact: security@socmind.ai
 # Capabilities: Log Collector + Action Executor + IOC Enforcer + Playbook Runner
 
-set -e
+# Note: Do NOT use 'set -e' — many commands (grep, dd, pkill) return
+# non-zero exit codes during normal operation, which would kill the agent.
+set +e
 
 AGENT_VERSION="3.0.0"
 CONFIG_FILE="$(dirname "$0")/agent.conf"
@@ -73,7 +75,7 @@ validate_license() {
 POSITION_DIR="/tmp/socmind_positions"
 
 collect_logs() {
-    local max_lines=${1:-50}
+    local max_lines=${1:-100}
     local logs="[]"
     local found_any="false"
     mkdir -p "$POSITION_DIR"
@@ -106,9 +108,9 @@ collect_logs() {
         
         local new_lines=""
         if [ "$last_size" -eq 0 ]; then
-            new_lines=$(tail -n "$max_lines" "$logfile" 2>/dev/null)
+            new_lines=$(tail -n "$max_lines" "$logfile" 2>/dev/null || true)
         else
-            new_lines=$(dd if="$logfile" bs=1 skip="$last_size" 2>/dev/null | head -n "$max_lines")
+            new_lines=$(dd if="$logfile" bs=1 skip="$last_size" 2>/dev/null | head -n "$max_lines" || true)
         fi
         
         echo "$current_size" > "$pos_file"
@@ -116,14 +118,34 @@ collect_logs() {
         while IFS= read -r line; do
             [ -z "$line" ] && continue
             local severity=2
-            echo "$line" | grep -qi "critical\|emergency\|panic" && severity=5
-            echo "$line" | grep -qi "failed\|denied\|error\|attack\|blocked\|invalid" && severity=4
-            echo "$line" | grep -qi "warning\|warn\|suspicious" && severity=3
-            local safe_msg=$(echo "$line" | head -c 500 | sed "s/'/\\\\'/g" | sed 's/"/\\"/g')
+            
+            # High severity: brute force, failed passwords, authentication failures
+            if echo "$line" | grep -qi "Failed password\|authentication failure\|FAILED LOGIN\|invalid user\|illegal user\|maximum authentication\|Too many authentication\|pam_unix.*failed\|Connection closed.*preauth\|Disconnected from authenticating"; then
+                severity=5
+            elif echo "$line" | grep -qi "critical\|emergency\|panic"; then
+                severity=5
+            elif echo "$line" | grep -qi "failed\|denied\|error\|attack\|blocked\|invalid\|unauthorized\|rejected"; then
+                severity=4
+            elif echo "$line" | grep -qi "warning\|warn\|suspicious"; then
+                severity=3
+            fi
+            
+            # Detect MITRE techniques from log content
+            local mitre=""
+            echo "$line" | grep -qi "Failed password\|authentication failure\|FAILED LOGIN" && mitre="T1110"
+            echo "$line" | grep -qi "sudo.*COMMAND\|su:" && mitre="T1548"
+            echo "$line" | grep -qi "Accepted publickey\|Accepted password" && mitre="T1078"
+            echo "$line" | grep -qi "session opened\|session closed" && mitre="T1021"
+            
+            local safe_msg=$(echo "$line" | head -c 500 | sed "s/'/\\\\'/g" | sed 's/"/\\"/g' | tr -d '\000-\037' || true)
             logs=$(echo "$logs" | python3 -c "
 import sys, json
 logs = json.load(sys.stdin)
-logs.append({'log_type':'$logtype','timestamp':'$(date -u +%Y-%m-%dT%H:%M:%SZ)','message':'$safe_msg','severity':$severity,'source_ip':'$(hostname)','raw_log':{'file':'$logfile'}})
+entry = {'log_type':'$logtype','timestamp':'$(date -u +%Y-%m-%dT%H:%M:%SZ)','message':'$safe_msg','severity':$severity,'source_ip':'$(hostname)','raw_log':{'file':'$logfile'}}
+mitre = '$mitre'
+if mitre:
+    entry['mitre_technique'] = mitre
+logs.append(entry)
 print(json.dumps(logs))
 " 2>/dev/null || echo "$logs")
         done <<< "$new_lines"
@@ -143,27 +165,44 @@ print(json.dumps(logs))
             fi
             
             local journal_output=""
-            journal_output=$(journalctl $journal_args 2>/dev/null)
+            journal_output=$(journalctl $journal_args 2>/dev/null || true)
             
             # Save cursor for next run
-            journalctl --no-pager -o export -n 1 2>/dev/null | grep "^__CURSOR=" | cut -d= -f2 > "$journal_pos_file" 2>/dev/null
+            journalctl --no-pager -o export -n 1 2>/dev/null | grep "^__CURSOR=" | cut -d= -f2 > "$journal_pos_file" 2>/dev/null || true
             
             while IFS= read -r line; do
                 [ -z "$line" ] && continue
                 [[ "$line" == *"-- No entries --"* ]] && continue
                 [[ "$line" == *"-- Journal begins"* ]] && continue
                 local severity=2
-                echo "$line" | grep -qi "critical\|emergency\|panic" && severity=5
-                echo "$line" | grep -qi "failed\|denied\|error\|attack\|blocked\|invalid" && severity=4
-                echo "$line" | grep -qi "warning\|warn\|suspicious" && severity=3
+                
+                if echo "$line" | grep -qi "Failed password\|authentication failure\|FAILED LOGIN\|invalid user\|illegal user\|maximum authentication\|pam_unix.*failed"; then
+                    severity=5
+                elif echo "$line" | grep -qi "critical\|emergency\|panic"; then
+                    severity=5
+                elif echo "$line" | grep -qi "failed\|denied\|error\|attack\|blocked\|invalid"; then
+                    severity=4
+                elif echo "$line" | grep -qi "warning\|warn\|suspicious"; then
+                    severity=3
+                fi
+                
                 local logtype="system"
-                echo "$line" | grep -qi "sshd\|sudo\|login\|pam\|auth" && logtype="auth"
+                echo "$line" | grep -qi "sshd\|sudo\|login\|pam\|auth\|passwd" && logtype="auth"
                 echo "$line" | grep -qi "kernel" && logtype="kernel"
-                local safe_msg=$(echo "$line" | head -c 500 | sed "s/'/\\\\'/g" | sed 's/"/\\"/g')
+                
+                local mitre=""
+                echo "$line" | grep -qi "Failed password\|authentication failure" && mitre="T1110"
+                echo "$line" | grep -qi "sudo.*COMMAND\|su:" && mitre="T1548"
+                
+                local safe_msg=$(echo "$line" | head -c 500 | sed "s/'/\\\\'/g" | sed 's/"/\\"/g' | tr -d '\000-\037' || true)
                 logs=$(echo "$logs" | python3 -c "
 import sys, json
 logs = json.load(sys.stdin)
-logs.append({'log_type':'$logtype','timestamp':'$(date -u +%Y-%m-%dT%H:%M:%SZ)','message':'$safe_msg','severity':$severity,'source_ip':'$(hostname)','raw_log':{'source':'journalctl'}})
+entry = {'log_type':'$logtype','timestamp':'$(date -u +%Y-%m-%dT%H:%M:%SZ)','message':'$safe_msg','severity':$severity,'source_ip':'$(hostname)','raw_log':{'source':'journalctl'}}
+mitre = '$mitre'
+if mitre:
+    entry['mitre_technique'] = mitre
+logs.append(entry)
 print(json.dumps(logs))
 " 2>/dev/null || echo "$logs")
             done <<< "$journal_output"
