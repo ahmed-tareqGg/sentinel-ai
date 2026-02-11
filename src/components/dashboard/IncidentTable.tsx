@@ -4,10 +4,14 @@ import { Incident } from '@/hooks/useIncidents';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface IncidentTableProps {
   incidents: Incident[];
   limit?: number;
+  selectable?: boolean;
+  selectedIds?: Set<string>;
+  onSelectionChange?: (ids: Set<string>) => void;
 }
 
 const severityColors: Record<number, string> = {
@@ -30,9 +34,29 @@ const classificationColors: Record<string, string> = {
   'Pending': 'bg-muted text-muted-foreground border-border',
 };
 
-export function IncidentTable({ incidents, limit }: IncidentTableProps) {
+export function IncidentTable({ incidents, limit, selectable, selectedIds, onSelectionChange }: IncidentTableProps) {
   const navigate = useNavigate();
   const displayedIncidents = limit ? incidents.slice(0, limit) : incidents;
+
+  const allSelected = displayedIncidents.length > 0 && selectedIds && displayedIncidents.every(i => selectedIds.has(i.id));
+  const someSelected = selectedIds && displayedIncidents.some(i => selectedIds.has(i.id)) && !allSelected;
+
+  const toggleAll = () => {
+    if (!onSelectionChange) return;
+    if (allSelected) {
+      onSelectionChange(new Set());
+    } else {
+      onSelectionChange(new Set(displayedIncidents.map(i => i.id)));
+    }
+  };
+
+  const toggleOne = (id: string) => {
+    if (!onSelectionChange || !selectedIds) return;
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onSelectionChange(next);
+  };
 
   if (displayedIncidents.length === 0) {
     return (
@@ -48,6 +72,15 @@ export function IncidentTable({ incidents, limit }: IncidentTableProps) {
         <table className="w-full">
           <thead>
             <tr className="border-b border-border bg-secondary/30">
+              {selectable && (
+                <th className="px-4 py-3 w-10">
+                  <Checkbox
+                    checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                    onCheckedChange={toggleAll}
+                    aria-label="Select all"
+                  />
+                </th>
+              )}
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">ID</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Type</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Severity</th>
@@ -61,9 +94,21 @@ export function IncidentTable({ incidents, limit }: IncidentTableProps) {
             {displayedIncidents.map((incident) => (
               <tr 
                 key={incident.id} 
-                className="transition-colors hover:bg-secondary/20 cursor-pointer"
+                className={cn(
+                  "transition-colors hover:bg-secondary/20 cursor-pointer",
+                  selectable && selectedIds?.has(incident.id) && "bg-primary/5"
+                )}
                 onClick={() => navigate(`/incidents/${incident.id}`)}
               >
+                {selectable && (
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds?.has(incident.id) || false}
+                      onCheckedChange={() => toggleOne(incident.id)}
+                      aria-label={`Select ${incident.incident_number}`}
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   <span className="font-mono text-sm font-medium text-primary">{incident.incident_number}</span>
                 </td>
