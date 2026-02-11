@@ -31,6 +31,7 @@ import CloudAdmin from "./pages/CloudAdmin";
 import DataSources from "./pages/DataSources";
 import LiveLogs from "./pages/LiveLogs";
 import ThreatHunting from "./pages/ThreatHunting";
+import ThreatIntel from "./pages/ThreatIntel";
 
 const queryClient = new QueryClient();
 
@@ -74,6 +75,7 @@ const App = () => (
             <Route path="/data-sources" element={<ProtectedRoute><DataSources /></ProtectedRoute>} />
             <Route path="/live-logs" element={<ProtectedRoute><LiveLogs /></ProtectedRoute>} />
             <Route path="/threat-hunting" element={<ProtectedRoute><ThreatHunting /></ProtectedRoute>} />
+            <Route path="/threat-intel" element={<ProtectedRoute><ThreatIntel /></ProtectedRoute>} />
             <Route path="/admin/cloud" element={<ProtectedRoute requiredRole="ciso"><CloudAdmin /></ProtectedRoute>} />
             
             {/* Fallback */}

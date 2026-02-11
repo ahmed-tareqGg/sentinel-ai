@@ -1931,6 +1931,218 @@ export type Database = {
         }
         Relationships: []
       }
+      threat_actors: {
+        Row: {
+          active_since: string | null
+          aliases: string[] | null
+          associated_iocs: string[] | null
+          created_at: string
+          description: string | null
+          id: string
+          last_activity: string | null
+          motivation: string | null
+          name: string
+          origin_country: string | null
+          sophistication: string | null
+          source: string | null
+          source_data: Json | null
+          target_sectors: string[] | null
+          ttps: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          active_since?: string | null
+          aliases?: string[] | null
+          associated_iocs?: string[] | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          last_activity?: string | null
+          motivation?: string | null
+          name: string
+          origin_country?: string | null
+          sophistication?: string | null
+          source?: string | null
+          source_data?: Json | null
+          target_sectors?: string[] | null
+          ttps?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          active_since?: string | null
+          aliases?: string[] | null
+          associated_iocs?: string[] | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          last_activity?: string | null
+          motivation?: string | null
+          name?: string
+          origin_country?: string | null
+          sophistication?: string | null
+          source?: string | null
+          source_data?: Json | null
+          target_sectors?: string[] | null
+          ttps?: string[] | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      threat_feeds: {
+        Row: {
+          config: Json | null
+          created_at: string
+          created_by: string | null
+          feed_type: string | null
+          feed_url: string | null
+          fetch_interval_minutes: number | null
+          id: string
+          is_active: boolean | null
+          last_fetched: string | null
+          name: string
+          provider: string
+          total_iocs: number | null
+          updated_at: string
+        }
+        Insert: {
+          config?: Json | null
+          created_at?: string
+          created_by?: string | null
+          feed_type?: string | null
+          feed_url?: string | null
+          fetch_interval_minutes?: number | null
+          id?: string
+          is_active?: boolean | null
+          last_fetched?: string | null
+          name: string
+          provider: string
+          total_iocs?: number | null
+          updated_at?: string
+        }
+        Update: {
+          config?: Json | null
+          created_at?: string
+          created_by?: string | null
+          feed_type?: string | null
+          feed_url?: string | null
+          fetch_interval_minutes?: number | null
+          id?: string
+          is_active?: boolean | null
+          last_fetched?: string | null
+          name?: string
+          provider?: string
+          total_iocs?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      threat_intel_iocs: {
+        Row: {
+          categories: string[] | null
+          confidence: number | null
+          country_code: string | null
+          created_at: string
+          first_seen: string | null
+          id: string
+          ioc_type: string
+          is_whitelisted: boolean | null
+          isp: string | null
+          last_seen: string | null
+          related_incident_ids: string[] | null
+          source: string
+          source_data: Json | null
+          tags: string[] | null
+          threat_score: number | null
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          categories?: string[] | null
+          confidence?: number | null
+          country_code?: string | null
+          created_at?: string
+          first_seen?: string | null
+          id?: string
+          ioc_type: string
+          is_whitelisted?: boolean | null
+          isp?: string | null
+          last_seen?: string | null
+          related_incident_ids?: string[] | null
+          source: string
+          source_data?: Json | null
+          tags?: string[] | null
+          threat_score?: number | null
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          categories?: string[] | null
+          confidence?: number | null
+          country_code?: string | null
+          created_at?: string
+          first_seen?: string | null
+          id?: string
+          ioc_type?: string
+          is_whitelisted?: boolean | null
+          isp?: string | null
+          last_seen?: string | null
+          related_incident_ids?: string[] | null
+          source?: string
+          source_data?: Json | null
+          tags?: string[] | null
+          threat_score?: number | null
+          updated_at?: string
+          value?: string
+        }
+        Relationships: []
+      }
+      ti_enrichment_logs: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          incident_id: string | null
+          ioc_type: string
+          ioc_value: string
+          provider: string
+          request_status: string | null
+          requested_by: string | null
+          response_data: Json | null
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          incident_id?: string | null
+          ioc_type: string
+          ioc_value: string
+          provider: string
+          request_status?: string | null
+          requested_by?: string | null
+          response_data?: Json | null
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          incident_id?: string | null
+          ioc_type?: string
+          ioc_value?: string
+          provider?: string
+          request_status?: string | null
+          requested_by?: string | null
+          response_data?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ti_enrichment_logs_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_access: {
         Row: {
           approved: boolean
