@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   Activity,
   RefreshCw,
@@ -15,7 +16,8 @@ import {
   FileJson2,
   ArrowUpDown,
   Pause,
-  Play
+  Play,
+  ShieldAlert
 } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -70,6 +72,7 @@ const STATUS_CONFIG: Record<string, { color: string; icon: React.ReactNode; labe
 };
 
 export default function LiveLogs() {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [logTypeFilter, setLogTypeFilter] = useState<string>('all');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
@@ -81,6 +84,7 @@ export default function LiveLogs() {
   const [totalCount, setTotalCount] = useState<number>(0);
   const [limit, setLimit] = useState<number>(100);
   const [page, setPage] = useState<number>(1);
+  const [creatingIncidentId, setCreatingIncidentId] = useState<string | null>(null);
 
   // Fetch logs
   const { data: fetchedLogs, isLoading, refetch } = useQuery({
@@ -167,7 +171,71 @@ export default function LiveLogs() {
     );
   }) || [];
 
-  // Fetch actual stats from database
+  const handleCreateIncident = async (log: RawLog, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCreatingIncidentId(log.id);
+    try {
+      const payload = log.raw_payload || {};
+      const severity = log.severity === 'critical' ? 5 : log.severity === 'high' ? 4 : log.severity === 'medium' ? 3 : log.severity === 'low' ? 2 : 1;
+      const riskLevel = severity >= 5 ? 'Critical' : severity >= 4 ? 'High' : severity >= 3 ? 'Medium' : 'Low';
+
+      const { data, error } = await supabase
+        .from('incidents')
+        .insert({
+          incident_number: 'TEMP',
+          event_type: log.log_type || 'Unknown',
+          severity,
+          src_ip: log.ip_address || (payload as any).srcIP || (payload as any).srcip || null,
+          dst_ip: (payload as any).dstIP || (payload as any).dstip || null,
+          message: log.parsed_message || JSON.stringify(payload).slice(0, 500),
+          classification: 'Pending',
+          risk_level: riskLevel,
+          confidence: 0,
+          mitre_technique: log.mitre_technique || null,
+          raw_log: payload as any,
+          ai_analysis: null,
+          evidence: [],
+          recommended_actions: [],
+        } as any)
+        .select('id, incident_number')
+        .single();
+
+      if (error) throw error;
+
+      // Link raw log to incident
+      await supabase
+        .from('raw_logs')
+        .update({ processing_status: 'incident_created', incident_id: data.id })
+        .eq('id', log.id);
+
+      // Trigger AI analysis in background (fire-and-forget)
+      supabase.functions.invoke('ingest-log', {
+        body: {
+          logs: {
+            eventType: log.log_type,
+            severity,
+            srcIP: log.ip_address,
+            msg: log.parsed_message,
+            raw_log_id: log.id,
+          },
+          source: 'Manual Escalation',
+        },
+        headers: { 'x-raw-logs-inserted': 'true' },
+      }).catch(() => {});
+
+      toast({ title: `✅ ${data.incident_number} created`, description: 'Redirecting to investigation...' });
+      refetch();
+
+      // Navigate to the incident
+      setTimeout(() => navigate(`/incidents/${data.id}`), 500);
+    } catch (err: any) {
+      console.error('Create incident failed:', err);
+      toast({ title: 'Error', description: err?.message || 'Failed to create incident', variant: 'destructive' });
+    } finally {
+      setCreatingIncidentId(null);
+    }
+  };
+
   const { data: dbStats } = useQuery({
     queryKey: ['raw-logs-stats'],
     queryFn: async () => {
@@ -412,8 +480,8 @@ export default function LiveLogs() {
                   <TableHead className="w-[100px]">Type</TableHead>
                   <TableHead className="w-[100px]">Severity</TableHead>
                   <TableHead>Message</TableHead>
-                  <TableHead className="w-[140px]">Status</TableHead>
-                  <TableHead className="w-[60px]">Actions</TableHead>
+                   <TableHead className="w-[140px]">Status</TableHead>
+                   <TableHead className="w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -487,16 +555,45 @@ export default function LiveLogs() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedLog(log);
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedLog(log);
+                            }}
+                            title="View details"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          {log.processing_status !== 'incident_created' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => handleCreateIncident(log, e)}
+                              disabled={creatingIncidentId === log.id}
+                              title="Create Incident"
+                              className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10"
+                            >
+                              <ShieldAlert className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {log.processing_status === 'incident_created' && log.incident_id && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/incidents/${log.incident_id}`);
+                              }}
+                              title="View Incident"
+                              className="text-green-400 hover:text-green-300 hover:bg-green-500/10"
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
