@@ -208,26 +208,46 @@ export default function LiveLogs() {
         .update({ processing_status: 'incident_created', incident_id: data.id })
         .eq('id', log.id);
 
-      // Trigger AI analysis in background (fire-and-forget)
-      supabase.functions.invoke('ingest-log', {
+      toast({ title: `✅ ${data.incident_number} created`, description: 'Running AI analysis...' });
+      refetch();
+
+      // Navigate immediately
+      navigate(`/incidents/${data.id}`);
+
+      // Trigger AI analysis in background and update the incident
+      supabase.functions.invoke('analyze-log', {
         body: {
-          logs: {
+          log: {
             eventType: log.log_type,
             severity,
             srcIP: log.ip_address,
+            dstIP: (payload as any).dstIP || (payload as any).dstip || null,
             msg: log.parsed_message,
-            raw_log_id: log.id,
           },
-          source: 'Manual Escalation',
+          internal: true,
         },
-        headers: { 'x-raw-logs-inserted': 'true' },
+      }).then(async (resp) => {
+        if (resp.error || !resp.data) return;
+        const analysis = resp.data as any;
+        const classification = (() => {
+          const c = (analysis.classification || '').toLowerCase();
+          if (c === 'true positive' || c === 'malicious' || c === 'suspicious') return 'True Positive';
+          if (c === 'false positive' || c === 'benign' || c === 'informational') return 'False Positive';
+          return 'Pending';
+        })();
+        await supabase
+          .from('incidents')
+          .update({
+            classification,
+            confidence: analysis.confidence || 0,
+            risk_level: analysis.risk_level || riskLevel,
+            ai_analysis: analysis.ai_analysis || analysis,
+            mitre_technique: analysis.mitre_technique || null,
+            mitre_tactic: analysis.mitre_tactic || null,
+            recommended_actions: analysis.recommended_actions || [],
+          })
+          .eq('id', data.id);
       }).catch(() => {});
-
-      toast({ title: `✅ ${data.incident_number} created`, description: 'Redirecting to investigation...' });
-      refetch();
-
-      // Navigate to the incident
-      setTimeout(() => navigate(`/incidents/${data.id}`), 500);
     } catch (err: any) {
       console.error('Create incident failed:', err);
       toast({ title: 'Error', description: err?.message || 'Failed to create incident', variant: 'destructive' });
