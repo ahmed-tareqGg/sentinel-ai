@@ -97,6 +97,15 @@ function severityToLabel(sev: number) {
   return 'info';
 }
 
+// Map AI classification to valid DB values: True Positive | False Positive | Pending
+function normalizeClassification(raw: string | undefined | null): string {
+  if (!raw) return 'Pending';
+  const lower = raw.toLowerCase().trim();
+  if (lower === 'true positive' || lower === 'malicious' || lower === 'suspicious') return 'True Positive';
+  if (lower === 'false positive' || lower === 'benign' || lower === 'informational') return 'False Positive';
+  return 'Pending';
+}
+
 function getRequestPublicIp(req: Request) {
   const cfIP = req.headers.get('cf-connecting-ip');
   const forwardedFor = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
@@ -112,7 +121,10 @@ function shouldCreateIncident(analysis: any, severity: number): { create: boolea
 
   // Check AI classification
   const classification = (analysis?.classification || '').toLowerCase();
-  if (classification === 'true positive' || classification === 'malicious') {
+  if (classification === 'benign' || classification === 'false positive' || classification === 'informational') {
+    return { create: false, reason: `AI classified as ${classification}` };
+  }
+  if (classification === 'true positive' || classification === 'malicious' || classification === 'suspicious') {
     return { create: true, reason: 'AI classified as True Positive/Malicious' };
   }
 
@@ -276,7 +288,7 @@ serve(async (req) => {
           message: normalizedLog.msg,
           file_hash: normalizedLog.fileHash,
           raw_log: normalizedLog.rawLog,
-          classification: analysis?.classification || 'Pending',
+          classification: normalizeClassification(analysis?.classification),
           confidence: analysis?.confidence || 0,
           risk_level: analysis?.risk_level || (normalizedLog.severity >= 4 ? 'High' : 'Medium'),
           ai_analysis: analysis?.ai_analysis || analysis || null,
