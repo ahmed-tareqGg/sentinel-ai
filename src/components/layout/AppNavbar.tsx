@@ -23,6 +23,7 @@ import {
   X,
   ChevronDown,
   Menu,
+  Shield,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -64,6 +65,8 @@ const navGroups = [
     items: [
       { icon: BarChart3, label: 'Analytics', path: '/analytics' },
       { icon: Target, label: 'MITRE Coverage', path: '/mitre-coverage' },
+      { icon: Shield, label: 'Threat Intel', path: '/threat-intel' },
+      { icon: Activity, label: 'Threat Hunting', path: '/threat-hunting' },
       { icon: Zap, label: 'Playbooks', path: '/playbooks' },
       { icon: ClipboardCheck, label: 'Approvals', path: '/approvals' },
     ],
