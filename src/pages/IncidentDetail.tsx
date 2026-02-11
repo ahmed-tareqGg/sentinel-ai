@@ -78,6 +78,25 @@ export default function IncidentDetail() {
     }
   }, [id]);
 
+  // Poll for AI analysis updates when classification is Pending
+  useEffect(() => {
+    if (!incident || incident.classification !== 'Pending') return;
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from('incidents')
+        .select('classification, confidence, risk_level, ai_analysis, mitre_technique, mitre_tactic, recommended_actions')
+        .eq('id', id)
+        .maybeSingle();
+      if (data && data.classification !== 'Pending') {
+        setIncident(prev => prev ? { ...prev, ...data } as ExtendedIncident : prev);
+        toast.success('AI analysis completed!');
+        clearInterval(interval);
+        fetchTimeline();
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [incident?.classification, id]);
+
   const fetchPendingApprovals = async () => {
     const { data } = await supabase
       .from('approval_requests')
