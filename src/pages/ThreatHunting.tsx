@@ -17,9 +17,6 @@ import {
   Shield,
   Database,
   Loader2,
-  Plus,
-  Trash2,
-  ExternalLink
 } from 'lucide-react';
 import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
@@ -136,12 +133,85 @@ const CATEGORY_COLORS: Record<string, string> = {
   exfil: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
 };
 
+// Parse WHERE conditions from SQL to build Supabase filters
+function parseQueryFilters(sql: string) {
+  const filters: {
+    ilikeFilters: { field: string; value: string }[];
+    eqFilters: { field: string; value: string }[];
+    inFilters: { field: string; values: string[] }[];
+    gteFilters: { field: string; value: number }[];
+    notNullFilters: string[];
+    selectFields: string[] | null;
+    limit: number;
+    orderBy: { field: string; ascending: boolean } | null;
+  } = {
+    ilikeFilters: [],
+    eqFilters: [],
+    inFilters: [],
+    gteFilters: [],
+    notNullFilters: [],
+    selectFields: null,
+    limit: 100,
+    orderBy: null,
+  };
+
+  // Extract LIMIT
+  const limitMatch = sql.match(/LIMIT\s+(\d+)/i);
+  if (limitMatch) filters.limit = parseInt(limitMatch[1]);
+
+  // Extract ORDER BY (simple)
+  const orderMatch = sql.match(/ORDER BY\s+(\w+)\s+(ASC|DESC)?/i);
+  if (orderMatch) {
+    filters.orderBy = {
+      field: orderMatch[1],
+      ascending: orderMatch[2]?.toUpperCase() !== 'DESC',
+    };
+  }
+
+  // Extract ILIKE patterns
+  const ilikeRegex = /(\w+)\s+ILIKE\s+'([^']+)'/gi;
+  let match;
+  while ((match = ilikeRegex.exec(sql)) !== null) {
+    filters.ilikeFilters.push({ field: match[1], value: match[2] });
+  }
+
+  // Extract severity >= N
+  const sevMatch = sql.match(/severity\s*>=\s*(\d+)/i);
+  if (sevMatch) {
+    filters.gteFilters.push({ field: 'severity', value: parseInt(sevMatch[1]) });
+  }
+
+  // Extract IS NOT NULL
+  const notNullRegex = /(\w+)\s+IS\s+NOT\s+NULL/gi;
+  while ((match = notNullRegex.exec(sql)) !== null) {
+    filters.notNullFilters.push(match[1]);
+  }
+
+  // Extract IN ('val1', 'val2')
+  const inRegex = /(\w+)\s+IN\s*\(([^)]+)\)/gi;
+  while ((match = inRegex.exec(sql)) !== null) {
+    const values = match[2].split(',').map(v => v.trim().replace(/'/g, ''));
+    filters.inFilters.push({ field: match[1], values });
+  }
+
+  // Extract SELECT fields
+  const selectMatch = sql.match(/SELECT\s+(.*?)\s+FROM/is);
+  if (selectMatch) {
+    const selectStr = selectMatch[1].trim();
+    if (selectStr !== '*' && !selectStr.includes('COUNT') && !selectStr.includes('DISTINCT')) {
+      filters.selectFields = selectStr.split(',').map(f => f.trim().split(/\s+as\s+/i)[0].trim()).filter(f => f && !f.includes('('));
+    }
+  }
+
+  return filters;
+}
+
 export default function ThreatHunting() {
   const [activeQuery, setActiveQuery] = useState('');
   const [queryName, setQueryName] = useState('');
   const [results, setResults] = useState<QueryResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [savedHunts, setSavedHunts] = useState<HuntQuery[]>(SAVED_HUNTS);
+  const [savedHunts] = useState<HuntQuery[]>(SAVED_HUNTS);
   const [recentQueries, setRecentQueries] = useState<string[]>([]);
 
   const executeQuery = async () => {
@@ -150,7 +220,6 @@ export default function ThreatHunting() {
       return;
     }
 
-    // Basic SQL injection prevention - only allow SELECT
     const cleanQuery = activeQuery.trim().toUpperCase();
     if (!cleanQuery.startsWith('SELECT')) {
       toast.error('Only SELECT queries are allowed for hunting');
@@ -161,12 +230,54 @@ export default function ThreatHunting() {
     const startTime = Date.now();
 
     try {
-      // Query incidents table directly
-      const { data: incidents, error } = await supabase
-        .from('incidents')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
+      const filters = parseQueryFilters(activeQuery);
+      
+      // Build the select fields
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let query: any = supabase.from('incidents').select('*');
+
+      // Apply ILIKE filters with OR grouping by field
+      const ilikeByField: Record<string, string[]> = {};
+      for (const f of filters.ilikeFilters) {
+        if (!ilikeByField[f.field]) ilikeByField[f.field] = [];
+        ilikeByField[f.field].push(f.value);
+      }
+
+      for (const [field, patterns] of Object.entries(ilikeByField)) {
+        if (patterns.length === 1) {
+          query = query.ilike(field, patterns[0]);
+        } else {
+          const orStr = patterns.map(p => `${field}.ilike.${p}`).join(',');
+          query = query.or(orStr);
+        }
+      }
+
+      // Apply gte filters
+      for (const f of filters.gteFilters) {
+        query = query.gte(f.field, f.value);
+      }
+
+      // Apply NOT NULL filters
+      for (const field of filters.notNullFilters) {
+        query = query.not(field, 'is', null);
+      }
+
+      // Apply IN filters
+      for (const f of filters.inFilters) {
+        query = query.in(f.field, f.values);
+      }
+
+      // Apply order
+      if (filters.orderBy) {
+        query = query.order(filters.orderBy.field, { ascending: filters.orderBy.ascending });
+      } else {
+        query = query.order('timestamp', { ascending: false });
+      }
+
+      // Apply limit
+      query = query.limit(filters.limit);
+
+      const { data: incidents, error } = await query;
 
       if (error) throw error;
 
@@ -175,28 +286,17 @@ export default function ThreatHunting() {
       
       setResults({
         columns,
-        rows: incidents as Record<string, unknown>[] || [],
+        rows: (incidents || []) as Record<string, unknown>[],
         count: incidents?.length || 0,
         executionTime
       });
 
-      // Add to recent queries
       setRecentQueries(prev => [activeQuery, ...prev.slice(0, 9)]);
-      toast.success('Query executed successfully');
+      toast.success(`Query executed — ${incidents?.length || 0} results`);
     } catch (error) {
       console.error('Query error:', error);
-      toast.error('Query failed. Showing sample data.');
-      
-      // Simulate results for demo
-      setResults({
-        columns: ['incident_number', 'src_ip', 'event_type', 'severity', 'timestamp'],
-        rows: [
-          { incident_number: 'INC-0042', src_ip: '10.0.0.15', event_type: 'auth_failure', severity: 4, timestamp: new Date().toISOString() },
-          { incident_number: 'INC-0041', src_ip: '192.168.1.100', event_type: 'suspicious_process', severity: 5, timestamp: new Date().toISOString() },
-        ],
-        count: 2,
-        executionTime: Date.now() - startTime
-      });
+      toast.error('Query failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setResults(null);
     } finally {
       setLoading(false);
     }
@@ -209,7 +309,6 @@ export default function ThreatHunting() {
 
   const convertToIncident = async (row: Record<string, unknown>) => {
     toast.success('Hunt result flagged for investigation');
-    // Navigate to create incident or flag existing
   };
 
   return (
@@ -223,6 +322,7 @@ export default function ThreatHunting() {
                 <div className="flex items-center gap-2">
                   <Search className="h-5 w-5 text-primary" />
                   <CardTitle>Hunt Query</CardTitle>
+                  {queryName && <Badge variant="secondary" className="ml-2">{queryName}</Badge>}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button variant="outline" size="sm" disabled={!activeQuery}>
@@ -275,40 +375,44 @@ HAVING COUNT(*) > 5"
                 </div>
               </CardHeader>
               <CardContent>
-                <ScrollArea className="h-[400px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        {results.columns.slice(0, 8).map((col) => (
-                          <TableHead key={col} className="text-xs uppercase">
-                            {col.replace(/_/g, ' ')}
-                          </TableHead>
-                        ))}
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {results.rows.map((row, idx) => (
-                        <TableRow key={idx}>
+                {results.rows.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">No results found for this query.</p>
+                ) : (
+                  <ScrollArea className="h-[400px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
                           {results.columns.slice(0, 8).map((col) => (
-                            <TableCell key={col} className="text-sm max-w-[200px] truncate">
-                              {String(row[col] ?? '-')}
-                            </TableCell>
+                            <TableHead key={col} className="text-xs uppercase">
+                              {col.replace(/_/g, ' ')}
+                            </TableHead>
                           ))}
-                          <TableCell>
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              onClick={() => convertToIncident(row)}
-                            >
-                              <AlertTriangle className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
+                          <TableHead>Actions</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
+                      </TableHeader>
+                      <TableBody>
+                        {results.rows.map((row, idx) => (
+                          <TableRow key={idx}>
+                            {results.columns.slice(0, 8).map((col) => (
+                              <TableCell key={col} className="text-sm max-w-[200px] truncate">
+                                {String(row[col] ?? '-')}
+                              </TableCell>
+                            ))}
+                            <TableCell>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => convertToIncident(row)}
+                              >
+                                <AlertTriangle className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                )}
               </CardContent>
             </Card>
           )}
