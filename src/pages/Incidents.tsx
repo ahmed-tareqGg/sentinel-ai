@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Filter, Download, Plus, RefreshCw, Shield } from 'lucide-react';
+import { Filter, Download, Plus, RefreshCw, Shield, XCircle, ArrowUpCircle, CheckCircle2, UserPlus } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { IncidentTable } from '@/components/dashboard/IncidentTable';
 import { useIncidents } from '@/hooks/useIncidents';
@@ -25,6 +25,8 @@ export default function Incidents() {
   const canModifyIncidents = canModifyData && role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [incidentDialogOpen, setIncidentDialogOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkProcessing, setBulkProcessing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const [newLog, setNewLog] = useState({
@@ -162,6 +164,39 @@ export default function Incidents() {
       toast.error(error?.message || 'Failed to create incident');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleBulkAction = async (action: 'close' | 'escalate' | 'resolve') => {
+    if (selectedIds.size === 0) return;
+    setBulkProcessing(true);
+    try {
+      const updates: Record<string, any> = {};
+      if (action === 'close') {
+        updates.status = 'Closed';
+        updates.closed_at = new Date().toISOString();
+      } else if (action === 'escalate') {
+        updates.status = 'Escalated';
+        updates.escalated_at = new Date().toISOString();
+      } else if (action === 'resolve') {
+        updates.status = 'Resolved';
+        updates.resolved_at = new Date().toISOString();
+      }
+
+      const { error } = await supabase
+        .from('incidents')
+        .update(updates)
+        .in('id', Array.from(selectedIds));
+
+      if (error) throw error;
+
+      toast.success(`✅ ${selectedIds.size} incidents ${action === 'close' ? 'closed' : action === 'escalate' ? 'escalated' : 'resolved'}`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (err: any) {
+      toast.error(err?.message || `Failed to ${action} incidents`);
+    } finally {
+      setBulkProcessing(false);
     }
   };
 
@@ -394,7 +429,31 @@ export default function Incidents() {
         </div>
       ) : (
         <div data-tour="incidents-table">
-          <IncidentTable incidents={filteredIncidents} />
+          {/* Bulk Action Bar */}
+          {selectedIds.size > 0 && (
+            <div className="mb-4 flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
+              <span className="text-sm font-medium text-primary">{selectedIds.size} selected</span>
+              <div className="h-4 w-px bg-border" />
+              <Button size="sm" variant="outline" disabled={bulkProcessing} onClick={() => handleBulkAction('close')}>
+                <XCircle className="h-4 w-4 mr-1" /> Close
+              </Button>
+              <Button size="sm" variant="outline" disabled={bulkProcessing} onClick={() => handleBulkAction('escalate')}>
+                <ArrowUpCircle className="h-4 w-4 mr-1" /> Escalate
+              </Button>
+              <Button size="sm" variant="outline" disabled={bulkProcessing} onClick={() => handleBulkAction('resolve')}>
+                <CheckCircle2 className="h-4 w-4 mr-1" /> Resolve
+              </Button>
+              <div className="ml-auto">
+                <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear</Button>
+              </div>
+            </div>
+          )}
+          <IncidentTable
+            incidents={filteredIncidents}
+            selectable={!!canModifyIncidents}
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
+          />
         </div>
       )}
     </AppLayout>
