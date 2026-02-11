@@ -159,13 +159,17 @@ function parseQueryFilters(sql: string) {
   const limitMatch = sql.match(/LIMIT\s+(\d+)/i);
   if (limitMatch) filters.limit = parseInt(limitMatch[1]);
 
-  // Extract ORDER BY (simple)
+  // Extract ORDER BY (simple) — only use real table columns, skip aliases and CASE expressions
   const orderMatch = sql.match(/ORDER BY\s+(\w+)\s+(ASC|DESC)?/i);
   if (orderMatch) {
-    filters.orderBy = {
-      field: orderMatch[1],
-      ascending: orderMatch[2]?.toUpperCase() !== 'DESC',
-    };
+    const realColumns = ['id','incident_number','event_type','classification','risk_level','severity','src_ip','dst_ip','mitre_technique','mitre_tactic','status','timestamp','message','confidence','created_at','updated_at','file_hash'];
+    const orderField = orderMatch[1].toLowerCase();
+    if (realColumns.includes(orderField)) {
+      filters.orderBy = {
+        field: orderMatch[1],
+        ascending: orderMatch[2]?.toUpperCase() !== 'DESC',
+      };
+    }
   }
 
   // Extract ILIKE patterns
