@@ -5,6 +5,9 @@
 
 param([Parameter(Position=0)][string]$Command="help")
 
+# Force TLS 1.2 (required by SOCMind API endpoints)
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 $script:AgentVersion = "3.0.0"
 $script:ConfigPath = Join-Path $PSScriptRoot "agent.conf"
 $script:CachePath = Join-Path $PSScriptRoot ".socm_license_cache"
