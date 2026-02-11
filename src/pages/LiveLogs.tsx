@@ -29,6 +29,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { supabase } from '@/integrations/backend/client';
 import { format } from 'date-fns';
 import { useLiveLogsPauseState } from '@/hooks/useLiveLogsPauseState';
+import { toast } from '@/hooks/use-toast';
 
 interface RawLog {
   id: string;
@@ -340,6 +341,30 @@ export default function LiveLogs() {
             </Select>
 
             <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-yellow-500 border-yellow-500/30 hover:bg-yellow-500/10"
+                onClick={async () => {
+                  const { count } = await supabase
+                    .from('raw_logs')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('processing_status', 'error');
+                  if (!count || count === 0) {
+                    toast({ title: 'No failed logs', description: 'All logs are processed successfully.' });
+                    return;
+                  }
+                  await supabase
+                    .from('raw_logs')
+                    .update({ processing_status: 'pending', error_message: null, analyzed_at: null })
+                    .eq('processing_status', 'error');
+                  toast({ title: 'Retry queued', description: `${count} failed logs reset for re-analysis.` });
+                  refetch();
+                }}
+              >
+                <AlertTriangle className="h-4 w-4" />
+                Retry Failed
+              </Button>
               <Button
                 variant={isLive ? "default" : "outline"}
                 size="sm"
