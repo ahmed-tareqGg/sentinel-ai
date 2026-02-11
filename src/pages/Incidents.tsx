@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Filter, Download, Plus, RefreshCw, Shield, XCircle, ArrowUpCircle, CheckCircle2, UserPlus } from 'lucide-react';
+import { Download, Plus, RefreshCw, Shield, XCircle, ArrowUpCircle, CheckCircle2, MoreVertical } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { IncidentTable } from '@/components/dashboard/IncidentTable';
 import { useIncidents } from '@/hooks/useIncidents';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -203,214 +204,246 @@ export default function Incidents() {
   return (
     <AppLayout title="Incidents" subtitle="Security incident management">
       {/* Toolbar */}
-      <div className="flex items-center justify-between mb-6" data-tour="incidents-filters">
-        <div className="flex items-center gap-2">
-          {filters.map((f) => (
-            <Button
-              key={f.key}
-              variant={filter === f.key ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setFilter(f.key)}
-              className={filter === f.key ? 'bg-primary text-primary-foreground' : ''}
-            >
-              {f.label}
-              <Badge variant="secondary" className="ml-2 bg-secondary/50" data-tour="severity-badge">
-                {f.count}
-              </Badge>
-            </Button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-          {canModifyIncidents && <FileImportDialog onSuccess={refetch} />}
-          {canModifyIncidents && (
-            <>
-              {/* Create Incident Directly */}
-              <Dialog open={incidentDialogOpen} onOpenChange={setIncidentDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" variant="default" className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                    <Shield className="h-4 w-4 mr-2" />
-                    Create Incident
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="bg-card border-border max-w-lg">
-                  <DialogHeader>
-                    <DialogTitle>Create Incident Manually</DialogTitle>
-                    <DialogDescription>Create an incident directly without waiting for AI analysis pipeline.</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 mt-2">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Event Type</Label>
-                        <Select value={newIncident.eventType} onValueChange={(v) => setNewIncident(prev => ({ ...prev, eventType: v }))}>
-                          <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Malware">Malware</SelectItem>
-                            <SelectItem value="Authentication">Authentication</SelectItem>
-                            <SelectItem value="Brute Force">Brute Force</SelectItem>
-                            <SelectItem value="Traffic">Traffic</SelectItem>
-                            <SelectItem value="Execution">Execution</SelectItem>
-                            <SelectItem value="Data Exfiltration">Data Exfiltration</SelectItem>
-                            <SelectItem value="Lateral Movement">Lateral Movement</SelectItem>
-                            <SelectItem value="Privilege Escalation">Privilege Escalation</SelectItem>
-                            <SelectItem value="DNS">DNS</SelectItem>
-                            <SelectItem value="Phishing">Phishing</SelectItem>
-                            <SelectItem value="Ransomware">Ransomware</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Severity</Label>
-                        <Select value={newIncident.severity} onValueChange={(v) => setNewIncident(prev => ({ ...prev, severity: v }))}>
-                          <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="1">1 - Info</SelectItem>
-                            <SelectItem value="2">2 - Low</SelectItem>
-                            <SelectItem value="3">3 - Medium</SelectItem>
-                            <SelectItem value="4">4 - High</SelectItem>
-                            <SelectItem value="5">5 - Critical</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Classification</Label>
-                        <Select value={newIncident.classification} onValueChange={(v) => setNewIncident(prev => ({ ...prev, classification: v }))}>
-                          <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="True Positive">True Positive</SelectItem>
-                            <SelectItem value="False Positive">False Positive</SelectItem>
-                            <SelectItem value="Pending">Pending</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Risk Level</Label>
-                        <Select value={newIncident.riskLevel} onValueChange={(v) => setNewIncident(prev => ({ ...prev, riskLevel: v }))}>
-                          <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Critical">Critical</SelectItem>
-                            <SelectItem value="High">High</SelectItem>
-                            <SelectItem value="Medium">Medium</SelectItem>
-                            <SelectItem value="Low">Low</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Source IP</Label>
-                        <Input placeholder="10.0.1.5" value={newIncident.srcIP} onChange={(e) => setNewIncident(prev => ({ ...prev, srcIP: e.target.value }))} className="bg-secondary/50" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Destination IP</Label>
-                        <Input placeholder="185.234.247.10" value={newIncident.dstIP} onChange={(e) => setNewIncident(prev => ({ ...prev, dstIP: e.target.value }))} className="bg-secondary/50" />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>MITRE Technique</Label>
-                        <Input placeholder="T1110" value={newIncident.mitreTechnique} onChange={(e) => setNewIncident(prev => ({ ...prev, mitreTechnique: e.target.value }))} className="bg-secondary/50" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>MITRE Tactic</Label>
-                        <Input placeholder="Credential Access" value={newIncident.mitreTactic} onChange={(e) => setNewIncident(prev => ({ ...prev, mitreTactic: e.target.value }))} className="bg-secondary/50" />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Description</Label>
-                      <Textarea placeholder="Describe the incident..." value={newIncident.msg} onChange={(e) => setNewIncident(prev => ({ ...prev, msg: e.target.value }))} className="bg-secondary/50" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>File Hash (optional)</Label>
-                      <Input placeholder="MD5/SHA256" value={newIncident.fileHash} onChange={(e) => setNewIncident(prev => ({ ...prev, fileHash: e.target.value }))} className="bg-secondary/50" />
-                    </div>
-                    <Button onClick={handleCreateIncident} disabled={submitting || !newIncident.msg} className="w-full bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                      {submitting ? 'Creating...' : '🚨 Create Incident Now'}
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
+      <div className="flex flex-col gap-3 mb-6" data-tour="incidents-filters">
+        {/* Row 1: Filter dropdown + Stats + Actions */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Status Filter Dropdown */}
+          <Select value={filter} onValueChange={setFilter}>
+            <SelectTrigger className="w-[180px] bg-card border-border">
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border">
+              {filters.map((f) => (
+                <SelectItem key={f.key} value={f.key}>
+                  <span className="flex items-center gap-2">
+                    {f.label}
+                    <Badge variant="secondary" className="ml-1 text-xs bg-secondary/50">{f.count}</Badge>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-              {/* Submit Log (AI pipeline) */}
-              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" className="bg-primary text-primary-foreground">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Submit Log
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="bg-card border-border">
-                  <DialogHeader>
-                    <DialogTitle>Submit Security Log</DialogTitle>
-                    <DialogDescription>Submit a log for AI analysis pipeline processing.</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 mt-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Event Type</Label>
-                        <Select value={newLog.eventType} onValueChange={(v) => setNewLog(prev => ({ ...prev, eventType: v }))}>
-                          <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Malware">Malware</SelectItem>
-                            <SelectItem value="Authentication">Authentication</SelectItem>
-                            <SelectItem value="Traffic">Traffic</SelectItem>
-                            <SelectItem value="Execution">Execution</SelectItem>
-                            <SelectItem value="Data Exfiltration">Data Exfiltration</SelectItem>
-                            <SelectItem value="DNS">DNS</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Severity (1-5)</Label>
-                        <Select value={newLog.severity} onValueChange={(v) => setNewLog(prev => ({ ...prev, severity: v }))}>
-                          <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="1">1 - Low</SelectItem>
-                            <SelectItem value="2">2 - Low</SelectItem>
-                            <SelectItem value="3">3 - Medium</SelectItem>
-                            <SelectItem value="4">4 - High</SelectItem>
-                            <SelectItem value="5">5 - Critical</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Source IP</Label>
-                        <Input placeholder="10.0.1.5" value={newLog.srcIP} onChange={(e) => setNewLog(prev => ({ ...prev, srcIP: e.target.value }))} className="bg-secondary/50" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Destination IP</Label>
-                        <Input placeholder="185.234.247.10" value={newLog.dstIP} onChange={(e) => setNewLog(prev => ({ ...prev, dstIP: e.target.value }))} className="bg-secondary/50" />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Message</Label>
-                      <Textarea placeholder="Describe the security event..." value={newLog.msg} onChange={(e) => setNewLog(prev => ({ ...prev, msg: e.target.value }))} className="bg-secondary/50" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>File Hash (optional)</Label>
-                      <Input placeholder="MD5/SHA256 hash" value={newLog.fileHash} onChange={(e) => setNewLog(prev => ({ ...prev, fileHash: e.target.value }))} className="bg-secondary/50" />
-                    </div>
-                    <Button onClick={handleSubmitLog} disabled={submitting || !newLog.srcIP || !newLog.msg} className="w-full bg-primary text-primary-foreground">
-                      {submitting ? 'Analyzing...' : 'Submit for AI Analysis'}
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </>
-          )}
-          <Button variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            Export
+          {/* Quick Stats */}
+          <div className="hidden md:flex items-center gap-2">
+            {incidents.length > 0 && (
+              <>
+                <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-xs">
+                  {incidents.filter(i => i.status === 'Open' || i.status === 'New').length} Open
+                </Badge>
+                <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20 text-xs">
+                  {incidents.filter(i => i.status === 'Escalated').length} Escalated
+                </Badge>
+              </>
+            )}
+          </div>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Action Buttons */}
+          <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Refresh</span>
           </Button>
+
+          {canModifyIncidents && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <MoreVertical className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Actions</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-card border-border w-48">
+                <DropdownMenuItem onClick={() => setIncidentDialogOpen(true)} className="gap-2 cursor-pointer">
+                  <Shield className="h-4 w-4 text-destructive" />
+                  Create Incident
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setDialogOpen(true)} className="gap-2 cursor-pointer">
+                  <Plus className="h-4 w-4 text-primary" />
+                  Submit Log
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="gap-2 cursor-pointer">
+                  <Download className="h-4 w-4" />
+                  Export CSV
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {canModifyIncidents && <FileImportDialog onSuccess={refetch} />}
         </div>
       </div>
+
+      {/* Create Incident Dialog */}
+      {canModifyIncidents && (
+        <Dialog open={incidentDialogOpen} onOpenChange={setIncidentDialogOpen}>
+          <DialogContent className="bg-card border-border max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Create Incident Manually</DialogTitle>
+              <DialogDescription>Create an incident directly without waiting for AI analysis pipeline.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Event Type</Label>
+                  <Select value={newIncident.eventType} onValueChange={(v) => setNewIncident(prev => ({ ...prev, eventType: v }))}>
+                    <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Malware">Malware</SelectItem>
+                      <SelectItem value="Authentication">Authentication</SelectItem>
+                      <SelectItem value="Brute Force">Brute Force</SelectItem>
+                      <SelectItem value="Traffic">Traffic</SelectItem>
+                      <SelectItem value="Execution">Execution</SelectItem>
+                      <SelectItem value="Data Exfiltration">Data Exfiltration</SelectItem>
+                      <SelectItem value="Lateral Movement">Lateral Movement</SelectItem>
+                      <SelectItem value="Privilege Escalation">Privilege Escalation</SelectItem>
+                      <SelectItem value="DNS">DNS</SelectItem>
+                      <SelectItem value="Phishing">Phishing</SelectItem>
+                      <SelectItem value="Ransomware">Ransomware</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Severity</Label>
+                  <Select value={newIncident.severity} onValueChange={(v) => setNewIncident(prev => ({ ...prev, severity: v }))}>
+                    <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 - Info</SelectItem>
+                      <SelectItem value="2">2 - Low</SelectItem>
+                      <SelectItem value="3">3 - Medium</SelectItem>
+                      <SelectItem value="4">4 - High</SelectItem>
+                      <SelectItem value="5">5 - Critical</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Classification</Label>
+                  <Select value={newIncident.classification} onValueChange={(v) => setNewIncident(prev => ({ ...prev, classification: v }))}>
+                    <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="True Positive">True Positive</SelectItem>
+                      <SelectItem value="False Positive">False Positive</SelectItem>
+                      <SelectItem value="Pending">Pending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Risk Level</Label>
+                  <Select value={newIncident.riskLevel} onValueChange={(v) => setNewIncident(prev => ({ ...prev, riskLevel: v }))}>
+                    <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Critical">Critical</SelectItem>
+                      <SelectItem value="High">High</SelectItem>
+                      <SelectItem value="Medium">Medium</SelectItem>
+                      <SelectItem value="Low">Low</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Source IP</Label>
+                  <Input placeholder="10.0.1.5" value={newIncident.srcIP} onChange={(e) => setNewIncident(prev => ({ ...prev, srcIP: e.target.value }))} className="bg-secondary/50" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Destination IP</Label>
+                  <Input placeholder="185.234.247.10" value={newIncident.dstIP} onChange={(e) => setNewIncident(prev => ({ ...prev, dstIP: e.target.value }))} className="bg-secondary/50" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>MITRE Technique</Label>
+                  <Input placeholder="T1110" value={newIncident.mitreTechnique} onChange={(e) => setNewIncident(prev => ({ ...prev, mitreTechnique: e.target.value }))} className="bg-secondary/50" />
+                </div>
+                <div className="space-y-2">
+                  <Label>MITRE Tactic</Label>
+                  <Input placeholder="Credential Access" value={newIncident.mitreTactic} onChange={(e) => setNewIncident(prev => ({ ...prev, mitreTactic: e.target.value }))} className="bg-secondary/50" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Textarea placeholder="Describe the incident..." value={newIncident.msg} onChange={(e) => setNewIncident(prev => ({ ...prev, msg: e.target.value }))} className="bg-secondary/50" />
+              </div>
+              <div className="space-y-2">
+                <Label>File Hash (optional)</Label>
+                <Input placeholder="MD5/SHA256" value={newIncident.fileHash} onChange={(e) => setNewIncident(prev => ({ ...prev, fileHash: e.target.value }))} className="bg-secondary/50" />
+              </div>
+              <Button onClick={handleCreateIncident} disabled={submitting || !newIncident.msg} className="w-full bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                {submitting ? 'Creating...' : '🚨 Create Incident Now'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Submit Log Dialog */}
+      {canModifyIncidents && (
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="bg-card border-border">
+            <DialogHeader>
+              <DialogTitle>Submit Security Log</DialogTitle>
+              <DialogDescription>Submit a log for AI analysis pipeline processing.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Event Type</Label>
+                  <Select value={newLog.eventType} onValueChange={(v) => setNewLog(prev => ({ ...prev, eventType: v }))}>
+                    <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Malware">Malware</SelectItem>
+                      <SelectItem value="Authentication">Authentication</SelectItem>
+                      <SelectItem value="Traffic">Traffic</SelectItem>
+                      <SelectItem value="Execution">Execution</SelectItem>
+                      <SelectItem value="Data Exfiltration">Data Exfiltration</SelectItem>
+                      <SelectItem value="DNS">DNS</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Severity (1-5)</Label>
+                  <Select value={newLog.severity} onValueChange={(v) => setNewLog(prev => ({ ...prev, severity: v }))}>
+                    <SelectTrigger className="bg-secondary/50"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 - Low</SelectItem>
+                      <SelectItem value="2">2 - Low</SelectItem>
+                      <SelectItem value="3">3 - Medium</SelectItem>
+                      <SelectItem value="4">4 - High</SelectItem>
+                      <SelectItem value="5">5 - Critical</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Source IP</Label>
+                  <Input placeholder="10.0.1.5" value={newLog.srcIP} onChange={(e) => setNewLog(prev => ({ ...prev, srcIP: e.target.value }))} className="bg-secondary/50" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Destination IP</Label>
+                  <Input placeholder="185.234.247.10" value={newLog.dstIP} onChange={(e) => setNewLog(prev => ({ ...prev, dstIP: e.target.value }))} className="bg-secondary/50" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Message</Label>
+                <Textarea placeholder="Describe the security event..." value={newLog.msg} onChange={(e) => setNewLog(prev => ({ ...prev, msg: e.target.value }))} className="bg-secondary/50" />
+              </div>
+              <div className="space-y-2">
+                <Label>File Hash (optional)</Label>
+                <Input placeholder="MD5/SHA256 hash" value={newLog.fileHash} onChange={(e) => setNewLog(prev => ({ ...prev, fileHash: e.target.value }))} className="bg-secondary/50" />
+              </div>
+              <Button onClick={handleSubmitLog} disabled={submitting || !newLog.srcIP || !newLog.msg} className="w-full bg-primary text-primary-foreground">
+                {submitting ? 'Analyzing...' : 'Submit for AI Analysis'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Table */}
       {loading ? (
