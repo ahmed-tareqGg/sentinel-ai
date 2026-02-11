@@ -177,257 +177,200 @@ serve(async (req) => {
     let incidentsCreated = 0;
     let incidentsSkipped = 0;
 
-    // ===== SINGLE PASS: Store → Analyze → Create Incident (per log) =====
-    for (const rawLog of logsArray) {
-      const normalizedLog = normalizeLog(rawLog);
-      const providedRawLogId = (rawLog as any).raw_log_id || (rawLog as any).rawLogId || null;
-      let rawLogRowId: string | null = null;
+    // ===== Process logs in parallel batches of 5 =====
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < logsArray.length; i += BATCH_SIZE) {
+      const batch = logsArray.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.allSettled(
+        batch.map(async (rawLog) => {
+          const normalizedLog = normalizeLog(rawLog);
+          const providedRawLogId = (rawLog as any).raw_log_id || (rawLog as any).rawLogId || null;
+          let rawLogRowId: string | null = null;
 
-      // Step A: Store raw log (if not already stored by upstream)
-      if (!skipRawLogInsert) {
-        const hostname = (rawLog as any).hostname || (rawLog as any).host || source || 'unknown';
-        const ipAddress = publicIp || normalizedLog.srcIP || null;
-        const logType = (rawLog as any).log_type || (rawLog as any).logType || normalizedLog.eventType || 'unknown';
+          // Step A: Store raw log
+          if (!skipRawLogInsert) {
+            const hostname = (rawLog as any).hostname || (rawLog as any).host || source || 'unknown';
+            const ipAddress = publicIp || normalizedLog.srcIP || null;
+            const logType = (rawLog as any).log_type || (rawLog as any).logType || normalizedLog.eventType || 'unknown';
 
-        const { data: rawRow, error: rawInsertErr } = await supabase
-          .from('raw_logs')
-          .insert({
-            data_source_id: null,
-            timestamp: normalizedLog.timestamp,
-            log_type: logType,
-            severity: severityToLabel(normalizedLog.severity),
-            hostname,
-            ip_address: ipAddress,
-            raw_payload: normalizedLog.rawLog,
-            parsed_message: normalizedLog.msg,
-            processing_status: 'pending',
-          })
-          .select('id')
-          .single();
+            const { data: rawRow, error: rawInsertErr } = await supabase
+              .from('raw_logs')
+              .insert({
+                data_source_id: null,
+                timestamp: normalizedLog.timestamp,
+                log_type: logType,
+                severity: severityToLabel(normalizedLog.severity),
+                hostname,
+                ip_address: ipAddress,
+                raw_payload: normalizedLog.rawLog,
+                parsed_message: normalizedLog.msg,
+                processing_status: 'pending',
+              })
+              .select('id')
+              .single();
 
-        if (rawInsertErr) {
-          console.error('Failed to insert raw log:', rawInsertErr);
-        } else {
-          rawLogRowId = rawRow?.id || null;
-        }
-      } else {
-        rawLogRowId = providedRawLogId;
-      }
-
-      // Step B: Analyze with AI
-      let analysis = null;
-      try {
-        const analyzeResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-log`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${supabaseKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            log: {
-              eventType: normalizedLog.eventType,
-              severity: normalizedLog.severity,
-              srcIP: normalizedLog.srcIP,
-              dstIP: normalizedLog.dstIP,
-              msg: normalizedLog.msg,
-              fileHash: normalizedLog.fileHash,
-            },
-            internal: true,
-          }),
-        });
-
-        if (analyzeResponse.ok) {
-          analysis = await analyzeResponse.json();
-          console.log(`🔍 ${normalizedLog.eventType} → ${analysis?.classification} (${analysis?.confidence}%)`);
-        } else {
-          console.error('Analysis failed:', analyzeResponse.status);
-        }
-      } catch (e) {
-        console.error('Analysis error:', e);
-      }
-
-      // Update raw log status to analyzed
-      if (rawLogRowId) {
-        await supabase
-          .from('raw_logs')
-          .update({
-            processing_status: 'analyzed',
-            analyzed_at: new Date().toISOString(),
-            mitre_technique: analysis?.mitre_technique || null,
-            error_message: null,
-          })
-          .eq('id', rawLogRowId);
-      }
-
-      // Step C: IMMEDIATELY check if incident should be created (same pass!)
-      const decision = shouldCreateIncident(analysis, normalizedLog.severity);
-
-      if (!decision.create) {
-        incidentsSkipped++;
-        console.log(`⏭️ Skip: ${decision.reason} - ${normalizedLog.eventType}`);
-        if (rawLogRowId) {
-          await supabase
-            .from('raw_logs')
-            .update({ processing_status: 'ignored' })
-            .eq('id', rawLogRowId);
-        }
-        continue;
-      }
-
-      console.log(`🚨 Creating incident: ${decision.reason} - ${normalizedLog.eventType}`);
-
-      // Create incident
-      const { data: incident, error: insertError } = await supabase
-        .from('incidents')
-        .insert({
-          timestamp: normalizedLog.timestamp,
-          src_ip: normalizedLog.srcIP,
-          dst_ip: normalizedLog.dstIP,
-          severity: normalizedLog.severity,
-          event_type: normalizedLog.eventType,
-          message: normalizedLog.msg,
-          file_hash: normalizedLog.fileHash,
-          raw_log: normalizedLog.rawLog,
-          classification: normalizeClassification(analysis?.classification),
-          confidence: analysis?.confidence || 0,
-          risk_level: analysis?.risk_level || (normalizedLog.severity >= 4 ? 'High' : 'Medium'),
-          ai_analysis: analysis?.ai_analysis || analysis || null,
-          sandbox_result: analysis?.sandbox_result || null,
-          mitre_technique: analysis?.mitre_technique || null,
-          mitre_tactic: analysis?.mitre_tactic || null,
-          evidence: analysis?.evidence || [],
-          recommended_actions: analysis?.recommended_actions || [],
-        })
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error('Failed to create incident:', insertError);
-        if (rawLogRowId) {
-          await supabase
-            .from('raw_logs')
-            .update({ processing_status: 'error', error_message: 'Incident creation failed' })
-            .eq('id', rawLogRowId);
-        }
-        continue;
-      }
-
-      incidentsCreated++;
-      console.log(`✅ Created ${incident.incident_number}`);
-
-      // Link raw log to incident
-      if (rawLogRowId) {
-        await supabase
-          .from('raw_logs')
-          .update({ processing_status: 'incident_created', incident_id: incident.id })
-          .eq('id', rawLogRowId);
-      }
-
-      // Timeline entries
-      await supabase.from('incident_timeline').insert({
-        incident_id: incident.id,
-        stage: 'Event Received',
-        details: `Log from ${source || 'API'} by ${isApiKey ? 'API key' : user.email || user.id}`,
-      });
-
-      await supabase.from('incident_timeline').insert({
-        incident_id: incident.id,
-        stage: 'AI Analyzed',
-        details: `Classification: ${analysis?.classification || 'Pending'}, Confidence: ${analysis?.confidence || 0}%`,
-      });
-
-      // MITRE Enrichment
-      if (analysis?.mitre_techniques?.length > 0 || analysis?.mitre_technique) {
-        try {
-          await fetch(`${supabaseUrl}/functions/v1/mitre-enrichment`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'enrich_incident', incident_id: incident.id }),
-          });
-        } catch (e) {
-          console.error('MITRE enrichment failed:', e);
-        }
-      }
-
-      // Auto-generate playbook suggestion
-      const existingPlaybook = await supabase
-        .from('playbooks')
-        .select('id')
-        .or(`conditions->event_type.eq.${normalizedLog.eventType},conditions->event_type.ilike.%${normalizedLog.eventType}%`)
-        .eq('is_active', true)
-        .limit(1);
-
-      if (!existingPlaybook.data?.length) {
-        try {
-          const genResp = await fetch(`${supabaseUrl}/functions/v1/generate-playbook`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              autoGenerate: true,
-              eventType: normalizedLog.eventType,
-              riskLevel: analysis?.risk_level || 'Medium',
-              severity: normalizedLog.severity,
-            }),
-          });
-
-          if (genResp.ok) {
-            const gen = await genResp.json();
-            await supabase.from('playbook_suggestions').insert({
-              name: gen.name,
-              description: gen.description || `Auto-generated for ${normalizedLog.eventType}`,
-              suggested_conditions: gen.conditions,
-              suggested_actions: gen.actions,
-              reasoning: `Auto-suggested from ${incident.incident_number}`,
-              confidence_score: analysis?.confidence || 70,
-              pattern_source: 'auto_detection',
-              sample_incident_ids: [incident.id],
-              incident_count: 1,
-              status: 'pending',
-            });
+            if (rawInsertErr) {
+              console.error('Raw log insert err:', rawInsertErr.message);
+            } else {
+              rawLogRowId = rawRow?.id || null;
+            }
+          } else {
+            rawLogRowId = providedRawLogId;
           }
-        } catch (e) {
-          console.error('Playbook suggestion failed:', e);
-        }
-      }
 
-      // Trigger Autonomous SOC Pipeline
-      try {
-        const autoResp = await fetch(`${supabaseUrl}/functions/v1/autonomous-soc`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            incident_id: incident.id,
-            mode: (analysis?.risk_level === 'Critical' || analysis?.classification === 'True Positive')
-              ? 'autonomous' : 'supervised',
-          }),
-        });
+          // Step B: Analyze with AI (with 8s timeout)
+          let analysis = null;
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 8000);
+            const analyzeResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-log`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${supabaseKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                log: {
+                  eventType: normalizedLog.eventType,
+                  severity: normalizedLog.severity,
+                  srcIP: normalizedLog.srcIP,
+                  dstIP: normalizedLog.dstIP,
+                  msg: normalizedLog.msg,
+                  fileHash: normalizedLog.fileHash,
+                },
+                internal: true,
+              }),
+              signal: controller.signal,
+            });
+            clearTimeout(timeout);
 
-        if (autoResp.ok) {
-          const pipeline = await autoResp.json();
-          results.push({
+            if (analyzeResponse.ok) {
+              analysis = await analyzeResponse.json();
+            }
+          } catch (_e) {
+            // Timeout or error - continue with severity-based classification
+            console.warn(`⏱️ Analysis timeout for ${normalizedLog.eventType}, using severity-based fallback`);
+          }
+
+          // Update raw log to analyzed
+          if (rawLogRowId) {
+            await supabase
+              .from('raw_logs')
+              .update({
+                processing_status: 'analyzed',
+                analyzed_at: new Date().toISOString(),
+                mitre_technique: analysis?.mitre_technique || null,
+                error_message: null,
+              })
+              .eq('id', rawLogRowId);
+          }
+
+          // Step C: Check if incident needed
+          const decision = shouldCreateIncident(analysis, normalizedLog.severity);
+
+          if (!decision.create) {
+            incidentsSkipped++;
+            if (rawLogRowId) {
+              supabase.from('raw_logs').update({ processing_status: 'ignored' }).eq('id', rawLogRowId).then(() => {});
+            }
+            return null;
+          }
+
+          // Create incident
+          const { data: incident, error: insertError } = await supabase
+            .from('incidents')
+            .insert({
+              timestamp: normalizedLog.timestamp,
+              src_ip: normalizedLog.srcIP,
+              dst_ip: normalizedLog.dstIP,
+              severity: normalizedLog.severity,
+              event_type: normalizedLog.eventType,
+              message: normalizedLog.msg,
+              file_hash: normalizedLog.fileHash,
+              raw_log: normalizedLog.rawLog,
+              classification: normalizeClassification(analysis?.classification),
+              confidence: analysis?.confidence || 0,
+              risk_level: analysis?.risk_level || (normalizedLog.severity >= 4 ? 'High' : 'Medium'),
+              ai_analysis: analysis?.ai_analysis || analysis || null,
+              sandbox_result: analysis?.sandbox_result || null,
+              mitre_technique: analysis?.mitre_technique || null,
+              mitre_tactic: analysis?.mitre_tactic || null,
+              evidence: analysis?.evidence || [],
+              recommended_actions: analysis?.recommended_actions || [],
+            })
+            .select()
+            .single();
+
+          if (insertError) {
+            console.error('Incident create err:', insertError.message);
+            if (rawLogRowId) {
+              supabase.from('raw_logs').update({ processing_status: 'error', error_message: insertError.message }).eq('id', rawLogRowId).then(() => {});
+            }
+            return null;
+          }
+
+          incidentsCreated++;
+          console.log(`✅ ${incident.incident_number}`);
+
+          // === Fire-and-forget: all post-incident tasks in parallel, non-blocking ===
+          const postTasks: Promise<any>[] = [];
+
+          // Link raw log
+          if (rawLogRowId) {
+            postTasks.push(
+              supabase.from('raw_logs').update({ processing_status: 'incident_created', incident_id: incident.id }).eq('id', rawLogRowId)
+            );
+          }
+
+          // Timeline (batch insert)
+          postTasks.push(
+            supabase.from('incident_timeline').insert([
+              { incident_id: incident.id, stage: 'Event Received', details: `Log from ${source || 'API'}` },
+              { incident_id: incident.id, stage: 'AI Analyzed', details: `${analysis?.classification || 'Pending'} (${analysis?.confidence || 0}%)` },
+            ])
+          );
+
+          // MITRE enrichment (fire-and-forget)
+          if (analysis?.mitre_technique) {
+            postTasks.push(
+              fetch(`${supabaseUrl}/functions/v1/mitre-enrichment`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'enrich_incident', incident_id: incident.id }),
+              }).catch(() => {})
+            );
+          }
+
+          // Autonomous SOC (fire-and-forget)
+          postTasks.push(
+            fetch(`${supabaseUrl}/functions/v1/autonomous-soc`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                incident_id: incident.id,
+                mode: (analysis?.risk_level === 'Critical' || analysis?.classification === 'True Positive')
+                  ? 'autonomous' : 'supervised',
+              }),
+            }).catch(() => {})
+          );
+
+          // Run all post-tasks in parallel (don't wait for them to complete the response)
+          Promise.allSettled(postTasks).catch(() => {});
+
+          return {
             id: incident.id,
             incident_number: incident.incident_number,
             classification: analysis?.classification,
             risk_level: analysis?.risk_level,
-            jira_ticket: pipeline.jira_ticket?.jira_key,
-            pipeline_status: pipeline.summary,
-          });
-        } else {
-          results.push({
-            id: incident.id,
-            incident_number: incident.incident_number,
-            classification: analysis?.classification,
-            risk_level: analysis?.risk_level,
-          });
+          };
+        })
+      );
+
+      // Collect results
+      for (const r of batchResults) {
+        if (r.status === 'fulfilled' && r.value) {
+          results.push(r.value);
         }
-      } catch (e) {
-        console.error('Pipeline error:', e);
-        results.push({
-          id: incident.id,
-          incident_number: incident.incident_number,
-          classification: analysis?.classification,
-          risk_level: analysis?.risk_level,
-        });
       }
     }
 
