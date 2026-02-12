@@ -113,6 +113,120 @@ function getRequestPublicIp(req: Request) {
   return cfIP || forwardedFor || xRealIP || null;
 }
 
+// ========== SMART CORRELATION: Dedup & merge similar incidents ==========
+const CORRELATION_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+
+interface CorrelationKey {
+  src_ip: string;
+  event_type: string;
+  dst_ip?: string;
+  file_hash?: string;
+}
+
+function buildCorrelationKey(log: ReturnType<typeof normalizeLog>, analysis: any): CorrelationKey {
+  return {
+    src_ip: log.srcIP || 'unknown',
+    event_type: log.eventType || 'unknown',
+    dst_ip: log.dstIP || undefined,
+    file_hash: log.fileHash || undefined,
+  };
+}
+
+// Check if a similar incident already exists within the correlation window
+async function findExistingIncident(
+  supabase: any,
+  key: CorrelationKey,
+  severity: number,
+): Promise<any | null> {
+  const windowStart = new Date(Date.now() - CORRELATION_WINDOW_MS).toISOString();
+
+  // Match by: same src_ip + same event_type + within time window + not closed
+  let query = supabase
+    .from('incidents')
+    .select('id, incident_number, severity, confidence, message, evidence, recommended_actions, ai_analysis, created_at')
+    .eq('src_ip', key.src_ip)
+    .eq('event_type', key.event_type)
+    .gte('created_at', windowStart)
+    .in('status', ['Open', 'New', 'Assigned', 'In Progress', 'open', 'new'])
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  // Also match by file_hash if present
+  if (key.file_hash) {
+    query = supabase
+      .from('incidents')
+      .select('id, incident_number, severity, confidence, message, evidence, recommended_actions, ai_analysis, created_at')
+      .eq('file_hash', key.file_hash)
+      .gte('created_at', windowStart)
+      .in('status', ['Open', 'New', 'Assigned', 'In Progress', 'open', 'new'])
+      .order('created_at', { ascending: false })
+      .limit(1);
+  }
+
+  const { data, error } = await query;
+  if (error || !data || data.length === 0) return null;
+  return data[0];
+}
+
+// Merge new log data into existing incident
+async function mergeIntoIncident(
+  supabase: any,
+  existing: any,
+  newLog: ReturnType<typeof normalizeLog>,
+  analysis: any,
+): Promise<void> {
+  const currentAnalysis = existing.ai_analysis || {};
+  const correlatedCount = (currentAnalysis.correlated_events_count || 1) + 1;
+  const correlatedSources = currentAnalysis.correlated_sources || [];
+  correlatedSources.push({
+    src_ip: newLog.srcIP,
+    dst_ip: newLog.dstIP,
+    timestamp: newLog.timestamp,
+    message: (newLog.msg || '').slice(0, 200),
+  });
+
+  // Escalate severity if new event is higher
+  const newSeverity = Math.max(existing.severity, newLog.severity);
+  // Increase confidence when multiple correlated events confirm the same threat
+  const newConfidence = Math.min(100, (existing.confidence || 50) + 5);
+
+  const updatedAnalysis = {
+    ...currentAnalysis,
+    correlated_events_count: correlatedCount,
+    correlated_sources: correlatedSources.slice(-20), // Keep last 20
+    last_correlated_at: new Date().toISOString(),
+    correlation_note: `${correlatedCount} related events detected within ${CORRELATION_WINDOW_MS / 60000} min window`,
+  };
+
+  // Merge evidence
+  const mergedEvidence = [...new Set([
+    ...(existing.evidence || []),
+    ...(analysis?.evidence || []),
+    `Correlated: ${correlatedCount} events from ${newLog.srcIP}`,
+  ])];
+
+  await supabase
+    .from('incidents')
+    .update({
+      severity: newSeverity,
+      confidence: newConfidence,
+      ai_analysis: updatedAnalysis,
+      evidence: mergedEvidence,
+      risk_level: newSeverity >= 5 ? 'Critical' : newSeverity >= 4 ? 'High' : 'Medium',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', existing.id);
+
+  // Add timeline entry
+  await supabase.from('incident_timeline').insert({
+    incident_id: existing.id,
+    stage: 'Correlated Event',
+    details: `New related event merged: ${newLog.eventType} from ${newLog.srcIP} (total: ${correlatedCount})`,
+  });
+
+  console.log(`🔗 Merged into ${existing.incident_number} (${correlatedCount} correlated events)`);
+}
+
 function shouldCreateIncident(analysis: any, severity: number): { create: boolean; reason: string } {
   // High severity always creates incident
   if (severity >= 4) {
@@ -276,6 +390,33 @@ serve(async (req) => {
             return null;
           }
 
+          // Step D: CORRELATION — Check for existing similar incident before creating new one
+          const corrKey = buildCorrelationKey(normalizedLog, analysis);
+          const existingIncident = await findExistingIncident(supabase, corrKey, normalizedLog.severity);
+
+          if (existingIncident) {
+            // Merge into existing incident instead of creating a new one
+            await mergeIntoIncident(supabase, existingIncident, normalizedLog, analysis);
+            
+            // Link raw log to existing incident
+            if (rawLogRowId) {
+              await supabase.from('raw_logs').update({ 
+                processing_status: 'correlated', 
+                incident_id: existingIncident.id 
+              }).eq('id', rawLogRowId);
+            }
+            
+            incidentsSkipped++; // Count as "not a new incident"
+            return {
+              id: existingIncident.id,
+              incident_number: existingIncident.incident_number,
+              classification: analysis?.classification,
+              risk_level: analysis?.risk_level,
+              correlated: true,
+            };
+          }
+
+          // Step E: No existing match — Create new incident
           // Derive severity from AI risk_level when available
           const aiRiskLevel = (analysis?.risk_level || '').toLowerCase();
           let finalSeverity = normalizedLog.severity;
@@ -299,7 +440,10 @@ serve(async (req) => {
               classification: normalizeClassification(analysis?.classification),
               confidence: analysis?.confidence || 0,
               risk_level: analysis?.risk_level || (finalSeverity >= 4 ? 'High' : finalSeverity >= 3 ? 'Medium' : 'Low'),
-              ai_analysis: analysis?.ai_analysis || analysis || null,
+              ai_analysis: {
+                ...(analysis?.ai_analysis || analysis || {}),
+                correlated_events_count: 1,
+              },
               sandbox_result: analysis?.sandbox_result || null,
               mitre_technique: analysis?.mitre_technique || null,
               mitre_tactic: analysis?.mitre_tactic || null,

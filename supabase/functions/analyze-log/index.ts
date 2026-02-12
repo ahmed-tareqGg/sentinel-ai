@@ -196,21 +196,28 @@ serve(async (req) => {
     console.log('Keyword-based MITRE detection:', keywordMitre);
 
     // Build AI prompt
-    const aiPrompt = `Analyze this security log and provide a threat assessment:
+    const aiPrompt = `You are an expert SOC analyst performing threat classification. Analyze this security log:
 
 Event Type: ${log.eventType}
-Severity: ${log.severity}
+Severity: ${log.severity}/5
 Source IP: ${log.srcIP}
 Destination IP: ${log.dstIP}
 Message: ${log.msg}
 ${log.fileHash ? `File Hash: ${log.fileHash}` : ''}
 ${log.action ? `Action: ${log.action}` : ''}
 
-Respond with JSON containing:
+CRITICAL CLASSIFICATION RULES (you MUST follow these):
+1. Severity 5 = ALWAYS "True Positive" with risk_level "Critical". NEVER classify severity 5 as False Positive or Benign.
+2. Severity 4 with attack patterns (brute force, malware, C2, lateral movement) = "True Positive"
+3. Only classify as "False Positive" if there is STRONG evidence the event is benign (e.g., routine health checks, telemetry, expected system updates)
+4. If uncertain, classify as "True Positive" with lower confidence rather than "False Positive"
+5. Never classify events containing keywords like malware, ransomware, C2, exfiltration, credential dump as "False Positive"
+
+Respond with JSON:
 {
   "classification": "True Positive" | "False Positive" | "Benign",
   "confidence": 0-100,
-  "reason": "explanation",
+  "reason": "detailed explanation",
   "risk_level": "Critical" | "High" | "Medium" | "Low",
   "mitre_techniques": [{ "technique_id": "T1234", "technique_name": "Name", "tactic": "Tactic", "confidence": 80, "evidence": "why" }],
   "recommended_actions": ["action1", "action2"],
@@ -339,10 +346,11 @@ Respond with JSON containing:
         fallbackConfidence = 65 + Math.floor(Math.random() * 15); // 65-79%
         fallbackEvidence.push('High-risk pattern detected in message');
       } else if (log.severity >= 4) {
-        fallbackRisk = 'Medium';
-        fallbackClass = Math.random() > 0.5 ? 'True Positive' : 'Pending';
-        fallbackConfidence = 55 + Math.floor(Math.random() * 20); // 55-74%
-        fallbackEvidence.push('Elevated severity requires review');
+        fallbackRisk = 'High';
+        fallbackClass = 'True Positive';
+        fallbackConfidence = 70 + Math.floor(Math.random() * 10); // 70-79% — severity 4+ is always TP
+        fallbackEvidence.push('Elevated severity requires investigation');
+        fallbackActions.unshift('Investigate source immediately');
       } else if (benignPatterns.test(content)) {
         fallbackRisk = 'Low';
         fallbackClass = 'False Positive';
@@ -383,6 +391,38 @@ Respond with JSON containing:
       };
       
       console.log(`📊 Fallback classification: ${fallbackClass} (${fallbackConfidence}%) - ${fallbackRisk}`);
+    }
+
+    // ========== POST-AI VALIDATION: Enforce severity-classification consistency ==========
+    // Rule 1: Severity 5 can NEVER be False Positive
+    if (log.severity >= 5 && (aiAnalysis.classification === 'False Positive' || aiAnalysis.classification === 'Benign')) {
+      console.log(`⚠️ OVERRIDE: Severity ${log.severity} was classified as "${aiAnalysis.classification}" — forcing True Positive`);
+      aiAnalysis.classification = 'True Positive';
+      aiAnalysis.confidence = Math.max(aiAnalysis.confidence, 80);
+      aiAnalysis.risk_level = 'Critical';
+      aiAnalysis.reason = `[Auto-corrected] ${aiAnalysis.reason}. Severity ${log.severity} events require investigation regardless of initial classification.`;
+      if (!aiAnalysis.evidence.includes('High severity override applied')) {
+        aiAnalysis.evidence.push('High severity override applied');
+      }
+    }
+
+    // Rule 2: Severity 4 with known attack keywords can't be FP
+    if (log.severity >= 4) {
+      const attackIndicators = /malware|ransomware|c2|exfiltrat|credential|mimikatz|cobalt|backdoor|trojan|brute.?force|privilege.?escal|lateral.?move/i;
+      const content = `${log.eventType} ${log.msg} ${log.action || ''}`;
+      if (attackIndicators.test(content) && (aiAnalysis.classification === 'False Positive' || aiAnalysis.classification === 'Benign')) {
+        console.log(`⚠️ OVERRIDE: Severity ${log.severity} with attack indicators was "${aiAnalysis.classification}" — forcing True Positive`);
+        aiAnalysis.classification = 'True Positive';
+        aiAnalysis.confidence = Math.max(aiAnalysis.confidence, 75);
+        aiAnalysis.risk_level = aiAnalysis.risk_level === 'Low' ? 'High' : aiAnalysis.risk_level;
+        aiAnalysis.reason = `[Auto-corrected] ${aiAnalysis.reason}. Attack indicators detected in high-severity event.`;
+      }
+    }
+
+    // Rule 3: If classification is FP but risk_level is Critical/High — inconsistency
+    if (aiAnalysis.classification === 'False Positive' && (aiAnalysis.risk_level === 'Critical' || aiAnalysis.risk_level === 'High')) {
+      console.log(`⚠️ OVERRIDE: Inconsistent FP with ${aiAnalysis.risk_level} risk — downgrading risk to Low`);
+      aiAnalysis.risk_level = 'Low';
     }
 
     // Ensure mitre_techniques is always an array
