@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -11,9 +13,11 @@ import {
   Zap,
   Eye,
   Clock,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow, format } from 'date-fns';
+import { supabase } from '@/integrations/backend/client';
 
 interface ApprovalRequest {
   id: string;
@@ -47,12 +51,33 @@ const ACTION_ICONS: Record<string, typeof Shield> = {
 };
 
 export function ApprovalRequestCard({ request, onApprove, onViewDetails, processing }: ApprovalRequestCardProps) {
+  const navigate = useNavigate();
+  const [incidentNumber, setIncidentNumber] = useState<string | null>(null);
+
   const ActionIcon = ACTION_ICONS[request.action_type] || Shield;
   const isOverdue = request.sla_deadline && new Date(request.sla_deadline) < new Date();
   const target = (request.action_params as any)?.target || '';
   const riskLevel = (request.action_params as any)?.risk_level || '';
   const aiConfidence = (request.action_params as any)?.ai_confidence;
   const isProcessing = processing === request.id;
+
+  useEffect(() => {
+    if (request.incident_id) {
+      supabase
+        .from('incidents')
+        .select('incident_number')
+        .eq('id', request.incident_id)
+        .single()
+        .then(({ data }) => {
+          if (data) setIncidentNumber(data.incident_number);
+        });
+    }
+  }, [request.incident_id]);
+
+  const goToIncident = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigate(`/incidents/${request.incident_id}`);
+  };
 
   return (
     <div
@@ -93,7 +118,13 @@ export function ApprovalRequestCard({ request, onApprove, onViewDetails, process
               )}
             </div>
             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-              <span>Incident: {request.incident_id.slice(0, 8)}...</span>
+              <button
+                onClick={goToIncident}
+                className="flex items-center gap-1 text-primary hover:underline font-medium"
+              >
+                <ExternalLink className="h-3 w-3" />
+                {incidentNumber || request.incident_id.slice(0, 8)}
+              </button>
               {target && <span>Target: {target}</span>}
             </div>
             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
