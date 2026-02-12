@@ -81,6 +81,7 @@ const App = () => (
             <Route path="/threat-intel" element={<ProtectedRoute><ThreatIntel /></ProtectedRoute>} />
             <Route path="/team-chat" element={<ProtectedRoute><TeamChat /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/profile/:userId" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/admin/cloud" element={<ProtectedRoute requiredRole="ciso"><CloudAdmin /></ProtectedRoute>} />
             
             {/* Fallback */}
