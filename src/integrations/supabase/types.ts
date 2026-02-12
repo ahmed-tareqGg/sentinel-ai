@@ -315,6 +315,7 @@ export type Database = {
           is_pinned: boolean | null
           mentions: string[] | null
           priority: string | null
+          reply_to_id: string | null
           sender_email: string | null
           sender_id: string
           sender_name: string | null
@@ -330,6 +331,7 @@ export type Database = {
           is_pinned?: boolean | null
           mentions?: string[] | null
           priority?: string | null
+          reply_to_id?: string | null
           sender_email?: string | null
           sender_id: string
           sender_name?: string | null
@@ -345,6 +347,7 @@ export type Database = {
           is_pinned?: boolean | null
           mentions?: string[] | null
           priority?: string | null
+          reply_to_id?: string | null
           sender_email?: string | null
           sender_id?: string
           sender_name?: string | null
@@ -356,6 +359,13 @@ export type Database = {
             columns: ["incident_id"]
             isOneToOne: false
             referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_messages_reply_to_id_fkey"
+            columns: ["reply_to_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
             referencedColumns: ["id"]
           },
         ]

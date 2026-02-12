@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag } from 'lucide-react';
+import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { format, isToday, isYesterday } from 'date-fns';
@@ -28,6 +28,7 @@ interface ChatMessage {
   is_edited: boolean;
   is_pinned: boolean;
   priority: string;
+  reply_to_id: string | null;
   created_at: string;
 }
 
@@ -67,6 +68,7 @@ export default function TeamChat() {
   const [editContent, setEditContent] = useState('');
   const [priority, setPriority] = useState('normal');
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { signalTyping, stopTyping } = useTypingBroadcast(channel);
@@ -229,12 +231,14 @@ export default function TeamChat() {
       incident_id: incidentId,
       channel,
       priority,
+      reply_to_id: replyTo?.id || null,
     } as any);
     if (error) {
       toast.error('Failed to send message');
     } else {
       setNewMessage('');
       setPriority('normal');
+      setReplyTo(null);
     }
     setSending(false);
   };
@@ -420,6 +424,20 @@ export default function TeamChat() {
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
+                      {/* Reply quote */}
+                      {msg.reply_to_id && (() => {
+                        const repliedMsg = messages.find(m => m.id === msg.reply_to_id);
+                        if (!repliedMsg) return null;
+                        return (
+                          <div className="flex items-start gap-1.5 mb-1 pl-2 border-l-2 border-primary/40 rounded-sm">
+                            <CornerDownRight className="h-3 w-3 text-primary/50 mt-0.5 shrink-0" />
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-semibold text-primary/70">{repliedMsg.sender_name || repliedMsg.sender_email?.split('@')[0]}</span>
+                              <p className="text-[11px] text-muted-foreground truncate max-w-md">{repliedMsg.content.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1').replace(/#\[([^\]]+)\]\([^)]+\)/g, '#$1')}</p>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-foreground">
                           {msg.sender_name || msg.sender_email?.split('@')[0]}
@@ -471,19 +489,24 @@ export default function TeamChat() {
                     </div>
 
                     {/* Actions */}
-                    {isOwn && editingId !== msg.id && (
-                      <div className="opacity-0 group-hover:opacity-100 flex items-start gap-1 transition-opacity">
-                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => togglePin(msg)} title={msg.is_pinned ? 'Unpin' : 'Pin'}>
-                          <Pin className="h-3 w-3" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingId(msg.id); setEditContent(msg.content); }}>
-                          <Edit2 className="h-3 w-3" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => deleteMessage(msg.id)}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    )}
+                    <div className="opacity-0 group-hover:opacity-100 flex items-start gap-1 transition-opacity">
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setReplyTo(msg); inputRef.current?.focus(); }} title="Reply">
+                        <Reply className="h-3 w-3" />
+                      </Button>
+                      {isOwn && editingId !== msg.id && (
+                        <>
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => togglePin(msg)} title={msg.is_pinned ? 'Unpin' : 'Pin'}>
+                            <Pin className="h-3 w-3" />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingId(msg.id); setEditContent(msg.content); }}>
+                            <Edit2 className="h-3 w-3" />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => deleteMessage(msg.id)}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 );
               })
@@ -494,7 +517,21 @@ export default function TeamChat() {
           <TypingIndicator channel={channel} />
 
           {/* Input area */}
-          <div className="border-t border-border/50 p-4 shrink-0 relative">
+          <div className="border-t border-border/50 shrink-0 relative">
+            {/* Reply preview */}
+            {replyTo && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-secondary/30 border-b border-border/30">
+                <CornerDownRight className="h-3.5 w-3.5 text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-[10px] font-semibold text-primary">Replying to {replyTo.sender_name || replyTo.sender_email?.split('@')[0]}</span>
+                  <p className="text-xs text-muted-foreground truncate">{replyTo.content.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1').replace(/#\[([^\]]+)\]\([^)]+\)/g, '#$1')}</p>
+                </div>
+                <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => setReplyTo(null)}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+            <div className="p-4">
             {/* User mention dropdown */}
             {showMentions && filteredUsers.length > 0 && (
               <div className="absolute bottom-full left-4 right-4 mb-1 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto z-50">
@@ -571,6 +608,7 @@ export default function TeamChat() {
               <Button onClick={sendMessage} disabled={sending || !newMessage.trim()} size="icon" className="shrink-0">
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
+            </div>
             </div>
           </div>
         </div>
