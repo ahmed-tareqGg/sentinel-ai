@@ -20,208 +20,232 @@ interface ExecuteActionParams {
   targetUser?: string;
 }
 
-export async function executeRecommendedAction({ action, incidentId, targetIp, targetUser }: ExecuteActionParams) {
-  const actionName = action.toLowerCase().replace(/\s+/g, '_');
+/**
+ * Create an approval request for a SOAR action.
+ * All actions are gated behind the approval workflow — no fake execution.
+ */
+async function createApprovalRequest(
+  actionType: string,
+  incidentId: string,
+  reason: string,
+  params: Record<string, unknown> = {}
+): Promise<{ success: boolean; approvalId?: string; error?: unknown }> {
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData?.user?.id;
 
-  toast.loading(`Executing: ${action}...`, { id: actionName });
-
-  const invoke = async () => {
-    const { data, error } = await supabase.functions.invoke('execute-playbook', {
-      body: {
-        incident_id: incidentId,
-        specific_action: {
-          type: actionName,
-          params: {
-            ip: targetIp,
-            user: targetUser,
-          },
-        },
-      },
-    });
+    // Insert approval request
+    const { data, error } = await supabase.from('approval_requests').insert({
+      action_type: actionType,
+      incident_id: incidentId,
+      reason,
+      action_params: params as any,
+      requested_by: userId || null,
+      status: 'pending',
+      sla_deadline: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 min SLA
+    }).select('id').single();
 
     if (error) throw error;
-    return data;
-  };
 
-  try {
-    const data = await invoke();
-
-    // Add timeline entry
+    // Log to incident timeline
     await supabase.from('incident_timeline').insert({
       incident_id: incidentId,
-      stage: `Action Executed: ${action}`,
-      details: `Manual action triggered by analyst`,
+      stage: `Approval Requested: ${actionType}`,
+      details: `Action "${actionType}" submitted for approval. Reason: ${reason}`,
     });
 
-    toast.success(`${action} executed successfully`, { id: actionName });
-    return { success: true, data };
+    // Log to audit trail
+    await supabase.from('audit_logs').insert({
+      user_id: userId || null,
+      action: 'soar_action_requested',
+      resource_type: 'approval_requests',
+      resource_id: data?.id,
+      details: { action_type: actionType, incident_id: incidentId, params } as any,
+    });
+
+    return { success: true, approvalId: data?.id };
   } catch (error) {
-    const status = (error as any)?.context?.status ?? (error as any)?.status;
-    const message = String((error as any)?.message || '').toLowerCase();
-
-    if (status === 401 || message.includes('jwt')) {
-      const refreshed = await supabase.auth.refreshSession();
-      if (!refreshed.data.session) {
-        toast.error('جلسة الدخول انتهت. سجّل دخول مرة أخرى.', { id: actionName });
-        window.location.assign('/auth');
-        return { success: false, error };
-      }
-
-      try {
-        const data = await invoke();
-        toast.success(`${action} executed successfully`, { id: actionName });
-        return { success: true, data };
-      } catch (retryError) {
-        console.error('Action retry failed:', retryError);
-      }
-    }
-
-    console.error('Action execution failed:', error);
-    toast.error(`Failed to execute ${action}`, { id: actionName });
+    console.error(`Failed to create approval for ${actionType}:`, error);
     return { success: false, error };
   }
 }
 
-// Specific action handlers for common SOAR actions
+export async function executeRecommendedAction({ action, incidentId, targetIp, targetUser }: ExecuteActionParams) {
+  const actionName = action.toLowerCase().replace(/\s+/g, '_');
+
+  toast.loading(`Submitting approval request: ${action}...`, { id: actionName });
+
+  const result = await createApprovalRequest(
+    actionName,
+    incidentId,
+    `Analyst-triggered action: ${action}`,
+    { ip: targetIp, user: targetUser }
+  );
+
+  if (result.success) {
+    toast.success(`${action} — Approval request submitted. Awaiting T2/CISO review.`, { id: actionName });
+  } else {
+    toast.error(`Failed to submit ${action} for approval`, { id: actionName });
+  }
+
+  return result;
+}
+
+// Specific action handlers — all route through the approval workflow
 export const soarActions = {
   isolateHost: async (incidentId: string, hostIp: string) => {
-    toast.info('🔒 Initiating host isolation...', { duration: 2000 });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    toast.success(`Host ${hostIp} isolation initiated. EDR agent notified.`);
-    
-    await supabase.from('incident_timeline').insert({
-      incident_id: incidentId,
-      stage: 'Host Isolation Initiated',
-      details: `Target: ${hostIp}. Awaiting EDR confirmation.`,
-    });
-    
-    return { success: true };
+    toast.info('🔒 Submitting host isolation for approval...', { duration: 2000 });
+    const result = await createApprovalRequest(
+      'isolate_host',
+      incidentId,
+      `Isolate host ${hostIp} from network to contain threat`,
+      { ip: hostIp }
+    );
+    if (result.success) {
+      toast.success(`Host isolation for ${hostIp} submitted for approval.`);
+    } else {
+      toast.error('Failed to submit host isolation request.');
+    }
+    return result;
   },
 
   blockIp: async (incidentId: string, ip: string) => {
-    toast.info('🚫 Adding IP to block list...', { duration: 2000 });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    toast.success(`IP ${ip} added to firewall block list.`);
-    
-    await supabase.from('incident_timeline').insert({
-      incident_id: incidentId,
-      stage: 'IP Blocked',
-      details: `Blocked IP: ${ip} at firewall level.`,
-    });
-    
-    return { success: true };
+    toast.info('🚫 Submitting IP block for approval...', { duration: 2000 });
+    const result = await createApprovalRequest(
+      'block_ip',
+      incidentId,
+      `Block malicious IP ${ip} at firewall level`,
+      { ip }
+    );
+    if (result.success) {
+      toast.success(`IP block for ${ip} submitted for approval.`);
+    } else {
+      toast.error('Failed to submit IP block request.');
+    }
+    return result;
   },
 
   resetCredentials: async (incidentId: string, userId?: string) => {
-    toast.info('🔑 Initiating credential reset...', { duration: 2000 });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    toast.success('Password reset request sent to user.');
-    
-    await supabase.from('incident_timeline').insert({
-      incident_id: incidentId,
-      stage: 'Credentials Reset Initiated',
-      details: `Password reset triggered for affected accounts.`,
-    });
-    
-    return { success: true };
+    toast.info('🔑 Submitting credential reset for approval...', { duration: 2000 });
+    const result = await createApprovalRequest(
+      'reset_credentials',
+      incidentId,
+      `Reset credentials for affected user accounts`,
+      { user: userId }
+    );
+    if (result.success) {
+      toast.success('Credential reset submitted for approval.');
+    } else {
+      toast.error('Failed to submit credential reset request.');
+    }
+    return result;
   },
 
   forensicAnalysis: async (incidentId: string) => {
-    toast.info('🔬 Queuing forensic analysis...', { duration: 2000 });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    toast.success('Forensic analysis task created and assigned.');
-    
-    await supabase.from('incident_timeline').insert({
-      incident_id: incidentId,
-      stage: 'Forensic Analysis Queued',
-      details: 'Full forensic investigation has been initiated.',
-    });
-    
-    return { success: true };
+    toast.info('🔬 Submitting forensic analysis for approval...', { duration: 2000 });
+    const result = await createApprovalRequest(
+      'forensic_analysis',
+      incidentId,
+      `Initiate full forensic investigation on affected systems`
+    );
+    if (result.success) {
+      toast.success('Forensic analysis submitted for approval.');
+    } else {
+      toast.error('Failed to submit forensic analysis request.');
+    }
+    return result;
   },
 
   disableUser: async (incidentId: string, userEmail?: string) => {
-    toast.info('👤 Disabling user account...', { duration: 2000 });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    toast.success(`User account disabled in IAM.`);
-    
-    await supabase.from('incident_timeline').insert({
-      incident_id: incidentId,
-      stage: 'User Account Disabled',
-      details: `Account disabled pending investigation.`,
-    });
-    
-    return { success: true };
+    toast.info('👤 Submitting user disable for approval...', { duration: 2000 });
+    const result = await createApprovalRequest(
+      'disable_user',
+      incidentId,
+      `Disable user account ${userEmail || 'affected user'} pending investigation`,
+      { user: userEmail }
+    );
+    if (result.success) {
+      toast.success('User disable submitted for approval.');
+    } else {
+      toast.error('Failed to submit user disable request.');
+    }
+    return result;
   },
 
   geoBlockIp: async (incidentId: string, ip: string) => {
-    toast.info('🌍 Applying geo-block...', { duration: 2000 });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    toast.success(`Geo-block applied for region associated with ${ip}.`);
-    
-    await supabase.from('incident_timeline').insert({
-      incident_id: incidentId,
-      stage: 'Geo-Block Applied',
-      details: `Geographic region blocked based on IP: ${ip}.`,
-    });
-    
-    return { success: true };
+    toast.info('🌍 Submitting geo-block for approval...', { duration: 2000 });
+    const result = await createApprovalRequest(
+      'geo_block',
+      incidentId,
+      `Apply geographic block for region associated with IP ${ip}`,
+      { ip }
+    );
+    if (result.success) {
+      toast.success(`Geo-block for ${ip} submitted for approval.`);
+    } else {
+      toast.error('Failed to submit geo-block request.');
+    }
+    return result;
   },
 
   createTicket: async (incidentId: string, incidentNumber: string) => {
-    toast.info('🎫 Creating support ticket...', { duration: 2000 });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    const ticketId = `TKT-${Date.now().toString().slice(-6)}`;
-    toast.success(`Ticket ${ticketId} created in ServiceNow.`);
-    
-    await supabase.from('incident_timeline').insert({
-      incident_id: incidentId,
-      stage: 'Ticket Created',
-      details: `ServiceNow ticket ${ticketId} created for incident ${incidentNumber}.`,
-    });
-    
-    return { success: true, ticketId };
+    toast.info('🎫 Submitting ticket creation for approval...', { duration: 2000 });
+    const result = await createApprovalRequest(
+      'create_ticket',
+      incidentId,
+      `Create support ticket for incident ${incidentNumber}`,
+      { incident_number: incidentNumber }
+    );
+    if (result.success) {
+      toast.success(`Ticket creation for ${incidentNumber} submitted for approval.`);
+    } else {
+      toast.error('Failed to submit ticket creation request.');
+    }
+    return result;
   },
 
   investigateData: async (incidentId: string) => {
-    toast.info('📊 Initiating data investigation...', { duration: 2000 });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    toast.success('Data content investigation task assigned.');
-    
-    await supabase.from('incident_timeline').insert({
-      incident_id: incidentId,
-      stage: 'Data Investigation Started',
-      details: 'Analyst assigned to investigate data content.',
-    });
-    
-    return { success: true };
+    toast.info('📊 Submitting data investigation for approval...', { duration: 2000 });
+    const result = await createApprovalRequest(
+      'investigate_data',
+      incidentId,
+      `Initiate detailed data content investigation`
+    );
+    if (result.success) {
+      toast.success('Data investigation submitted for approval.');
+    } else {
+      toast.error('Failed to submit data investigation request.');
+    }
+    return result;
   },
 
   interviewUser: async (incidentId: string) => {
-    toast.info('💬 Scheduling user interview...', { duration: 2000 });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    toast.success('User interview request sent to HR/Security.');
-    
-    await supabase.from('incident_timeline').insert({
-      incident_id: incidentId,
-      stage: 'User Interview Scheduled',
-      details: 'Request sent to schedule interview with affected user.',
-    });
-    
-    return { success: true };
+    toast.info('💬 Submitting user interview for approval...', { duration: 2000 });
+    const result = await createApprovalRequest(
+      'interview_user',
+      incidentId,
+      `Schedule interview with affected user for investigation`
+    );
+    if (result.success) {
+      toast.success('User interview submitted for approval.');
+    } else {
+      toast.error('Failed to submit user interview request.');
+    }
+    return result;
   },
 
   networkForensics: async (incidentId: string) => {
-    toast.info('🌐 Capturing network traffic...', { duration: 2000 });
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    toast.success('Network forensics capture initiated.');
-    
-    await supabase.from('incident_timeline').insert({
-      incident_id: incidentId,
-      stage: 'Network Forensics Started',
-      details: 'PCAP capture and analysis initiated.',
-    });
-    
-    return { success: true };
+    toast.info('🌐 Submitting network forensics for approval...', { duration: 2000 });
+    const result = await createApprovalRequest(
+      'network_forensics',
+      incidentId,
+      `Initiate PCAP capture and network traffic analysis`
+    );
+    if (result.success) {
+      toast.success('Network forensics submitted for approval.');
+    } else {
+      toast.error('Failed to submit network forensics request.');
+    }
+    return result;
   },
 };
