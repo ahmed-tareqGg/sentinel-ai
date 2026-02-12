@@ -312,7 +312,9 @@ export type Database = {
           id: string
           incident_id: string | null
           is_edited: boolean | null
+          is_pinned: boolean | null
           mentions: string[] | null
+          priority: string | null
           sender_email: string | null
           sender_id: string
           sender_name: string | null
@@ -325,7 +327,9 @@ export type Database = {
           id?: string
           incident_id?: string | null
           is_edited?: boolean | null
+          is_pinned?: boolean | null
           mentions?: string[] | null
+          priority?: string | null
           sender_email?: string | null
           sender_id: string
           sender_name?: string | null
@@ -338,7 +342,9 @@ export type Database = {
           id?: string
           incident_id?: string | null
           is_edited?: boolean | null
+          is_pinned?: boolean | null
           mentions?: string[] | null
+          priority?: string | null
           sender_email?: string | null
           sender_id?: string
           sender_name?: string | null
@@ -350,6 +356,41 @@ export type Database = {
             columns: ["incident_id"]
             isOneToOne: false
             referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_reactions: {
+        Row: {
+          created_at: string
+          emoji: string
+          id: string
+          message_id: string
+          user_email: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          emoji: string
+          id?: string
+          message_id: string
+          user_email?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          emoji?: string
+          id?: string
+          message_id?: string
+          user_email?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_reactions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
             referencedColumns: ["id"]
           },
         ]
