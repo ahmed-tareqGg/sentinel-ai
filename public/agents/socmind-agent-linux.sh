@@ -77,14 +77,18 @@ POSITION_DIR="/tmp/socmind_positions"
 collect_logs() {
     local max_lines=${1:-100}
     local logs="[]"
-    local found_any="false"
+    local file_log_count=0
     mkdir -p "$POSITION_DIR"
     
-    # Method 1: Traditional log files
-    for logfile in /var/log/auth.log /var/log/secure /var/log/syslog /var/log/messages /var/log/kern.log /var/log/daemon.log /var/log/faillog /var/log/lastlog /var/log/dpkg.log /var/log/apt/history.log; do
+    # Method 1: Traditional TEXT log files (skip binary files like faillog/lastlog)
+    for logfile in /var/log/auth.log /var/log/secure /var/log/syslog /var/log/messages /var/log/kern.log /var/log/daemon.log /var/log/dpkg.log /var/log/apt/history.log; do
         [ ! -f "$logfile" ] && continue
         [ ! -r "$logfile" ] && continue
-        found_any="true"
+        
+        # Skip binary files
+        if file "$logfile" 2>/dev/null | grep -qi "binary\|data\|executable"; then
+            continue
+        fi
         
         local pos_file="$POSITION_DIR/$(echo "$logfile" | md5sum | cut -c1-16)"
         local last_size=0
@@ -102,7 +106,7 @@ collect_logs() {
         fi
         
         local logtype="system"
-        echo "$logfile" | grep -qi "auth\|secure\|faillog\|lastlog" && logtype="auth"
+        echo "$logfile" | grep -qi "auth\|secure" && logtype="auth"
         echo "$logfile" | grep -qi "kern" && logtype="kernel"
         echo "$logfile" | grep -qi "dpkg\|apt" && logtype="package"
         
@@ -115,44 +119,71 @@ collect_logs() {
         
         echo "$current_size" > "$pos_file"
         
-        while IFS= read -r line; do
-            [ -z "$line" ] && continue
-            local severity=2
-            
-            # High severity: brute force, failed passwords, authentication failures
-            if echo "$line" | grep -qi "Failed password\|authentication failure\|FAILED LOGIN\|invalid user\|illegal user\|maximum authentication\|Too many authentication\|pam_unix.*failed\|Connection closed.*preauth\|Disconnected from authenticating"; then
-                severity=5
-            elif echo "$line" | grep -qi "critical\|emergency\|panic"; then
-                severity=5
-            elif echo "$line" | grep -qi "failed\|denied\|error\|attack\|blocked\|invalid\|unauthorized\|rejected"; then
-                severity=4
-            elif echo "$line" | grep -qi "warning\|warn\|suspicious"; then
-                severity=3
-            fi
-            
-            # Detect MITRE techniques from log content
-            local mitre=""
-            echo "$line" | grep -qi "Failed password\|authentication failure\|FAILED LOGIN" && mitre="T1110"
-            echo "$line" | grep -qi "sudo.*COMMAND\|su:" && mitre="T1548"
-            echo "$line" | grep -qi "Accepted publickey\|Accepted password" && mitre="T1078"
-            echo "$line" | grep -qi "session opened\|session closed" && mitre="T1021"
-            
-            local safe_msg=$(echo "$line" | head -c 500 | sed "s/'/\\\\'/g" | sed 's/"/\\"/g' | tr -d '\000-\037' || true)
-            logs=$(echo "$logs" | python3 -c "
-import sys, json
-logs = json.load(sys.stdin)
-entry = {'log_type':'$logtype','timestamp':'$(date -u +%Y-%m-%dT%H:%M:%SZ)','message':'$safe_msg','severity':$severity,'source_ip':'$(hostname)','raw_log':{'file':'$logfile'}}
-mitre = '$mitre'
-if mitre:
-    entry['mitre_technique'] = mitre
-logs.append(entry)
-print(json.dumps(logs))
+        [ -z "$new_lines" ] && continue
+        
+        # Build JSON using python3 in one shot (much more reliable than per-line)
+        logs=$(echo "$new_lines" | python3 -c "
+import sys, json, re
+from datetime import datetime, timezone
+
+existing = json.loads('$logs' if '$logs' != '' else '[]')
+logfile = '$logfile'
+logtype = '$logtype'
+hostname = '$(hostname)'
+now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    
+    lower = line.lower()
+    severity = 2
+    
+    # High severity patterns
+    if any(kw in lower for kw in ['failed password', 'authentication failure', 'failed login',
+        'invalid user', 'illegal user', 'maximum authentication', 'too many authentication',
+        'pam_unix' and 'failed' in lower, 'connection closed' and 'preauth' in lower,
+        'disconnected from authenticating']):
+        severity = 5
+    elif any(kw in lower for kw in ['critical', 'emergency', 'panic']):
+        severity = 5
+    elif any(kw in lower for kw in ['failed', 'denied', 'error', 'attack', 'blocked', 'invalid', 'unauthorized', 'rejected']):
+        severity = 4
+    elif any(kw in lower for kw in ['warning', 'warn', 'suspicious']):
+        severity = 3
+    
+    # MITRE detection
+    mitre = ''
+    if any(kw in lower for kw in ['failed password', 'authentication failure', 'failed login']):
+        mitre = 'T1110'
+    elif any(kw in lower for kw in ['sudo', 'su:']):
+        mitre = 'T1548'
+    elif any(kw in lower for kw in ['accepted publickey', 'accepted password']):
+        mitre = 'T1078'
+    elif any(kw in lower for kw in ['session opened', 'session closed']):
+        mitre = 'T1021'
+    
+    entry = {
+        'log_type': logtype,
+        'timestamp': now,
+        'message': line[:500],
+        'severity': severity,
+        'source_ip': hostname,
+        'raw_log': {'file': logfile}
+    }
+    if mitre:
+        entry['mitre_technique'] = mitre
+    existing.append(entry)
+
+print(json.dumps(existing))
 " 2>/dev/null || echo "$logs")
-        done <<< "$new_lines"
+        
+        file_log_count=$(echo "$logs" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
     done
     
-    # Method 2: journalctl fallback (systemd-based systems like Kali, Ubuntu 22+, Fedora)
-    if [ "$found_any" == "false" ] || [ "$logs" == "[]" ]; then
+    # Method 2: journalctl — ALWAYS try if file method found nothing
+    if [ "$file_log_count" -eq 0 ] 2>/dev/null; then
         if command -v journalctl &> /dev/null; then
             local journal_pos_file="$POSITION_DIR/journalctl_cursor"
             local journal_args="--no-pager -o short-iso -q -n $max_lines"
@@ -170,42 +201,60 @@ print(json.dumps(logs))
             # Save cursor for next run
             journalctl --no-pager -o export -n 1 2>/dev/null | grep "^__CURSOR=" | cut -d= -f2 > "$journal_pos_file" 2>/dev/null || true
             
-            while IFS= read -r line; do
-                [ -z "$line" ] && continue
-                [[ "$line" == *"-- No entries --"* ]] && continue
-                [[ "$line" == *"-- Journal begins"* ]] && continue
-                local severity=2
-                
-                if echo "$line" | grep -qi "Failed password\|authentication failure\|FAILED LOGIN\|invalid user\|illegal user\|maximum authentication\|pam_unix.*failed"; then
-                    severity=5
-                elif echo "$line" | grep -qi "critical\|emergency\|panic"; then
-                    severity=5
-                elif echo "$line" | grep -qi "failed\|denied\|error\|attack\|blocked\|invalid"; then
-                    severity=4
-                elif echo "$line" | grep -qi "warning\|warn\|suspicious"; then
-                    severity=3
-                fi
-                
-                local logtype="system"
-                echo "$line" | grep -qi "sshd\|sudo\|login\|pam\|auth\|passwd" && logtype="auth"
-                echo "$line" | grep -qi "kernel" && logtype="kernel"
-                
-                local mitre=""
-                echo "$line" | grep -qi "Failed password\|authentication failure" && mitre="T1110"
-                echo "$line" | grep -qi "sudo.*COMMAND\|su:" && mitre="T1548"
-                
-                local safe_msg=$(echo "$line" | head -c 500 | sed "s/'/\\\\'/g" | sed 's/"/\\"/g' | tr -d '\000-\037' || true)
-                logs=$(echo "$logs" | python3 -c "
+            if [ -n "$journal_output" ]; then
+                logs=$(echo "$journal_output" | python3 -c "
 import sys, json
-logs = json.load(sys.stdin)
-entry = {'log_type':'$logtype','timestamp':'$(date -u +%Y-%m-%dT%H:%M:%SZ)','message':'$safe_msg','severity':$severity,'source_ip':'$(hostname)','raw_log':{'source':'journalctl'}}
-mitre = '$mitre'
-if mitre:
-    entry['mitre_technique'] = mitre
-logs.append(entry)
-print(json.dumps(logs))
+from datetime import datetime, timezone
+
+existing = json.loads('$logs' if '$logs' != '' else '[]')
+hostname = '$(hostname)'
+now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line or '-- No entries --' in line or '-- Journal begins' in line:
+        continue
+    
+    lower = line.lower()
+    severity = 2
+    
+    if any(kw in lower for kw in ['failed password', 'authentication failure', 'failed login',
+        'invalid user', 'illegal user', 'maximum authentication', 'pam_unix']):
+        severity = 5
+    elif any(kw in lower for kw in ['critical', 'emergency', 'panic']):
+        severity = 5
+    elif any(kw in lower for kw in ['failed', 'denied', 'error', 'attack', 'blocked', 'invalid']):
+        severity = 4
+    elif any(kw in lower for kw in ['warning', 'warn', 'suspicious']):
+        severity = 3
+    
+    logtype = 'system'
+    if any(kw in lower for kw in ['sshd', 'sudo', 'login', 'pam', 'auth', 'passwd']):
+        logtype = 'auth'
+    elif 'kernel' in lower:
+        logtype = 'kernel'
+    
+    mitre = ''
+    if any(kw in lower for kw in ['failed password', 'authentication failure']):
+        mitre = 'T1110'
+    elif any(kw in lower for kw in ['sudo', 'su:']):
+        mitre = 'T1548'
+    
+    entry = {
+        'log_type': logtype,
+        'timestamp': now,
+        'message': line[:500],
+        'severity': severity,
+        'source_ip': hostname,
+        'raw_log': {'source': 'journalctl'}
+    }
+    if mitre:
+        entry['mitre_technique'] = mitre
+    existing.append(entry)
+
+print(json.dumps(existing))
 " 2>/dev/null || echo "$logs")
-            done <<< "$journal_output"
+            fi
         fi
     fi
     
