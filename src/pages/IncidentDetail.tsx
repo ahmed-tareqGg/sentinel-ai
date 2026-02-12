@@ -24,6 +24,7 @@ import { IncidentSLA } from '@/components/incidents/IncidentSLA';
 import { IOCManager } from '@/components/incidents/IOCManager';
 import { EvidenceManager } from '@/components/incidents/EvidenceManager';
 import { AIReportGenerator } from '@/components/incidents/AIReportGenerator';
+import { RootCauseAnalysis } from '@/components/incidents/RootCauseAnalysis';
 
 interface TimelineEntry {
   id: string;
@@ -771,6 +772,7 @@ export default function IncidentDetail() {
         </TabsList>
 
         <TabsContent value="analysis" className="space-y-6">
+          <RootCauseAnalysis incidentId={incident.id} />
           {incident.evidence && incident.evidence.length > 0 && (
             <div className="rounded-xl border border-border bg-card p-5">
               <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
