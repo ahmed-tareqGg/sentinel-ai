@@ -6,13 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight } from 'lucide-react';
+import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { format, isToday, isYesterday } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { ChatReactions } from '@/components/chat/ChatReactions';
 import { IncidentMentionDropdown } from '@/components/chat/IncidentMentionDropdown';
+import { PolicyMentionDropdown } from '@/components/chat/PolicyMentionDropdown';
 import { TypingIndicator, useTypingBroadcast } from '@/components/chat/TypingIndicator';
 import { OnlineUsers } from '@/components/chat/OnlineUsers';
 import { ChatReadReceipts, useMarkAsRead } from '@/components/chat/ChatReadReceipts';
@@ -43,6 +44,7 @@ const CHANNELS = [
   { id: 'general', label: 'General', icon: Hash },
   { id: 'incidents', label: 'Incidents', icon: AlertTriangle },
   { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
+  { id: 'compliance', label: 'Compliance', icon: Shield },
 ];
 
 const PRIORITY_OPTIONS = [
@@ -64,10 +66,13 @@ export default function TeamChat() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [showMentions, setShowMentions] = useState(false);
   const [showIncidents, setShowIncidents] = useState(false);
+  const [showPolicies, setShowPolicies] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
   const [incidentFilter, setIncidentFilter] = useState('');
+  const [policyFilter, setPolicyFilter] = useState('');
   const [mentionIndex, setMentionIndex] = useState(0);
   const [incidentIndex, setIncidentIndex] = useState(0);
+  const [policyIndex, setPolicyIndex] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [priority, setPriority] = useState('normal');
@@ -171,10 +176,23 @@ export default function TeamChat() {
     if (hashMatch) {
       setShowIncidents(true);
       setShowMentions(false);
+      setShowPolicies(false);
       setIncidentFilter(hashMatch[1]);
       setIncidentIndex(0);
     } else {
       setShowIncidents(false);
+    }
+
+    // Detect $ trigger for compliance policies
+    const dollarMatch = textBefore.match(/\$(\w*)$/);
+    if (dollarMatch) {
+      setShowPolicies(true);
+      setShowMentions(false);
+      setShowIncidents(false);
+      setPolicyFilter(dollarMatch[1]);
+      setPolicyIndex(0);
+    } else {
+      setShowPolicies(false);
     }
   };
 
@@ -201,6 +219,17 @@ export default function TeamChat() {
     inputRef.current?.focus();
   };
 
+  const insertPolicy = (pol: { id: string; control_code: string }) => {
+    const cursorPos = inputRef.current?.selectionStart || 0;
+    const textBefore = newMessage.slice(0, cursorPos);
+    const textAfter = newMessage.slice(cursorPos);
+    const beforeDollar = textBefore.replace(/\$\w*$/, '');
+    const tag = `$[${pol.control_code}](${pol.id})`;
+    setNewMessage(beforeDollar + tag + ' ' + textAfter);
+    setShowPolicies(false);
+    inputRef.current?.focus();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (showMentions) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => Math.min(i + 1, filteredUsers.length - 1)); }
@@ -211,7 +240,10 @@ export default function TeamChat() {
     }
     if (showIncidents) {
       if (e.key === 'Escape') setShowIncidents(false);
-      // Selection handled by dropdown click
+      return;
+    }
+    if (showPolicies) {
+      if (e.key === 'Escape') setShowPolicies(false);
       return;
     }
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -264,24 +296,24 @@ export default function TeamChat() {
 
   // Render message content with highlighted @mentions and #incidents
   const renderContent = (content: string) => {
-    // Split by both @mentions and #incidents
-    const parts = content.split(/(@\[([^\]]+)\]\(([^)]+)\)|#\[([^\]]+)\]\(([^)]+)\))/g);
+    // Split by @mentions, #incidents, and $policies
+    const parts = content.split(/(@\[([^\]]+)\]\(([^)]+)\)|#\[([^\]]+)\]\(([^)]+)\)|\$\[([^\]]+)\]\(([^)]+)\))/g);
     const elements: React.ReactNode[] = [];
     let i = 0;
     while (i < parts.length) {
       if (parts[i] === undefined) { i++; continue; }
       // Check for @mention
-      if (i + 5 < parts.length && parts[i + 1]?.startsWith('@[')) {
+      if (i + 7 < parts.length && parts[i + 1]?.startsWith('@[')) {
         elements.push(<span key={i}>{parts[i]}</span>);
         elements.push(
           <Badge key={`m-${i}`} variant="secondary" className="text-xs px-1.5 py-0 mx-0.5 bg-primary/20 text-primary border-primary/30 font-medium">
             @{parts[i + 2]}
           </Badge>
         );
-        i += 6;
+        i += 8;
       }
       // Check for #incident  
-      else if (i + 5 < parts.length && parts[i + 1]?.startsWith('#[')) {
+      else if (i + 7 < parts.length && parts[i + 1]?.startsWith('#[')) {
         elements.push(<span key={i}>{parts[i]}</span>);
         const incNumber = parts[i + 4];
         const incId = parts[i + 5];
@@ -295,7 +327,23 @@ export default function TeamChat() {
             {incNumber}
           </Link>
         );
-        i += 6;
+        i += 8;
+      }
+      // Check for $policy
+      else if (i + 7 < parts.length && parts[i + 1]?.startsWith('$[')) {
+        elements.push(<span key={i}>{parts[i]}</span>);
+        const controlCode = parts[i + 6];
+        elements.push(
+          <Link
+            key={`pol-${i}`}
+            to="/compliance"
+            className="inline-flex items-center gap-1 mx-0.5 px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-mono font-bold hover:bg-primary/20 transition-colors"
+          >
+            <Shield className="h-3 w-3" />
+            {controlCode}
+          </Link>
+        );
+        i += 8;
       } else {
         if (parts[i]) elements.push(<span key={i}>{parts[i]}</span>);
         i++;
@@ -394,6 +442,8 @@ export default function TeamChat() {
               <span className="opacity-60">@ mention users</span>
               <span className="mx-2 opacity-30">|</span>
               <span className="opacity-60"># link incidents</span>
+              <span className="mx-2 opacity-30">|</span>
+              <span className="opacity-60">$ link policies</span>
             </div>
           </div>
 
@@ -586,6 +636,15 @@ export default function TeamChat() {
               />
             )}
 
+            {/* Policy mention dropdown */}
+            {showPolicies && (
+              <PolicyMentionDropdown
+                filter={policyFilter}
+                selectedIndex={policyIndex}
+                onSelect={(pol) => insertPolicy(pol)}
+              />
+            )}
+
             {/* Priority selector + input */}
             <div className="flex items-center gap-2">
               {/* Priority toggle */}
@@ -615,13 +674,14 @@ export default function TeamChat() {
                   value={newMessage}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
-                  placeholder={`Message #${channel}... (@ mention, # link incident)`}
+                  placeholder={`Message #${channel}... (@ mention, # incident, $ policy)`}
                   className="pr-16 bg-secondary/30"
                   disabled={sending}
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
                   <AtSign className="h-3.5 w-3.5 text-muted-foreground/40" />
                   <Hash className="h-3.5 w-3.5 text-muted-foreground/40" />
+                  <Shield className="h-3.5 w-3.5 text-muted-foreground/40" />
                 </div>
               </div>
               <Button onClick={sendMessage} disabled={sending || !newMessage.trim()} size="icon" className="shrink-0">
