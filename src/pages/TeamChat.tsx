@@ -51,7 +51,10 @@ const PRIORITY_OPTIONS = [
 ];
 
 export default function TeamChat() {
-  const { user, profile } = useAuth();
+  const { user, profile, role } = useAuth();
+  const HIGH_ROLES = ['admin', 'ciso', 'soc_manager', 'soc_tier_3'];
+  const canPinAny = role ? HIGH_ROLES.includes(role) : false;
+  const canDeleteAny = role ? ['admin', 'ciso', 'soc_manager'].includes(role) : false;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [channel, setChannel] = useState('general');
@@ -493,11 +496,14 @@ export default function TeamChat() {
                       <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setReplyTo(msg); inputRef.current?.focus(); }} title="Reply">
                         <Reply className="h-3 w-3" />
                       </Button>
+                      {/* Pin: own messages always, any message for high roles */}
+                      {(isOwn || canPinAny) && (
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => togglePin(msg)} title={msg.is_pinned ? 'Unpin' : 'Pin'}>
+                          <Pin className="h-3 w-3" />
+                        </Button>
+                      )}
                       {isOwn && editingId !== msg.id && (
                         <>
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => togglePin(msg)} title={msg.is_pinned ? 'Unpin' : 'Pin'}>
-                            <Pin className="h-3 w-3" />
-                          </Button>
                           <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingId(msg.id); setEditContent(msg.content); }}>
                             <Edit2 className="h-3 w-3" />
                           </Button>
@@ -505,6 +511,12 @@ export default function TeamChat() {
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </>
+                      )}
+                      {/* High roles can delete any message */}
+                      {!isOwn && canDeleteAny && (
+                        <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => deleteMessage(msg.id)} title="Delete (Admin)">
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
                       )}
                     </div>
                   </div>
