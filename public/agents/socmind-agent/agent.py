@@ -145,6 +145,9 @@ def cmd_run(args):
     executor = ActionExecutor(config, audit, approval)
     playbook_engine = PlaybookEngine(config, executor, audit)
 
+    # Wire playbook engine into the collector for local event evaluation
+    collector.playbook_engine = playbook_engine
+
     # Graceful shutdown
     shutdown_event = threading.Event()
 

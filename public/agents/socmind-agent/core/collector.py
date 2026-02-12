@@ -17,9 +17,10 @@ except ImportError:
 
 
 class LogCollector:
-    def __init__(self, config: dict, audit_logger):
+    def __init__(self, config: dict, audit_logger, playbook_engine=None):
         self.config = config
         self.audit = audit_logger
+        self.playbook_engine = playbook_engine
         self.api_endpoint = config.get("api", {}).get("endpoint", "")
         self.api_key = config.get("api", {}).get("key", "")
         self.interval = config.get("collector", {}).get("interval_seconds", 60)
@@ -36,6 +37,13 @@ class LogCollector:
                 if logs:
                     self._send_logs(logs)
                     print(f"[COLLECTOR] Sent {len(logs)} log entries")
+
+                    # Feed events to the local playbook engine for pattern matching
+                    if self.playbook_engine:
+                        for log_entry in logs:
+                            event = self._classify_event(log_entry)
+                            if event:
+                                self.playbook_engine.evaluate_event(event)
                 else:
                     print("[COLLECTOR] No new logs")
             except Exception as e:
@@ -120,6 +128,59 @@ class LogCollector:
         if "kern" in name:
             return "kernel"
         return "system"
+
+    def _classify_event(self, log_entry: dict) -> dict | None:
+        """
+        Classify a collected log into an event that the PlaybookEngine can evaluate.
+        Returns an event dict with 'event_type' or None if not classifiable.
+        """
+        msg = log_entry.get("message", "").lower()
+        severity = log_entry.get("severity", 0)
+        event = dict(log_entry)  # copy original fields
+
+        # --- Failed login / brute force patterns ---
+        if any(kw in msg for kw in [
+            "failed password", "authentication failure", "failed login",
+            "invalid user", "logon failure", "account locked",
+            "event id: 4625",  # Windows failed logon
+        ]):
+            event["event_type"] = "failed_login"
+            # Try to extract target user
+            for pattern in [
+                r"for (?:invalid user )?(\S+)",
+                r"user[= ]+(\S+)",
+                r"account[= ]+(\S+)",
+            ]:
+                m = re.search(pattern, log_entry.get("message", ""))
+                if m:
+                    event["target"] = m.group(1)
+                    break
+            return event
+
+        # --- Suspicious process / malware patterns ---
+        if any(kw in msg for kw in [
+            "malware", "trojan", "ransomware", "c2 beacon",
+            "reverse shell", "mimikatz", "payload",
+        ]):
+            event["event_type"] = "malware_detected"
+            return event
+
+        # --- Privilege escalation ---
+        if any(kw in msg for kw in [
+            "privilege escalation", "sudo", "su:", "runas",
+            "event id: 4672",  # Windows special privileges
+        ]):
+            event["event_type"] = "privilege_escalation"
+            return event
+
+        # --- Suspicious login (unusual location, new device, etc.) ---
+        if severity >= 4 and any(kw in msg for kw in [
+            "unusual", "new device", "impossible travel", "suspicious login",
+        ]):
+            event["event_type"] = "suspicious_login"
+            return event
+
+        return None
 
     def _send_logs(self, logs: list):
         """Send collected logs to SOCMind platform."""
