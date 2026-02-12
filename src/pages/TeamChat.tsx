@@ -450,7 +450,7 @@ export default function TeamChat() {
                           {msg.sender_name || msg.sender_email?.split('@')[0]}
                         </span>
                         <span className="text-[10px] text-muted-foreground">{formatTime(msg.created_at)}</span>
-                        <ChatReadReceipts messageId={msg.id} senderId={msg.sender_id} />
+                        
                         {msg.is_edited && <span className="text-[10px] text-muted-foreground italic">(edited)</span>}
                         {msg.is_pinned && (
                           <Pin className="h-3 w-3 text-yellow-500" />
@@ -494,6 +494,8 @@ export default function TeamChat() {
 
                       {/* Reactions */}
                       <ChatReactions messageId={msg.id} />
+                      {/* Read receipts - show who saw this message */}
+                      <ChatReadReceipts messageId={msg.id} senderId={msg.sender_id} />
                     </div>
 
                     {/* Actions */}
