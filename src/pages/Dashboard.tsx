@@ -33,7 +33,7 @@ export default function Dashboard() {
         />
         <StatCard
           title="MTTR"
-          value={metrics.mttr > 0 ? `${metrics.mttr} min` : '< 1 min'}
+          value={metrics.mttr > 0 ? (metrics.mttr >= 60 ? `${Math.round(metrics.mttr / 60)}h` : `${metrics.mttr} min`) : '< 1 min'}
           subtitle="Mean Time to Respond"
           icon={<Clock className="h-5 w-5" />}
           variant="primary"
