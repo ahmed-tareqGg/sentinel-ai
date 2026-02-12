@@ -242,7 +242,7 @@ const METRICS_COMPARISON_TEMPLATE = {
 };
 
 export default function Demo() {
-  const { incidents } = useIncidents({ limit: 200 });
+  const { incidents, loading: incidentsLoading } = useIncidents({ limit: 200 });
   const metrics = useAnalytics(incidents);
   
   const [steps, setSteps] = useState<DemoStep[]>(DEMO_STEPS);
@@ -288,19 +288,20 @@ export default function Demo() {
   // Dynamic AI confidence from real data
   const avgConfidence = useMemo(() => {
     const withConfidence = incidents.filter(i => i.confidence && i.confidence > 0);
-    if (withConfidence.length === 0) return 0;
+    if (withConfidence.length === 0) return incidentsLoading ? null : 0;
     return Math.round(withConfidence.reduce((sum, i) => sum + (i.confidence || 0), 0) / withConfidence.length);
-  }, [incidents]);
+  }, [incidents, incidentsLoading]);
 
   // Dynamic value protected estimate based on critical/high incidents handled
   const valueProtected = useMemo(() => {
+    if (incidentsLoading && metrics.totalIncidents === 0) return null;
     const critical = metrics.criticalIncidents;
     const high = metrics.highIncidents;
     const value = critical * 250000 + high * 50000 + (metrics.totalIncidents - critical - high) * 5000;
     if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
     if (value >= 1000) return `$${Math.round(value / 1000)}K`;
     return `$${value}`;
-  }, [metrics]);
+  }, [metrics, incidentsLoading]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -953,7 +954,7 @@ Without automated response:
               <div className="flex items-center gap-3">
                 <Brain className="h-8 w-8 text-primary" />
                 <div>
-                  <p className="text-2xl font-bold text-primary">{avgConfidence > 0 ? `${avgConfidence}%` : '--'}</p>
+                  <p className="text-2xl font-bold text-primary">{avgConfidence !== null && avgConfidence > 0 ? `${avgConfidence}%` : incidentsLoading ? '...' : '--'}</p>
                   <p className="text-xs text-muted-foreground">AI Confidence</p>
                 </div>
               </div>
@@ -975,7 +976,7 @@ Without automated response:
               <div className="flex items-center gap-3">
                 <DollarSign className="h-8 w-8 text-yellow-500" />
                 <div>
-                  <p className="text-2xl font-bold text-yellow-500">{valueProtected}</p>
+                  <p className="text-2xl font-bold text-yellow-500">{valueProtected !== null ? valueProtected : incidentsLoading ? '...' : '$0'}</p>
                   <p className="text-xs text-muted-foreground">Value Protected</p>
                 </div>
               </div>
