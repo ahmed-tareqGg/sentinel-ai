@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield } from 'lucide-react';
+import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { format, isToday, isYesterday } from 'date-fns';
@@ -38,7 +38,46 @@ interface UserProfile {
   id: string;
   email: string;
   full_name: string | null;
+  display_name: string | null;
 }
+
+interface UserRole {
+  user_id: string;
+  role: string;
+}
+
+const ROLE_HIERARCHY: Record<string, number> = {
+  admin: 7,
+  ciso: 6,
+  soc_manager: 5,
+  soc_tier_3: 4,
+  soc_tier_2: 3,
+  soc_tier_1: 2,
+  grc_engineer: 3,
+  demo_user: 1,
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Admin',
+  ciso: 'CISO',
+  soc_manager: 'Manager',
+  soc_tier_3: 'Tier 3',
+  soc_tier_2: 'Tier 2',
+  soc_tier_1: 'Tier 1',
+  grc_engineer: 'GRC',
+  demo_user: 'Demo',
+};
+
+const ROLE_BADGE_COLORS: Record<string, string> = {
+  admin: 'bg-red-500/20 text-red-400 border-red-500/30',
+  ciso: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  soc_manager: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  soc_tier_3: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  soc_tier_2: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  soc_tier_1: 'bg-green-500/20 text-green-400 border-green-500/30',
+  grc_engineer: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+  demo_user: 'bg-muted text-muted-foreground border-border',
+};
 
 const CHANNELS = [
   { id: 'general', label: 'General', icon: Hash },
@@ -64,6 +103,7 @@ export default function TeamChat() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [userRoles, setUserRoles] = useState<Map<string, string>>(new Map());
   const [showMentions, setShowMentions] = useState(false);
   const [showIncidents, setShowIncidents] = useState(false);
   const [showPolicies, setShowPolicies] = useState(false);
@@ -78,15 +118,27 @@ export default function TeamChat() {
   const [priority, setPriority] = useState('normal');
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  const [editingDisplayName, setEditingDisplayName] = useState(false);
+  const [newDisplayName, setNewDisplayName] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { signalTyping, stopTyping } = useTypingBroadcast(channel);
 
-  // Load users for mentions
+  const myRoleLevel = role ? (ROLE_HIERARCHY[role] || 0) : 0;
+
+  // Load users and roles for mentions
   useEffect(() => {
     const loadUsers = async () => {
-      const { data } = await supabase.from('profiles').select('id, email, full_name');
-      if (data) setUsers(data);
+      const [profilesRes, rolesRes] = await Promise.all([
+        supabase.from('profiles').select('id, email, full_name, display_name'),
+        supabase.from('user_roles').select('user_id, role'),
+      ]);
+      if (profilesRes.data) setUsers(profilesRes.data as UserProfile[]);
+      if (rolesRes.data) {
+        const roleMap = new Map<string, string>();
+        (rolesRes.data as UserRole[]).forEach(r => roleMap.set(r.user_id, r.role));
+        setUserRoles(roleMap);
+      }
     };
     loadUsers();
   }, []);
@@ -148,8 +200,8 @@ export default function TeamChat() {
 
   const filteredUsers = users.filter(u => {
     if (!mentionFilter) return true;
-    const name = (u.full_name || u.email || '').toLowerCase();
-    return name.includes(mentionFilter.toLowerCase());
+    const name = (u.display_name || u.full_name || u.email || '').toLowerCase();
+    return name.includes(mentionFilter.toLowerCase()) || u.email.toLowerCase().includes(mentionFilter.toLowerCase());
   }).slice(0, 6);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -258,10 +310,12 @@ export default function TeamChat() {
     stopTyping();
     const mentions = extractMentions(newMessage);
     const incidentId = extractIncidentId(newMessage);
+    const myProfile = users.find(u => u.id === user.id);
+    const senderDisplayName = myProfile?.display_name || profile?.full_name || profile?.email?.split('@')[0];
     const { error } = await supabase.from('chat_messages').insert({
       sender_id: user.id,
       sender_email: profile?.email || user.email,
-      sender_name: profile?.full_name || profile?.email?.split('@')[0],
+      sender_name: senderDisplayName,
       content: newMessage.trim(),
       mentions,
       incident_id: incidentId,
@@ -365,6 +419,46 @@ export default function TeamChat() {
     return '??';
   };
 
+  // Get the display name for a sender based on role visibility rules
+  const getSenderDisplayName = (senderId: string, senderName: string | null, senderEmail: string | null) => {
+    const senderProfile = users.find(u => u.id === senderId);
+    const senderRole = userRoles.get(senderId);
+    const senderRoleLevel = senderRole ? (ROLE_HIERARCHY[senderRole] || 0) : 0;
+    
+    const displayName = senderProfile?.display_name || senderName || senderEmail?.split('@')[0] || 'Unknown';
+    const realName = senderProfile?.full_name || senderEmail?.split('@')[0] || 'Unknown';
+    
+    // If it's the user's own message, show their display name
+    if (senderId === user?.id) return { displayName, realName, showRealName: true };
+    
+    // If viewer's role is >= sender's role, show both names
+    if (myRoleLevel >= senderRoleLevel) {
+      return { displayName, realName, showRealName: true };
+    }
+    
+    // Lower roles can only see display name + role badge of higher roles
+    return { displayName, realName, showRealName: false };
+  };
+
+  const getSenderRole = (senderId: string) => userRoles.get(senderId) || null;
+
+  const saveDisplayName = async () => {
+    if (!user || !newDisplayName.trim()) return;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ display_name: newDisplayName.trim() } as any)
+      .eq('id', user.id);
+    if (error) {
+      toast.error('Failed to update display name');
+    } else {
+      toast.success('Display name updated');
+      setEditingDisplayName(false);
+      // Refresh users
+      const { data } = await supabase.from('profiles').select('id, email, full_name, display_name');
+      if (data) setUsers(data as UserProfile[]);
+    }
+  };
+
   const myMentionCount = messages.filter(m => user && m.mentions?.includes(user.id)).length;
   const pinnedMessages = messages.filter(m => m.is_pinned);
   const displayMessages = showPinnedOnly ? pinnedMessages : messages;
@@ -422,6 +516,51 @@ export default function TeamChat() {
             </div>
           )}
 
+          {/* Display Name Editor */}
+          <div className="p-3 border-t border-border/50">
+            {editingDisplayName ? (
+              <div className="space-y-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Display Name</p>
+                <Input
+                  value={newDisplayName}
+                  onChange={e => setNewDisplayName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveDisplayName(); if (e.key === 'Escape') setEditingDisplayName(false); }}
+                  placeholder="Enter display name..."
+                  className="h-7 text-xs"
+                  autoFocus
+                />
+                <div className="flex gap-1">
+                  <Button size="sm" className="h-6 text-[10px] flex-1" onClick={saveDisplayName}>
+                    <Check className="h-3 w-3 mr-1" /> Save
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setEditingDisplayName(false)}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  const myProfile = users.find(u => u.id === user?.id);
+                  setNewDisplayName(myProfile?.display_name || profile?.full_name || '');
+                  setEditingDisplayName(true);
+                }}
+                className="flex items-center gap-2 w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Pencil className="h-3 w-3" />
+                <span>Edit Display Name</span>
+              </button>
+            )}
+            {role && (
+              <div className="mt-2 flex items-center gap-2">
+                <Badge variant="outline" className={cn('text-[9px] px-1.5 py-0', ROLE_BADGE_COLORS[role] || '')}>
+                  {ROLE_LABELS[role] || role}
+                </Badge>
+                <span className="text-[10px] text-muted-foreground">Your role</span>
+              </div>
+            )}
+          </div>
+
           {/* Online users */}
           <OnlineUsers />
         </div>
@@ -464,6 +603,8 @@ export default function TeamChat() {
                 const isOwn = msg.sender_id === user?.id;
                 const isMentioned = user && msg.mentions?.includes(user.id);
                 const isUrgent = msg.priority === 'urgent' || msg.priority === 'critical';
+                const nameInfo = getSenderDisplayName(msg.sender_id, msg.sender_name, msg.sender_email);
+                const senderRole = getSenderRole(msg.sender_id);
                 return (
                   <div
                     key={msg.id}
@@ -477,7 +618,7 @@ export default function TeamChat() {
                   >
                     <Avatar className="h-8 w-8 shrink-0 mt-0.5">
                       <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                        {getInitials(msg.sender_name, msg.sender_email)}
+                        {getInitials(nameInfo.displayName, msg.sender_email)}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
@@ -485,11 +626,12 @@ export default function TeamChat() {
                       {msg.reply_to_id && (() => {
                         const repliedMsg = messages.find(m => m.id === msg.reply_to_id);
                         if (!repliedMsg) return null;
+                        const replyNameInfo = getSenderDisplayName(repliedMsg.sender_id, repliedMsg.sender_name, repliedMsg.sender_email);
                         return (
                           <div className="flex items-start gap-1.5 mb-1 pl-2 border-l-2 border-primary/40 rounded-sm">
                             <CornerDownRight className="h-3 w-3 text-primary/50 mt-0.5 shrink-0" />
                             <div className="min-w-0">
-                              <span className="text-[10px] font-semibold text-primary/70">{repliedMsg.sender_name || repliedMsg.sender_email?.split('@')[0]}</span>
+                              <span className="text-[10px] font-semibold text-primary/70">{replyNameInfo.displayName}</span>
                               <p className="text-[11px] text-muted-foreground truncate max-w-md">{repliedMsg.content.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1').replace(/#\[([^\]]+)\]\([^)]+\)/g, '#$1')}</p>
                             </div>
                           </div>
@@ -497,8 +639,16 @@ export default function TeamChat() {
                       })()}
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-foreground">
-                          {msg.sender_name || msg.sender_email?.split('@')[0]}
+                          {nameInfo.displayName}
                         </span>
+                        {nameInfo.showRealName && nameInfo.realName !== nameInfo.displayName && (
+                          <span className="text-[10px] text-muted-foreground">({nameInfo.realName})</span>
+                        )}
+                        {senderRole && (
+                          <Badge variant="outline" className={cn('text-[9px] px-1.5 py-0', ROLE_BADGE_COLORS[senderRole] || 'bg-muted text-muted-foreground')}>
+                            {ROLE_LABELS[senderRole] || senderRole}
+                          </Badge>
+                        )}
                         <span className="text-[10px] text-muted-foreground">{formatTime(msg.created_at)}</span>
                         
                         {msg.is_edited && <span className="text-[10px] text-muted-foreground italic">(edited)</span>}
@@ -604,26 +754,39 @@ export default function TeamChat() {
             {/* User mention dropdown */}
             {showMentions && filteredUsers.length > 0 && (
               <div className="absolute bottom-full left-4 right-4 mb-1 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto z-50">
-                {filteredUsers.map((u, idx) => (
-                  <button
-                    key={u.id}
-                    onClick={() => insertMention(u)}
-                    className={cn(
-                      'flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-secondary/60 transition-colors',
-                      idx === mentionIndex && 'bg-secondary/60'
-                    )}
-                  >
-                    <Avatar className="h-6 w-6">
-                      <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                        {getInitials(u.full_name, u.email)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="text-left">
-                      <p className="font-medium text-foreground">{u.full_name || u.email.split('@')[0]}</p>
-                      <p className="text-[10px] text-muted-foreground">{u.email}</p>
-                    </div>
-                  </button>
-                ))}
+                <div className="px-3 py-1.5 border-b border-border/50">
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Mention User</span>
+                </div>
+                {filteredUsers.map((u, idx) => {
+                  const uRole = userRoles.get(u.id);
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={() => insertMention(u)}
+                      className={cn(
+                        'flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-secondary/60 transition-colors',
+                        idx === mentionIndex && 'bg-secondary/60'
+                      )}
+                    >
+                      <Avatar className="h-6 w-6">
+                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                          {getInitials(u.display_name || u.full_name, u.email)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="text-left flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-medium text-foreground">{u.display_name || u.full_name || u.email.split('@')[0]}</p>
+                          {uRole && (
+                            <Badge variant="outline" className={cn('text-[8px] px-1 py-0', ROLE_BADGE_COLORS[uRole] || '')}>
+                              {ROLE_LABELS[uRole] || uRole}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">{u.email}</p>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
 
