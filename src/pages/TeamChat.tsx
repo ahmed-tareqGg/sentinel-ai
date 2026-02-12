@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield, Pencil, ArrowLeft, Lock, Plus, LogIn, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield, Pencil, ArrowLeft, Lock, Plus, LogIn, PanelLeftClose, PanelLeftOpen, Paperclip, Image, FileText, Download } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,13 @@ import { PolicyMentionDropdown } from '@/components/chat/PolicyMentionDropdown';
 import { TypingIndicator, useTypingBroadcast } from '@/components/chat/TypingIndicator';
 import { OnlineUsers } from '@/components/chat/OnlineUsers';
 import { ChatReadReceipts, useMarkAsRead } from '@/components/chat/ChatReadReceipts';
+
+interface ChatAttachment {
+  name: string;
+  url: string;
+  type: string;
+  size: number;
+}
 
 interface ChatMessage {
   id: string;
@@ -32,6 +39,7 @@ interface ChatMessage {
   is_pinned: boolean;
   priority: string;
   reply_to_id: string | null;
+  attachments: ChatAttachment[] | null;
   created_at: string;
 }
 
@@ -150,6 +158,9 @@ export default function TeamChat() {
   const [creatingChannel, setCreatingChannel] = useState(false);
   const [joiningChannel, setJoiningChannel] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const myRoleLevel = role ? (ROLE_HIERARCHY[role] || 0) : 0;
 
@@ -249,7 +260,7 @@ export default function TeamChat() {
         .eq('channel', channel)
         .order('created_at', { ascending: true })
         .limit(200);
-      setMessages((data as ChatMessage[]) || []);
+      setMessages((data as unknown as ChatMessage[]) || []);
       setLoading(false);
       setTimeout(() => scrollToBottom(), 100);
     };
@@ -400,10 +411,50 @@ export default function TeamChat() {
     }
   };
 
+  const uploadFiles = async (files: File[]): Promise<ChatAttachment[]> => {
+    const uploaded: ChatAttachment[] = [];
+    for (const file of files) {
+      const ext = file.name.split('.').pop();
+      const path = `${user!.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await supabase.storage.from('chat-attachments').upload(path, file);
+      if (error) {
+        toast.error(`Failed to upload ${file.name}`);
+        continue;
+      }
+      const { data: urlData } = supabase.storage.from('chat-attachments').getPublicUrl(path);
+      uploaded.push({
+        name: file.name,
+        url: urlData.publicUrl,
+        type: file.type,
+        size: file.size,
+      });
+    }
+    return uploaded;
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      setPendingFiles(prev => [...prev, ...files]);
+    }
+    e.target.value = '';
+  };
+
+  const removePendingFile = (index: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   const sendMessage = async () => {
-    if (!newMessage.trim() || !user) return;
+    if ((!newMessage.trim() && pendingFiles.length === 0) || !user) return;
     setSending(true);
+    setUploading(pendingFiles.length > 0);
     stopTyping();
+
+    let attachments: ChatAttachment[] = [];
+    if (pendingFiles.length > 0) {
+      attachments = await uploadFiles(pendingFiles);
+    }
+
     const mentions = extractMentions(newMessage);
     const incidentId = extractIncidentId(newMessage);
     const myProfile = users.find(u => u.id === user.id);
@@ -412,12 +463,13 @@ export default function TeamChat() {
       sender_id: user.id,
       sender_email: profile?.email || user.email,
       sender_name: senderDisplayName,
-      content: newMessage.trim(),
+      content: newMessage.trim() || (attachments.length > 0 ? `📎 ${attachments.length} file(s)` : ''),
       mentions,
       incident_id: incidentId,
       channel,
       priority,
       reply_to_id: replyTo?.id || null,
+      attachments: attachments.length > 0 ? attachments : [],
     } as any);
     if (error) {
       toast.error('Failed to send message');
@@ -425,8 +477,10 @@ export default function TeamChat() {
       setNewMessage('');
       setPriority('normal');
       setReplyTo(null);
+      setPendingFiles([]);
     }
     setSending(false);
+    setUploading(false);
   };
 
   const deleteMessage = async (id: string) => {
@@ -853,6 +907,31 @@ export default function TeamChat() {
                         <p className="text-sm text-foreground/90 break-words">{renderContent(msg.content)}</p>
                       )}
 
+                      {/* Attachments */}
+                      {msg.attachments && (msg.attachments as ChatAttachment[]).length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-1.5">
+                          {(msg.attachments as ChatAttachment[]).map((att, idx) => {
+                            const isImage = att.type?.startsWith('image/');
+                            return isImage ? (
+                              <a key={idx} href={att.url} target="_blank" rel="noopener noreferrer" className="block">
+                                <img src={att.url} alt={att.name} className="max-w-[240px] max-h-[180px] rounded-md border border-border/50 object-cover hover:opacity-90 transition-opacity" />
+                              </a>
+                            ) : (
+                              <a
+                                key={idx}
+                                href={att.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 px-3 py-2 rounded-md border border-border/50 bg-secondary/30 hover:bg-secondary/50 transition-colors max-w-[240px]"
+                              >
+                                <FileText className="h-4 w-4 text-primary shrink-0" />
+                                <span className="text-xs text-foreground truncate">{att.name}</span>
+                                <Download className="h-3 w-3 text-muted-foreground shrink-0" />
+                              </a>
+                            );
+                          })}
+                        </div>
+                      )}
                       {msg.incident_id && !msg.content.includes('#[') && (
                         <Link to={`/incidents/${msg.incident_id}`} className="inline-flex items-center gap-1 mt-1 text-xs text-primary hover:underline">
                           <AlertTriangle className="h-3 w-3" /> View Incident
@@ -975,7 +1054,29 @@ export default function TeamChat() {
               />
             )}
 
-            {/* Priority selector + input */}
+            {/* Pending files preview */}
+            {pendingFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {pendingFiles.map((file, idx) => {
+                  const isImage = file.type.startsWith('image/');
+                  return (
+                    <div key={idx} className="relative group/file flex items-center gap-2 px-2 py-1.5 rounded-md border border-border/50 bg-secondary/30">
+                      {isImage ? (
+                        <img src={URL.createObjectURL(file)} alt={file.name} className="h-10 w-10 rounded object-cover" />
+                      ) : (
+                        <FileText className="h-4 w-4 text-primary" />
+                      )}
+                      <span className="text-xs text-foreground max-w-[120px] truncate">{file.name}</span>
+                      <button onClick={() => removePendingFile(idx)} className="h-4 w-4 rounded-full bg-destructive/80 text-destructive-foreground flex items-center justify-center hover:bg-destructive transition-colors">
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Priority selector + attach + input */}
             <div className="flex items-center gap-2">
               {/* Priority toggle */}
               <button
@@ -998,6 +1099,23 @@ export default function TeamChat() {
                 )} />
               </button>
 
+              {/* File attach button */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="h-9 w-9 flex items-center justify-center rounded-md border border-border/50 shrink-0 transition-colors hover:bg-secondary/60 text-muted-foreground hover:text-foreground"
+                title="Attach files"
+              >
+                <Paperclip className="h-4 w-4" />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,.pdf,.doc,.docx,.txt,.csv,.json,.xml,.yaml,.yml,.log,.zip"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+
               <div className="flex-1 relative">
                 <Input
                   ref={inputRef}
@@ -1014,8 +1132,8 @@ export default function TeamChat() {
                   <Shield className="h-3.5 w-3.5 text-muted-foreground/40" />
                 </div>
               </div>
-              <Button onClick={sendMessage} disabled={sending || !newMessage.trim()} size="icon" className="shrink-0">
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              <Button onClick={sendMessage} disabled={sending || (!newMessage.trim() && pendingFiles.length === 0)} size="icon" className="shrink-0">
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
             </div>
             </div>

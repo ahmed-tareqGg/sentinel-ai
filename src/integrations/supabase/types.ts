@@ -306,6 +306,7 @@ export type Database = {
       }
       chat_messages: {
         Row: {
+          attachments: Json | null
           channel: string
           content: string
           created_at: string
@@ -322,6 +323,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          attachments?: Json | null
           channel?: string
           content: string
           created_at?: string
@@ -338,6 +340,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          attachments?: Json | null
           channel?: string
           content?: string
           created_at?: string
