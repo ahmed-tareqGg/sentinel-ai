@@ -11,7 +11,7 @@ import { useAnalytics } from '@/hooks/useAnalytics';
 import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
-  const { incidents, loading } = useIncidents({ limit: 200 });
+  const { incidents, loading } = useIncidents();
   const metrics = useAnalytics(incidents);
 
   const openIncidents = metrics.openIncidents;
