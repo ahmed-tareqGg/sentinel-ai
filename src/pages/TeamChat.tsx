@@ -922,11 +922,13 @@ export default function TeamChat() {
                                 href={att.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-2 px-3 py-2 rounded-md border border-border/50 bg-secondary/30 hover:bg-secondary/50 transition-colors max-w-[240px]"
+                                download={att.name}
+                                className="flex items-center gap-2 px-3 py-2 rounded-md border border-border/50 bg-secondary/30 hover:bg-secondary/50 transition-colors max-w-[280px]"
                               >
                                 <FileText className="h-4 w-4 text-primary shrink-0" />
-                                <span className="text-xs text-foreground truncate">{att.name}</span>
-                                <Download className="h-3 w-3 text-muted-foreground shrink-0" />
+                                <span className="text-xs text-foreground truncate flex-1">{att.name}</span>
+                                <span className="text-[10px] text-muted-foreground shrink-0">{(att.size / 1024).toFixed(0)}KB</span>
+                                <Download className="h-3.5 w-3.5 text-primary shrink-0" />
                               </a>
                             );
                           })}
@@ -996,7 +998,7 @@ export default function TeamChat() {
                 </Button>
               </div>
             )}
-            <div className="p-4">
+            <div className="px-3 py-2">
             {/* User mention dropdown */}
             {showMentions && filteredUsers.length > 0 && (
               <div className="absolute bottom-full left-4 right-4 mb-1 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto z-50">
@@ -1085,14 +1087,14 @@ export default function TeamChat() {
                   setPriority(PRIORITY_OPTIONS[(idx + 1) % PRIORITY_OPTIONS.length].value);
                 }}
                 className={cn(
-                  'h-9 w-9 flex items-center justify-center rounded-md border border-border/50 shrink-0 transition-colors',
+                  'h-8 w-8 flex items-center justify-center rounded-md border border-border/50 shrink-0 transition-colors',
                   priority === 'urgent' && 'border-orange-500/50 bg-orange-500/10',
                   priority === 'critical' && 'border-red-500/50 bg-red-500/10',
                 )}
                 title={`Priority: ${priority}`}
               >
                 <Flag className={cn(
-                  'h-4 w-4',
+                  'h-3.5 w-3.5',
                   priority === 'normal' && 'text-muted-foreground',
                   priority === 'urgent' && 'text-orange-400',
                   priority === 'critical' && 'text-red-400',
@@ -1102,10 +1104,10 @@ export default function TeamChat() {
               {/* File attach button */}
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="h-9 w-9 flex items-center justify-center rounded-md border border-border/50 shrink-0 transition-colors hover:bg-secondary/60 text-muted-foreground hover:text-foreground"
+                className="h-8 w-8 flex items-center justify-center rounded-md border border-border/50 shrink-0 transition-colors hover:bg-secondary/60 text-muted-foreground hover:text-foreground"
                 title="Attach files"
               >
-                <Paperclip className="h-4 w-4" />
+                <Paperclip className="h-3.5 w-3.5" />
               </button>
               <input
                 ref={fileInputRef}
@@ -1123,7 +1125,7 @@ export default function TeamChat() {
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
                   placeholder={`Message #${channel}... (@ mention, # incident, $ policy)`}
-                  className="pr-16 bg-secondary/30"
+                  className="h-9 pr-16 bg-secondary/30 text-sm"
                   disabled={sending}
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
@@ -1132,8 +1134,8 @@ export default function TeamChat() {
                   <Shield className="h-3.5 w-3.5 text-muted-foreground/40" />
                 </div>
               </div>
-              <Button onClick={sendMessage} disabled={sending || (!newMessage.trim() && pendingFiles.length === 0)} size="icon" className="shrink-0">
-                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              <Button onClick={sendMessage} disabled={sending || (!newMessage.trim() && pendingFiles.length === 0)} size="icon" className="h-8 w-8 shrink-0">
+                {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
               </Button>
             </div>
             </div>
