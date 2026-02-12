@@ -21,10 +21,10 @@ const CHAT_URL = `${backendUrl}/functions/v1/soc-chat`;
 const STORAGE_KEY = 'socmind-conversations';
 
 const QUICK_PROMPTS = [
-  'ملخص الوضع الأمني الحالي',
+  'Current security posture summary',
   'What are the open critical incidents?',
   'Top MITRE techniques detected',
-  'أي حوادث محتاجة تدخل فوري؟',
+  'Which incidents need immediate action?',
 ];
 
 function loadConversations(): Conversation[] {
@@ -40,7 +40,7 @@ function saveConversations(convos: Conversation[]) {
 
 function generateTitle(messages: Message[]): string {
   const firstUser = messages.find(m => m.role === 'user');
-  if (!firstUser) return 'محادثة جديدة';
+  if (!firstUser) return 'New Chat';
   const text = firstUser.content.slice(0, 50);
   return text.length < firstUser.content.length ? text + '...' : text;
 }
@@ -48,7 +48,7 @@ function generateTitle(messages: Message[]): string {
 function createNewConversation(): Conversation {
   return {
     id: crypto.randomUUID(),
-    title: 'محادثة جديدة',
+    title: 'New Chat',
     messages: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -243,7 +243,7 @@ export function SOCChatWidget() {
           )}
           <div>
             <p className="text-sm font-semibold text-foreground">
-              {showHistory ? 'سجل المحادثات' : 'SOCMind AI Assistant'}
+              {showHistory ? 'Chat History' : 'SOCMind AI Assistant'}
             </p>
             {!showHistory && <p className="text-xs text-muted-foreground">Real-time SOC Intelligence</p>}
           </div>
@@ -251,10 +251,10 @@ export function SOCChatWidget() {
         <div className="flex items-center gap-1">
           {!showHistory && (
             <>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={startNewChat} title="محادثة جديدة">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={startNewChat} title="New Chat">
                 <Plus className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowHistory(true)} title="سجل المحادثات">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowHistory(true)} title="Chat History">
                 <History className="h-4 w-4" />
               </Button>
             </>
@@ -274,7 +274,7 @@ export function SOCChatWidget() {
           {conversations.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
               <History className="h-8 w-8 opacity-50" />
-              <p className="text-sm">لا توجد محادثات سابقة</p>
+              <p className="text-sm">No previous conversations</p>
             </div>
           ) : (
             conversations.map(convo => (
@@ -292,7 +292,7 @@ export function SOCChatWidget() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{convo.title}</p>
                   <p className="text-xs text-muted-foreground">
-                    {convo.messages.length} رسائل • {new Date(convo.updatedAt).toLocaleDateString('ar-EG')}
+                    {convo.messages.length} messages • {new Date(convo.updatedAt).toLocaleDateString('en-US')}
                   </p>
                 </div>
                 <Button
@@ -311,7 +311,7 @@ export function SOCChatWidget() {
             className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-primary hover:bg-primary/10 transition-colors mt-2 border border-dashed border-primary/30"
           >
             <Plus className="h-4 w-4" />
-            <span className="text-sm font-medium">محادثة جديدة</span>
+            <span className="text-sm font-medium">New Chat</span>
           </button>
         </div>
       ) : (
@@ -322,7 +322,7 @@ export function SOCChatWidget() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Bot className="h-5 w-5 text-primary" />
-                  <p className="text-sm">مرحباً! أنا مساعد SOCMind الذكي. كيف أقدر أساعدك؟</p>
+                  <p className="text-sm">Hi! I'm SOCMind AI Assistant. How can I help you?</p>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
                   {QUICK_PROMPTS.map((prompt, i) => (
@@ -390,7 +390,7 @@ export function SOCChatWidget() {
                 type="text"
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                placeholder="اسأل عن أي حادثة أو تهديد..."
+                placeholder="Ask about any incident or threat..."
                 className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 disabled={isLoading}
               />
