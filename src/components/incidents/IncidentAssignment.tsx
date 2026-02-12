@@ -153,6 +153,16 @@ export function IncidentAssignment({
         details: `${escalateReason} — by ${profile?.email || 'analyst'}`,
       });
 
+      // Create an approval request so it appears on the Approvals page
+      await supabase.from('approval_requests').insert({
+        incident_id: incidentId,
+        action_type: `escalation_${escalateTo}`,
+        status: 'pending',
+        requested_by: profile?.email || user?.id || 'analyst',
+        reason: escalateReason,
+        sla_deadline: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      });
+
       // Also call the escalation edge function
       supabase.functions.invoke('escalate-incident', {
         body: { incident_id: incidentId, reason: escalateReason },
