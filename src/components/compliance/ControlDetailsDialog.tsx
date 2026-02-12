@@ -398,7 +398,11 @@ export function ControlDetailsDialog({
                         <div className="flex items-center gap-2">
                           {ev.file_url && (
                             <Button variant="ghost" size="icon" asChild>
-                              <a href={ev.file_url} target="_blank" rel="noopener noreferrer">
+                              <a 
+                                href={ev.file_url.match(/^https?:\/\//) ? ev.file_url : `https://${ev.file_url}`} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                              >
                                 <LinkIcon className="h-4 w-4" />
                               </a>
                             </Button>
