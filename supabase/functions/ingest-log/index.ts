@@ -262,6 +262,120 @@ function shouldCreateIncident(analysis: any, severity: number): { create: boolea
   return { create: false, reason: 'Low risk, no incident needed' };
 }
 
+// ========== MULTI-STAGE ATTACK CHAIN DETECTION ==========
+// Detects sequences like: Recon → Credential Access → Lateral Movement → Exfiltration
+const ATTACK_CHAIN_STAGES: Record<string, { order: number; label: string }> = {
+  'Reconnaissance': { order: 1, label: 'Recon' },
+  'Discovery': { order: 2, label: 'Discovery' },
+  'Initial Access': { order: 3, label: 'Initial Access' },
+  'Execution': { order: 4, label: 'Execution' },
+  'Credential Access': { order: 5, label: 'Credential Access' },
+  'Persistence': { order: 6, label: 'Persistence' },
+  'Defense Evasion': { order: 7, label: 'Defense Evasion' },
+  'Lateral Movement': { order: 8, label: 'Lateral Movement' },
+  'Collection': { order: 9, label: 'Collection' },
+  'Command and Control': { order: 10, label: 'C2' },
+  'Exfiltration': { order: 11, label: 'Exfiltration' },
+  'Impact': { order: 12, label: 'Impact' },
+};
+
+const CHAIN_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
+const MIN_CHAIN_STAGES = 3; // Need at least 3 distinct tactics to flag as attack chain
+
+async function detectAttackChain(supabase: any, incident: any, analysis: any): Promise<void> {
+  const srcIp = incident.src_ip;
+  if (!srcIp || srcIp === 'Unknown') return;
+
+  const tactic = analysis?.mitre_tactic || incident.mitre_tactic;
+  if (!tactic || !ATTACK_CHAIN_STAGES[tactic]) return;
+
+  const windowStart = new Date(Date.now() - CHAIN_WINDOW_MS).toISOString();
+
+  // Find all recent incidents from the same source IP
+  const { data: relatedIncidents, error } = await supabase
+    .from('incidents')
+    .select('id, incident_number, mitre_tactic, mitre_technique, severity, event_type, created_at')
+    .eq('src_ip', srcIp)
+    .gte('created_at', windowStart)
+    .not('mitre_tactic', 'is', null)
+    .order('created_at', { ascending: true })
+    .limit(50);
+
+  if (error || !relatedIncidents || relatedIncidents.length < MIN_CHAIN_STAGES) return;
+
+  // Extract unique tactics in order
+  const seenTactics = new Map<string, { incident_id: string; technique: string; time: string }>();
+  for (const inc of relatedIncidents) {
+    if (inc.mitre_tactic && ATTACK_CHAIN_STAGES[inc.mitre_tactic] && !seenTactics.has(inc.mitre_tactic)) {
+      seenTactics.set(inc.mitre_tactic, {
+        incident_id: inc.id,
+        technique: inc.mitre_technique || '',
+        time: inc.created_at,
+      });
+    }
+  }
+
+  if (seenTactics.size < MIN_CHAIN_STAGES) return;
+
+  // Sort by kill chain order
+  const sortedTactics = [...seenTactics.entries()]
+    .sort(([a], [b]) => (ATTACK_CHAIN_STAGES[a]?.order || 0) - (ATTACK_CHAIN_STAGES[b]?.order || 0));
+
+  // Check for progression (at least 3 stages advancing in order)
+  let progressionCount = 1;
+  for (let i = 1; i < sortedTactics.length; i++) {
+    const prevOrder = ATTACK_CHAIN_STAGES[sortedTactics[i - 1][0]]?.order || 0;
+    const currOrder = ATTACK_CHAIN_STAGES[sortedTactics[i][0]]?.order || 0;
+    if (currOrder > prevOrder) progressionCount++;
+  }
+
+  if (progressionCount < MIN_CHAIN_STAGES) return;
+
+  const chainLabel = sortedTactics.map(([t]) => ATTACK_CHAIN_STAGES[t]?.label || t).join(' → ');
+  console.log(`🔗 ATTACK CHAIN detected from ${srcIp}: ${chainLabel}`);
+
+  // Escalate the current incident to Critical
+  await supabase.from('incidents').update({
+    severity: 5,
+    risk_level: 'Critical',
+    classification: 'True Positive',
+    confidence: Math.min(100, (incident.confidence || 50) + 20),
+    ai_analysis: {
+      ...(incident.ai_analysis || {}),
+      attack_chain: {
+        detected: true,
+        stages: sortedTactics.map(([tactic, data]) => ({ tactic, ...data })),
+        chain_label: chainLabel,
+        stage_count: seenTactics.size,
+        detected_at: new Date().toISOString(),
+      },
+    },
+    evidence: [
+      ...(incident.evidence || []),
+      `ATTACK CHAIN: ${seenTactics.size}-stage progression detected: ${chainLabel}`,
+    ],
+  }).eq('id', incident.id);
+
+  // Add timeline entry
+  await supabase.from('incident_timeline').insert({
+    incident_id: incident.id,
+    stage: 'Attack Chain Detected',
+    details: `Multi-stage attack from ${srcIp}: ${chainLabel} (${seenTactics.size} stages in ${CHAIN_WINDOW_MS / 60000}min window)`,
+  });
+
+  // Also tag all related incidents
+  const relatedIds = sortedTactics.map(([, d]) => d.incident_id);
+  for (const rid of relatedIds) {
+    if (rid !== incident.id) {
+      await supabase.from('incident_timeline').insert({
+        incident_id: rid,
+        stage: 'Linked to Attack Chain',
+        details: `Part of multi-stage attack from ${srcIp}: ${chainLabel}`,
+      });
+    }
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -490,6 +604,77 @@ serve(async (req) => {
                 headers: { 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'enrich_incident', incident_id: incident.id }),
               }).catch(() => {})
+            );
+          }
+
+          // === THREAT INTEL AUTO-ENRICHMENT ===
+          // Enrich src_ip with AbuseIPDB/OTX/VirusTotal
+          if (normalizedLog.srcIP && normalizedLog.srcIP !== 'Unknown' && !normalizedLog.srcIP.startsWith('10.') && !normalizedLog.srcIP.startsWith('192.168.') && !normalizedLog.srcIP.startsWith('172.')) {
+            postTasks.push(
+              fetch(`${supabaseUrl}/functions/v1/threat-intel-lookup`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'lookup',
+                  ioc_value: normalizedLog.srcIP,
+                  ioc_type: 'ip',
+                  incident_id: incident.id,
+                  providers: ['abuseipdb', 'alienvault'],
+                }),
+              }).then(async (res) => {
+                if (res.ok) {
+                  const tiResult = await res.json();
+                  // If threat score is high, boost incident confidence
+                  if (tiResult.threat_score >= 50) {
+                    await supabase.from('incidents').update({
+                      confidence: Math.min(100, (incident.confidence || 50) + 10),
+                      evidence: [...(incident.evidence || []), `TI Enrichment: ${normalizedLog.srcIP} threat score ${tiResult.threat_score}%`],
+                    }).eq('id', incident.id);
+                    await supabase.from('incident_timeline').insert({
+                      incident_id: incident.id,
+                      stage: 'Threat Intel Enriched',
+                      details: `Source IP ${normalizedLog.srcIP} has threat score ${tiResult.threat_score}% (AbuseIPDB/OTX)`,
+                    });
+                    console.log(`🔍 TI: ${normalizedLog.srcIP} threat score ${tiResult.threat_score}%`);
+                  }
+                }
+              }).catch(() => {})
+            );
+          }
+
+          // Enrich file hash with VirusTotal
+          if (normalizedLog.fileHash) {
+            postTasks.push(
+              fetch(`${supabaseUrl}/functions/v1/threat-intel-lookup`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'lookup',
+                  ioc_value: normalizedLog.fileHash,
+                  ioc_type: 'file_hash',
+                  incident_id: incident.id,
+                  providers: ['virustotal'],
+                }),
+              }).then(async (res) => {
+                if (res.ok) {
+                  const tiResult = await res.json();
+                  if (tiResult.threat_score >= 30) {
+                    await supabase.from('incidents').update({
+                      confidence: Math.min(100, (incident.confidence || 50) + 15),
+                      evidence: [...(incident.evidence || []), `VT: File hash ${normalizedLog.fileHash} flagged (score: ${tiResult.threat_score}%)`],
+                    }).eq('id', incident.id);
+                    console.log(`🔍 VT: Hash ${normalizedLog.fileHash} threat score ${tiResult.threat_score}%`);
+                  }
+                }
+              }).catch(() => {})
+            );
+          }
+
+          // === MULTI-STAGE ATTACK CHAIN DETECTION ===
+          // Check if this incident is part of a broader attack chain
+          if (analysis?.mitre_tactic) {
+            postTasks.push(
+              detectAttackChain(supabase, incident, analysis).catch(() => {})
             );
           }
 
