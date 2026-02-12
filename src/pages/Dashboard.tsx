@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle, Clock, Shield, TrendingDown, Activity } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Shield, TrendingDown, Activity, Zap, Target } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { IncidentTable } from '@/components/dashboard/IncidentTable';
@@ -22,6 +22,38 @@ export default function Dashboard() {
 
   return (
     <AppLayout title="Dashboard" subtitle="Real-time security operations overview">
+      {/* SOC Metrics Row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4" data-tour="soc-metrics">
+        <StatCard
+          title="MTTD"
+          value={metrics.mttd > 0 ? `${metrics.mttd} min` : '< 1 min'}
+          subtitle="Mean Time to Detect"
+          icon={<Zap className="h-5 w-5" />}
+          variant="primary"
+        />
+        <StatCard
+          title="MTTR"
+          value={metrics.mttr > 0 ? `${metrics.mttr} min` : '< 1 min'}
+          subtitle="Mean Time to Respond"
+          icon={<Clock className="h-5 w-5" />}
+          variant="primary"
+        />
+        <StatCard
+          title="SLA Compliance"
+          value={`${metrics.slaCompliance}%`}
+          subtitle={`${metrics.closedIncidents} resolved incidents`}
+          icon={<Target className="h-5 w-5" />}
+          variant={metrics.slaCompliance >= 90 ? 'success' : 'warning'}
+        />
+        <StatCard
+          title="Automation Rate"
+          value={`${metrics.playbookAutomationRate}%`}
+          subtitle="AI-assisted incidents"
+          icon={<Zap className="h-5 w-5" />}
+          variant="primary"
+        />
+      </div>
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6" data-tour="stat-cards">
         <StatCard
