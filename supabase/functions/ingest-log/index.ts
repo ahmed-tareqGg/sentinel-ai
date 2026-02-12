@@ -276,6 +276,14 @@ serve(async (req) => {
             return null;
           }
 
+          // Derive severity from AI risk_level when available
+          const aiRiskLevel = (analysis?.risk_level || '').toLowerCase();
+          let finalSeverity = normalizedLog.severity;
+          if (aiRiskLevel === 'critical') finalSeverity = Math.max(finalSeverity, 5);
+          else if (aiRiskLevel === 'high') finalSeverity = Math.max(finalSeverity, 4);
+          else if (aiRiskLevel === 'medium') finalSeverity = Math.max(finalSeverity, 3);
+          else if (aiRiskLevel === 'low') finalSeverity = Math.max(finalSeverity, 2);
+
           // Create incident
           const { data: incident, error: insertError } = await supabase
             .from('incidents')
@@ -283,14 +291,14 @@ serve(async (req) => {
               timestamp: normalizedLog.timestamp,
               src_ip: normalizedLog.srcIP,
               dst_ip: normalizedLog.dstIP,
-              severity: normalizedLog.severity,
+              severity: finalSeverity,
               event_type: normalizedLog.eventType,
               message: normalizedLog.msg,
               file_hash: normalizedLog.fileHash,
               raw_log: normalizedLog.rawLog,
               classification: normalizeClassification(analysis?.classification),
               confidence: analysis?.confidence || 0,
-              risk_level: analysis?.risk_level || (normalizedLog.severity >= 4 ? 'High' : 'Medium'),
+              risk_level: analysis?.risk_level || (finalSeverity >= 4 ? 'High' : finalSeverity >= 3 ? 'Medium' : 'Low'),
               ai_analysis: analysis?.ai_analysis || analysis || null,
               sandbox_result: analysis?.sandbox_result || null,
               mitre_technique: analysis?.mitre_technique || null,
