@@ -345,27 +345,30 @@ export function AppNavbar() {
                   <ChevronDown className="h-3 w-3 opacity-50" />
                 </button>
                 {isOpen && (
-                  <div className="absolute top-full left-0 z-50 mt-1 min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-md animate-in fade-in-0 zoom-in-95">
-                    {visibleItems.map((item) => {
-                      const isActive = location.pathname === item.path;
-                      return (
-                        <Link
-                          key={item.path}
-                          to={item.path}
-                          onClick={() => setHoveredGroup(null)}
-                          className={cn(
-                            'flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors cursor-pointer',
-                            isActive
-                              ? 'bg-primary/10 text-primary'
-                              : 'text-popover-foreground hover:bg-accent hover:text-accent-foreground'
-                          )}
-                        >
-                          <item.icon className="h-4 w-4" />
-                          {item.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
+                  <>
+                    <div className="absolute top-full left-0 w-full h-2" />
+                    <div className="absolute top-full left-0 z-50 mt-2 min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-md animate-in fade-in-0 zoom-in-95">
+                      {visibleItems.map((item) => {
+                        const isActive = location.pathname === item.path;
+                        return (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            onClick={() => setHoveredGroup(null)}
+                            className={cn(
+                              'flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors cursor-pointer',
+                              isActive
+                                ? 'bg-primary/10 text-primary'
+                                : 'text-popover-foreground hover:bg-accent hover:text-accent-foreground'
+                            )}
+                          >
+                            <item.icon className="h-4 w-4" />
+                            {item.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
             );
