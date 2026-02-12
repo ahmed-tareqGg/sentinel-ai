@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield, Pencil, ArrowLeft } from 'lucide-react';
+import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield, Pencil, ArrowLeft, Lock, Plus, LogIn } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { format, isToday, isYesterday } from 'date-fns';
@@ -92,6 +93,13 @@ const PRIORITY_OPTIONS = [
   { value: 'critical', label: 'Critical', color: 'text-red-400' },
 ];
 
+interface PrivateChannel {
+  id: string;
+  name: string;
+  created_by: string;
+  created_by_id: string;
+}
+
 export default function TeamChat() {
   const navigate = useNavigate();
   const { user, profile, role } = useAuth();
@@ -125,6 +133,18 @@ export default function TeamChat() {
   const inputRef = useRef<HTMLInputElement>(null);
   const { signalTyping, stopTyping } = useTypingBroadcast(channel);
 
+  // Private channels state
+  const [privateChannels, setPrivateChannels] = useState<PrivateChannel[]>([]);
+  const [unlockedChannels, setUnlockedChannels] = useState<Set<string>>(new Set());
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [joinDialogOpen, setJoinDialogOpen] = useState(false);
+  const [joinTargetChannel, setJoinTargetChannel] = useState<PrivateChannel | null>(null);
+  const [newChannelName, setNewChannelName] = useState('');
+  const [newChannelPassword, setNewChannelPassword] = useState('');
+  const [joinPassword, setJoinPassword] = useState('');
+  const [creatingChannel, setCreatingChannel] = useState(false);
+  const [joiningChannel, setJoiningChannel] = useState(false);
+
   const myRoleLevel = role ? (ROLE_HIERARCHY[role] || 0) : 0;
 
   // Load users and roles for mentions
@@ -143,6 +163,67 @@ export default function TeamChat() {
     };
     loadUsers();
   }, []);
+
+  // Load private channels
+  useEffect(() => {
+    const loadPrivateChannels = async () => {
+      const { data } = await supabase
+        .from('private_channels')
+        .select('id, name, created_by, created_by_id')
+        .order('created_at', { ascending: true });
+      if (data) setPrivateChannels(data as PrivateChannel[]);
+    };
+    loadPrivateChannels();
+
+    const sub = supabase
+      .channel('private-channels-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'private_channels' }, () => {
+        loadPrivateChannels();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(sub); };
+  }, []);
+
+  const createPrivateChannel = async () => {
+    if (!newChannelName.trim() || !newChannelPassword.trim()) return;
+    setCreatingChannel(true);
+    const { data, error } = await supabase.rpc('create_private_channel', {
+      _name: newChannelName.trim(),
+      _password: newChannelPassword.trim(),
+    });
+    if (error) {
+      toast.error('Failed to create private channel');
+    } else {
+      toast.success('Private channel created!');
+      const channelId = data as string;
+      setUnlockedChannels(prev => new Set(prev).add(channelId));
+      setChannel(`private:${channelId}`);
+      setCreateDialogOpen(false);
+      setNewChannelName('');
+      setNewChannelPassword('');
+    }
+    setCreatingChannel(false);
+  };
+
+  const joinPrivateChannel = async () => {
+    if (!joinTargetChannel || !joinPassword.trim()) return;
+    setJoiningChannel(true);
+    const { data, error } = await supabase.rpc('verify_channel_password', {
+      _channel_id: joinTargetChannel.id,
+      _password: joinPassword.trim(),
+    });
+    if (error || !data) {
+      toast.error('Wrong password!');
+    } else {
+      toast.success(`Joined #${joinTargetChannel.name}`);
+      setUnlockedChannels(prev => new Set(prev).add(joinTargetChannel.id));
+      setChannel(`private:${joinTargetChannel.id}`);
+      setJoinDialogOpen(false);
+      setJoinPassword('');
+      setJoinTargetChannel(null);
+    }
+    setJoiningChannel(false);
+  };
 
   // Load messages for channel
   useEffect(() => {
@@ -499,6 +580,46 @@ export default function TeamChat() {
                 {ch.label}
               </button>
             ))}
+
+            {/* Private Channels */}
+            <div className="mt-3 pt-3 border-t border-border/30">
+              <div className="flex items-center justify-between px-3 mb-1">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Private</span>
+                <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setCreateDialogOpen(true)} title="Create Private Channel">
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </div>
+              {privateChannels.map(pc => {
+                const isUnlocked = unlockedChannels.has(pc.id) || pc.created_by_id === user?.id;
+                const isActive = channel === `private:${pc.id}`;
+                return (
+                  <button
+                    key={pc.id}
+                    onClick={() => {
+                      if (isUnlocked) {
+                        setChannel(`private:${pc.id}`);
+                        setShowPinnedOnly(false);
+                      } else {
+                        setJoinTargetChannel(pc);
+                        setJoinPassword('');
+                        setJoinDialogOpen(true);
+                      }
+                    }}
+                    className={cn(
+                      'flex items-center gap-2 w-full rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                      isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                    )}
+                  >
+                    <Lock className="h-3.5 w-3.5" />
+                    <span className="truncate flex-1 text-left">{pc.name}</span>
+                    {!isUnlocked && <LogIn className="h-3 w-3 opacity-50" />}
+                  </button>
+                );
+              })}
+              {privateChannels.length === 0 && (
+                <p className="px-3 py-1 text-[10px] text-muted-foreground">No private channels</p>
+              )}
+            </div>
           </div>
 
           {/* Pinned messages shortcut */}
@@ -580,8 +701,12 @@ export default function TeamChat() {
         <div className="flex-1 flex flex-col min-w-0">
           {/* Channel header */}
           <div className="h-14 border-b border-border/50 flex items-center px-5 gap-3 shrink-0">
-            <Hash className="h-5 w-5 text-muted-foreground" />
-            <h3 className="font-semibold text-foreground">{CHANNELS.find(c => c.id === channel)?.label}</h3>
+            {channel.startsWith('private:') ? <Lock className="h-5 w-5 text-muted-foreground" /> : <Hash className="h-5 w-5 text-muted-foreground" />}
+            <h3 className="font-semibold text-foreground">
+              {channel.startsWith('private:')
+                ? privateChannels.find(pc => `private:${pc.id}` === channel)?.name || 'Private'
+                : CHANNELS.find(c => c.id === channel)?.label}
+            </h3>
             <Badge variant="outline" className="text-xs">{messages.length} messages</Badge>
             {showPinnedOnly && (
               <Badge variant="secondary" className="text-xs bg-primary/20 text-primary">
@@ -866,6 +991,79 @@ export default function TeamChat() {
           </div>
         </div>
       </div>
+
+      {/* Create Private Channel Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-4 w-4 text-primary" />
+              Create Private Channel
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Channel Name</label>
+              <Input
+                value={newChannelName}
+                onChange={e => setNewChannelName(e.target.value)}
+                placeholder="e.g. incident-response-team"
+                className="h-9"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Password</label>
+              <Input
+                type="password"
+                value={newChannelPassword}
+                onChange={e => setNewChannelPassword(e.target.value)}
+                placeholder="Set a password for this channel"
+                className="h-9"
+              />
+            </div>
+            <Button
+              onClick={createPrivateChannel}
+              disabled={creatingChannel || !newChannelName.trim() || !newChannelPassword.trim()}
+              className="w-full"
+            >
+              {creatingChannel ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+              Create Channel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Join Private Channel Dialog */}
+      <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LogIn className="h-4 w-4 text-primary" />
+              Join #{joinTargetChannel?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <p className="text-xs text-muted-foreground">This channel is password-protected. Enter the password to join.</p>
+            <Input
+              type="password"
+              value={joinPassword}
+              onChange={e => setJoinPassword(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') joinPrivateChannel(); }}
+              placeholder="Enter channel password"
+              className="h-9"
+              autoFocus
+            />
+            <Button
+              onClick={joinPrivateChannel}
+              disabled={joiningChannel || !joinPassword.trim()}
+              className="w-full"
+            >
+              {joiningChannel ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <LogIn className="h-4 w-4 mr-2" />}
+              Join Channel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

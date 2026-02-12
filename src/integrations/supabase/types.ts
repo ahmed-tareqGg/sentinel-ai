@@ -1735,6 +1735,33 @@ export type Database = {
         }
         Relationships: []
       }
+      private_channels: {
+        Row: {
+          created_at: string
+          created_by: string
+          created_by_id: string
+          id: string
+          name: string
+          password_hash: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          created_by_id: string
+          id?: string
+          name: string
+          password_hash: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          created_by_id?: string
+          id?: string
+          name?: string
+          password_hash?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -2391,6 +2418,10 @@ export type Database = {
           total_controls: number
         }[]
       }
+      create_private_channel: {
+        Args: { _name: string; _password: string }
+        Returns: string
+      }
       generate_agent_api_key: {
         Args: { _data_source_id: string; _expires_days?: number; _name: string }
         Returns: {
@@ -2485,6 +2516,10 @@ export type Database = {
           is_valid: boolean
           key_id: string
         }[]
+      }
+      verify_channel_password: {
+        Args: { _channel_id: string; _password: string }
+        Returns: boolean
       }
     }
     Enums: {
