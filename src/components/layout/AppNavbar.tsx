@@ -110,6 +110,7 @@ export function AppNavbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+  const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
 
   const roleMeta = role ? ROLE_METADATA[role as SOCRole] : null;
 
@@ -318,41 +319,51 @@ export function AppNavbar() {
             const visibleItems = group.items.filter((item) => isItemAllowed(item.path));
             if (visibleItems.length === 0) return null;
             const active = isGroupActive(visibleItems);
+            const isOpen = hoveredGroup === group.label;
 
             return (
-              <DropdownMenu key={group.label}>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className={cn(
-                      'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors outline-none',
-                      active
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                    )}
-                  >
-                    <group.icon className="h-3.5 w-3.5" />
-                    {group.label}
-                    <ChevronDown className="h-3 w-3 opacity-50" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="min-w-[180px]">
-                  {visibleItems.map((item) => {
-                    const isActive = location.pathname === item.path;
-                    return (
-                      <DropdownMenuItem
-                        key={item.path}
-                        asChild
-                        className={cn(isActive && 'bg-primary/10 text-primary')}
-                      >
-                        <Link to={item.path} className="flex items-center gap-2">
+              <div
+                key={group.label}
+                className="relative"
+                onMouseEnter={() => setHoveredGroup(group.label)}
+                onMouseLeave={() => setHoveredGroup(null)}
+              >
+                <button
+                  className={cn(
+                    'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors outline-none',
+                    active
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                  )}
+                >
+                  <group.icon className="h-3.5 w-3.5" />
+                  {group.label}
+                  <ChevronDown className="h-3 w-3 opacity-50" />
+                </button>
+                {isOpen && (
+                  <div className="absolute top-full left-0 z-50 mt-1 min-w-[180px] rounded-md border border-border bg-popover p-1 shadow-md animate-in fade-in-0 zoom-in-95">
+                    {visibleItems.map((item) => {
+                      const isActive = location.pathname === item.path;
+                      return (
+                        <Link
+                          key={item.path}
+                          to={item.path}
+                          onClick={() => setHoveredGroup(null)}
+                          className={cn(
+                            'flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors cursor-pointer',
+                            isActive
+                              ? 'bg-primary/10 text-primary'
+                              : 'text-popover-foreground hover:bg-accent hover:text-accent-foreground'
+                          )}
+                        >
                           <item.icon className="h-4 w-4" />
                           {item.label}
                         </Link>
-                      </DropdownMenuItem>
-                    );
-                  })}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>
