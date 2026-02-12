@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useTheme } from '@/hooks/useTheme';
 import {
   LayoutDashboard,
   AlertTriangle,
@@ -25,6 +26,8 @@ import {
   Menu,
   Shield,
   MessageSquare,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -107,6 +110,7 @@ export function AppNavbar() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { profile, role, signOut } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
@@ -482,6 +486,11 @@ export function AppNavbar() {
           </PopoverContent>
         </Popover>
 
+        {/* Theme Toggle */}
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={toggleTheme} title={theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}>
+          {theme === 'dark' ? <Sun className="h-4 w-4 text-muted-foreground" /> : <Moon className="h-4 w-4 text-muted-foreground" />}
+        </Button>
+
         {/* User Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -505,6 +514,10 @@ export function AppNavbar() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => navigate('/profile')} className="cursor-pointer text-xs">
+              <User className="h-3.5 w-3.5 mr-2" />
+              Profile
+            </DropdownMenuItem>
             {(role === 'ciso' || role === 'soc_manager') && (
               <DropdownMenuItem onSelect={() => navigate('/settings')} className="cursor-pointer text-xs">
                 <Settings className="h-3.5 w-3.5 mr-2" />
