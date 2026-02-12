@@ -58,6 +58,7 @@ serve(async (req) => {
 
     // Fetch team chat mentions for the current user
     if (currentUserId) {
+      console.log('Fetching mentions for user:', currentUserId);
       queries.push(
         supabase.from('chat_messages')
           .select('id, sender_name, sender_email, content, channel, created_at, mentions, priority')
@@ -65,6 +66,8 @@ serve(async (req) => {
           .order('created_at', { ascending: false })
           .limit(20)
       );
+    } else {
+      console.log('No authenticated user found for mentions lookup');
     }
 
     // Targeted searches based on user query
@@ -99,6 +102,7 @@ serve(async (req) => {
       // First extra result is mentions if user is authenticated
       const mentionsResult = extraResults.shift();
       mentionMessages = mentionsResult?.data || [];
+      console.log('Found mentions:', mentionMessages.length, 'for user:', currentUserId);
     }
     
     // Collect remaining targeted search results
