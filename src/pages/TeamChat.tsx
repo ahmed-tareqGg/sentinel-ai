@@ -1,18 +1,20 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check } from 'lucide-react';
+import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { format, isToday, isYesterday } from 'date-fns';
 import { Link } from 'react-router-dom';
+import { ChatReactions } from '@/components/chat/ChatReactions';
+import { IncidentMentionDropdown } from '@/components/chat/IncidentMentionDropdown';
+import { TypingIndicator, useTypingBroadcast } from '@/components/chat/TypingIndicator';
+import { OnlineUsers } from '@/components/chat/OnlineUsers';
 
 interface ChatMessage {
   id: string;
@@ -24,6 +26,8 @@ interface ChatMessage {
   incident_id: string | null;
   channel: string;
   is_edited: boolean;
+  is_pinned: boolean;
+  priority: string;
   created_at: string;
 }
 
@@ -39,6 +43,12 @@ const CHANNELS = [
   { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
 ];
 
+const PRIORITY_OPTIONS = [
+  { value: 'normal', label: 'Normal', color: '' },
+  { value: 'urgent', label: 'Urgent', color: 'text-orange-400' },
+  { value: 'critical', label: 'Critical', color: 'text-red-400' },
+];
+
 export default function TeamChat() {
   const { user, profile } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -48,12 +58,18 @@ export default function TeamChat() {
   const [sending, setSending] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [showMentions, setShowMentions] = useState(false);
+  const [showIncidents, setShowIncidents] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
+  const [incidentFilter, setIncidentFilter] = useState('');
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [incidentIndex, setIncidentIndex] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
+  const [priority, setPriority] = useState('normal');
+  const [showPinnedOnly, setShowPinnedOnly] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { signalTyping, stopTyping } = useTypingBroadcast(channel);
 
   // Load users for mentions
   useEffect(() => {
@@ -86,9 +102,7 @@ export default function TeamChat() {
     const sub = supabase
       .channel(`chat-${channel}`)
       .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'chat_messages',
+        event: '*', schema: 'public', table: 'chat_messages',
         filter: `channel=eq.${channel}`,
       }, (payload) => {
         if (payload.eventType === 'INSERT') {
@@ -101,28 +115,26 @@ export default function TeamChat() {
         }
       })
       .subscribe();
-
     return () => { supabase.removeChannel(sub); };
   }, [channel]);
 
   const scrollToBottom = () => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   };
 
-  // Extract @mentions from text
   const extractMentions = (text: string): string[] => {
     const mentionRegex = /@\[([^\]]+)\]\(([^)]+)\)/g;
     const ids: string[] = [];
     let match;
-    while ((match = mentionRegex.exec(text)) !== null) {
-      ids.push(match[2]);
-    }
+    while ((match = mentionRegex.exec(text)) !== null) ids.push(match[2]);
     return ids;
   };
 
-  // Filter users for mention dropdown
+  const extractIncidentId = (text: string): string | null => {
+    const match = text.match(/#\[([^\]]+)\]\(([^)]+)\)/);
+    return match ? match[2] : null;
+  };
+
   const filteredUsers = users.filter(u => {
     if (!mentionFilter) return true;
     const name = (u.full_name || u.email || '').toLowerCase();
@@ -132,17 +144,31 @@ export default function TeamChat() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setNewMessage(val);
+    signalTyping();
 
-    // Detect @ trigger
     const cursorPos = e.target.selectionStart || 0;
     const textBefore = val.slice(0, cursorPos);
+
+    // Detect @ trigger
     const atMatch = textBefore.match(/@(\w*)$/);
     if (atMatch) {
       setShowMentions(true);
+      setShowIncidents(false);
       setMentionFilter(atMatch[1]);
       setMentionIndex(0);
     } else {
       setShowMentions(false);
+    }
+
+    // Detect # trigger for incidents
+    const hashMatch = textBefore.match(/#(\w*)$/);
+    if (hashMatch) {
+      setShowIncidents(true);
+      setShowMentions(false);
+      setIncidentFilter(hashMatch[1]);
+      setIncidentIndex(0);
+    } else {
+      setShowIncidents(false);
     }
   };
 
@@ -158,20 +184,28 @@ export default function TeamChat() {
     inputRef.current?.focus();
   };
 
+  const insertIncident = (inc: { id: string; incident_number: string }) => {
+    const cursorPos = inputRef.current?.selectionStart || 0;
+    const textBefore = newMessage.slice(0, cursorPos);
+    const textAfter = newMessage.slice(cursorPos);
+    const beforeHash = textBefore.replace(/#\w*$/, '');
+    const tag = `#[${inc.incident_number}](${inc.id})`;
+    setNewMessage(beforeHash + tag + ' ' + textAfter);
+    setShowIncidents(false);
+    inputRef.current?.focus();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (showMentions) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setMentionIndex(i => Math.min(i + 1, filteredUsers.length - 1));
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setMentionIndex(i => Math.max(i - 1, 0));
-      } else if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault();
-        if (filteredUsers[mentionIndex]) insertMention(filteredUsers[mentionIndex]);
-      } else if (e.key === 'Escape') {
-        setShowMentions(false);
-      }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => Math.min(i + 1, filteredUsers.length - 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(i => Math.max(i - 1, 0)); }
+      else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); if (filteredUsers[mentionIndex]) insertMention(filteredUsers[mentionIndex]); }
+      else if (e.key === 'Escape') setShowMentions(false);
+      return;
+    }
+    if (showIncidents) {
+      if (e.key === 'Escape') setShowIncidents(false);
+      // Selection handled by dropdown click
       return;
     }
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -183,19 +217,24 @@ export default function TeamChat() {
   const sendMessage = async () => {
     if (!newMessage.trim() || !user) return;
     setSending(true);
+    stopTyping();
     const mentions = extractMentions(newMessage);
+    const incidentId = extractIncidentId(newMessage);
     const { error } = await supabase.from('chat_messages').insert({
       sender_id: user.id,
       sender_email: profile?.email || user.email,
       sender_name: profile?.full_name || profile?.email?.split('@')[0],
       content: newMessage.trim(),
       mentions,
+      incident_id: incidentId,
       channel,
+      priority,
     } as any);
     if (error) {
       toast.error('Failed to send message');
     } else {
       setNewMessage('');
+      setPriority('normal');
     }
     setSending(false);
   };
@@ -210,23 +249,47 @@ export default function TeamChat() {
     setEditingId(null);
   };
 
-  // Render message content with highlighted @mentions
+  const togglePin = async (msg: ChatMessage) => {
+    await supabase.from('chat_messages').update({ is_pinned: !msg.is_pinned } as any).eq('id', msg.id);
+    toast.success(msg.is_pinned ? 'Message unpinned' : 'Message pinned');
+  };
+
+  // Render message content with highlighted @mentions and #incidents
   const renderContent = (content: string) => {
-    const parts = content.split(/(@\[([^\]]+)\]\(([^)]+)\))/g);
+    // Split by both @mentions and #incidents
+    const parts = content.split(/(@\[([^\]]+)\]\(([^)]+)\)|#\[([^\]]+)\]\(([^)]+)\))/g);
     const elements: React.ReactNode[] = [];
     let i = 0;
     while (i < parts.length) {
-      if (i + 3 < parts.length && parts[i + 1]?.startsWith('@[')) {
-        const displayName = parts[i + 2];
+      if (parts[i] === undefined) { i++; continue; }
+      // Check for @mention
+      if (i + 5 < parts.length && parts[i + 1]?.startsWith('@[')) {
         elements.push(<span key={i}>{parts[i]}</span>);
         elements.push(
-          <Badge key={i + 1} variant="secondary" className="text-xs px-1.5 py-0 mx-0.5 bg-primary/20 text-primary border-primary/30 font-medium">
-            @{displayName}
+          <Badge key={`m-${i}`} variant="secondary" className="text-xs px-1.5 py-0 mx-0.5 bg-primary/20 text-primary border-primary/30 font-medium">
+            @{parts[i + 2]}
           </Badge>
         );
-        i += 4;
-      } else {
+        i += 6;
+      }
+      // Check for #incident  
+      else if (i + 5 < parts.length && parts[i + 1]?.startsWith('#[')) {
         elements.push(<span key={i}>{parts[i]}</span>);
+        const incNumber = parts[i + 4];
+        const incId = parts[i + 5];
+        elements.push(
+          <Link
+            key={`inc-${i}`}
+            to={`/incidents/${incId}`}
+            className="inline-flex items-center gap-1 mx-0.5 px-2 py-0.5 rounded bg-destructive/10 border border-destructive/30 text-destructive text-xs font-mono font-bold hover:bg-destructive/20 transition-colors"
+          >
+            <AlertTriangle className="h-3 w-3" />
+            {incNumber}
+          </Link>
+        );
+        i += 6;
+      } else {
+        if (parts[i]) elements.push(<span key={i}>{parts[i]}</span>);
         i++;
       }
     }
@@ -246,11 +309,12 @@ export default function TeamChat() {
     return '??';
   };
 
-  // Check if user is mentioned in current channel
   const myMentionCount = messages.filter(m => user && m.mentions?.includes(user.id)).length;
+  const pinnedMessages = messages.filter(m => m.is_pinned);
+  const displayMessages = showPinnedOnly ? pinnedMessages : messages;
 
   return (
-    <AppLayout title="Team Chat" subtitle="Real-time communication with @mentions">
+    <AppLayout title="Team Chat" subtitle="Real-time SOC communication with @mentions and #incident linking">
       <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
         {/* Channels sidebar */}
         <div className="w-56 border-r border-border/50 bg-card/50 flex flex-col shrink-0">
@@ -261,12 +325,10 @@ export default function TeamChat() {
             {CHANNELS.map(ch => (
               <button
                 key={ch.id}
-                onClick={() => setChannel(ch.id)}
+                onClick={() => { setChannel(ch.id); setShowPinnedOnly(false); }}
                 className={cn(
                   'flex items-center gap-2 w-full rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                  channel === ch.id
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                  channel === ch.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
                 )}
               >
                 <ch.icon className="h-4 w-4" />
@@ -274,6 +336,23 @@ export default function TeamChat() {
               </button>
             ))}
           </div>
+
+          {/* Pinned messages shortcut */}
+          {pinnedMessages.length > 0 && (
+            <div className="px-3 py-2 border-t border-border/50">
+              <button
+                onClick={() => setShowPinnedOnly(!showPinnedOnly)}
+                className={cn(
+                  'flex items-center gap-2 w-full text-xs transition-colors',
+                  showPinnedOnly ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <Pin className="h-3 w-3" />
+                {pinnedMessages.length} pinned
+              </button>
+            </div>
+          )}
+
           {/* My mentions */}
           {myMentionCount > 0 && (
             <div className="p-3 border-t border-border/50">
@@ -283,6 +362,9 @@ export default function TeamChat() {
               </div>
             </div>
           )}
+
+          {/* Online users */}
+          <OnlineUsers />
         </div>
 
         {/* Chat area */}
@@ -292,31 +374,44 @@ export default function TeamChat() {
             <Hash className="h-5 w-5 text-muted-foreground" />
             <h3 className="font-semibold text-foreground">{CHANNELS.find(c => c.id === channel)?.label}</h3>
             <Badge variant="outline" className="text-xs">{messages.length} messages</Badge>
+            {showPinnedOnly && (
+              <Badge variant="secondary" className="text-xs bg-primary/20 text-primary">
+                <Pin className="h-3 w-3 mr-1" /> Pinned only
+              </Badge>
+            )}
+            <div className="ml-auto text-[10px] text-muted-foreground">
+              <span className="opacity-60">@ mention users</span>
+              <span className="mx-2 opacity-30">|</span>
+              <span className="opacity-60"># link incidents</span>
+            </div>
           </div>
 
           {/* Messages */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-3">
             {loading ? (
               <div className="flex items-center justify-center h-full">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-            ) : messages.length === 0 ? (
+            ) : displayMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                 <Hash className="h-12 w-12 mb-3 opacity-20" />
-                <p className="text-sm">No messages yet in #{channel}</p>
-                <p className="text-xs mt-1">Be the first to send a message!</p>
+                <p className="text-sm">{showPinnedOnly ? 'No pinned messages' : `No messages yet in #${channel}`}</p>
+                <p className="text-xs mt-1">{showPinnedOnly ? 'Pin important messages to find them quickly' : 'Be the first to send a message!'}</p>
               </div>
             ) : (
-              messages.map((msg) => {
+              displayMessages.map((msg) => {
                 const isOwn = msg.sender_id === user?.id;
                 const isMentioned = user && msg.mentions?.includes(user.id);
+                const isUrgent = msg.priority === 'urgent' || msg.priority === 'critical';
                 return (
                   <div
                     key={msg.id}
                     className={cn(
                       'group flex gap-3 rounded-lg px-3 py-2 transition-colors',
                       isMentioned && 'bg-primary/5 border border-primary/20',
-                      !isMentioned && 'hover:bg-secondary/30'
+                      isUrgent && !isMentioned && 'border border-destructive/20 bg-destructive/5',
+                      msg.is_pinned && !isMentioned && !isUrgent && 'border border-yellow-500/20 bg-yellow-500/5',
+                      !isMentioned && !isUrgent && !msg.is_pinned && 'hover:bg-secondary/30'
                     )}
                   >
                     <Avatar className="h-8 w-8 shrink-0 mt-0.5">
@@ -325,12 +420,21 @@ export default function TeamChat() {
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-foreground">
                           {msg.sender_name || msg.sender_email?.split('@')[0]}
                         </span>
                         <span className="text-[10px] text-muted-foreground">{formatTime(msg.created_at)}</span>
                         {msg.is_edited && <span className="text-[10px] text-muted-foreground italic">(edited)</span>}
+                        {msg.is_pinned && (
+                          <Pin className="h-3 w-3 text-yellow-500" />
+                        )}
+                        {msg.priority === 'urgent' && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 border-orange-500/30 text-orange-400">⚠ Urgent</Badge>
+                        )}
+                        {msg.priority === 'critical' && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 border-red-500/30 text-red-400">🚨 Critical</Badge>
+                        )}
                         {isMentioned && (
                           <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-primary/20 text-primary">mentioned you</Badge>
                         )}
@@ -356,16 +460,22 @@ export default function TeamChat() {
                         <p className="text-sm text-foreground/90 break-words">{renderContent(msg.content)}</p>
                       )}
 
-                      {msg.incident_id && (
+                      {msg.incident_id && !msg.content.includes('#[') && (
                         <Link to={`/incidents/${msg.incident_id}`} className="inline-flex items-center gap-1 mt-1 text-xs text-primary hover:underline">
                           <AlertTriangle className="h-3 w-3" /> View Incident
                         </Link>
                       )}
+
+                      {/* Reactions */}
+                      <ChatReactions messageId={msg.id} />
                     </div>
 
-                    {/* Actions (own messages only) */}
+                    {/* Actions */}
                     {isOwn && editingId !== msg.id && (
                       <div className="opacity-0 group-hover:opacity-100 flex items-start gap-1 transition-opacity">
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => togglePin(msg)} title={msg.is_pinned ? 'Unpin' : 'Pin'}>
+                          <Pin className="h-3 w-3" />
+                        </Button>
                         <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingId(msg.id); setEditContent(msg.content); }}>
                           <Edit2 className="h-3 w-3" />
                         </Button>
@@ -380,9 +490,12 @@ export default function TeamChat() {
             )}
           </div>
 
+          {/* Typing indicator */}
+          <TypingIndicator channel={channel} />
+
           {/* Input area */}
           <div className="border-t border-border/50 p-4 shrink-0 relative">
-            {/* Mention dropdown */}
+            {/* User mention dropdown */}
             {showMentions && filteredUsers.length > 0 && (
               <div className="absolute bottom-full left-4 right-4 mb-1 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto z-50">
                 {filteredUsers.map((u, idx) => (
@@ -408,18 +521,52 @@ export default function TeamChat() {
               </div>
             )}
 
+            {/* Incident mention dropdown */}
+            {showIncidents && (
+              <IncidentMentionDropdown
+                filter={incidentFilter}
+                selectedIndex={incidentIndex}
+                onSelect={(inc) => insertIncident(inc)}
+              />
+            )}
+
+            {/* Priority selector + input */}
             <div className="flex items-center gap-2">
+              {/* Priority toggle */}
+              <button
+                onClick={() => {
+                  const idx = PRIORITY_OPTIONS.findIndex(p => p.value === priority);
+                  setPriority(PRIORITY_OPTIONS[(idx + 1) % PRIORITY_OPTIONS.length].value);
+                }}
+                className={cn(
+                  'h-9 w-9 flex items-center justify-center rounded-md border border-border/50 shrink-0 transition-colors',
+                  priority === 'urgent' && 'border-orange-500/50 bg-orange-500/10',
+                  priority === 'critical' && 'border-red-500/50 bg-red-500/10',
+                )}
+                title={`Priority: ${priority}`}
+              >
+                <Flag className={cn(
+                  'h-4 w-4',
+                  priority === 'normal' && 'text-muted-foreground',
+                  priority === 'urgent' && 'text-orange-400',
+                  priority === 'critical' && 'text-red-400',
+                )} />
+              </button>
+
               <div className="flex-1 relative">
                 <Input
                   ref={inputRef}
                   value={newMessage}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
-                  placeholder={`Message #${channel}... (use @ to mention)`}
-                  className="pr-10 bg-secondary/30"
+                  placeholder={`Message #${channel}... (@ mention, # link incident)`}
+                  className="pr-16 bg-secondary/30"
                   disabled={sending}
                 />
-                <AtSign className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40" />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                  <AtSign className="h-3.5 w-3.5 text-muted-foreground/40" />
+                  <Hash className="h-3.5 w-3.5 text-muted-foreground/40" />
+                </div>
               </div>
               <Button onClick={sendMessage} disabled={sending || !newMessage.trim()} size="icon" className="shrink-0">
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
