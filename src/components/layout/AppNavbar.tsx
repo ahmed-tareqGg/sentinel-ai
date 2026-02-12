@@ -24,6 +24,7 @@ import {
   ChevronDown,
   Menu,
   Shield,
+  MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -69,6 +70,7 @@ const navGroups = [
       { icon: Activity, label: 'Threat Hunting', path: '/threat-hunting' },
       { icon: Zap, label: 'Playbooks', path: '/playbooks' },
       { icon: ClipboardCheck, label: 'Approvals', path: '/approvals' },
+      { icon: MessageSquare, label: 'Team Chat', path: '/team-chat' },
     ],
   },
   {
