@@ -241,8 +241,8 @@ export function AppNavbar() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80">
-      {/* Top row: Logo + Search + Actions */}
-      <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
+      {/* Single compact row */}
+      <div className="flex h-10 items-center gap-2 px-3 lg:px-4">
         {/* Mobile menu trigger */}
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetTrigger asChild>
@@ -305,15 +305,15 @@ export function AppNavbar() {
         </Sheet>
 
         {/* Logo */}
-        <Link to="/dashboard" className="flex items-center gap-2.5 shrink-0">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
-            <img src={socmindLogo} alt="SOCMind" className="h-5 w-5" />
+        <Link to="/dashboard" className="flex items-center gap-1.5 shrink-0">
+          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 border border-primary/20">
+            <img src={socmindLogo} alt="SOCMind" className="h-4 w-4" />
           </div>
-          <span className="hidden sm:block font-bold text-foreground text-sm">SOCMind</span>
+          <span className="hidden sm:block font-bold text-foreground text-xs">SOCMind</span>
         </Link>
 
         {/* Desktop Nav Groups */}
-        <nav className="hidden lg:flex items-center gap-0.5 ml-4">
+        <nav className="hidden lg:flex items-center gap-0.5 ml-2">
           {navGroups.map((group) => {
             const visibleItems = group.items.filter((item) => isItemAllowed(item.path));
             if (visibleItems.length === 0) return null;
@@ -324,7 +324,7 @@ export function AppNavbar() {
                 <DropdownMenuTrigger asChild>
                   <button
                     className={cn(
-                      'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors outline-none',
+                      'flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors outline-none',
                       active
                         ? 'bg-primary/10 text-primary'
                         : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
@@ -374,7 +374,7 @@ export function AppNavbar() {
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search..."
-            className="w-44 lg:w-56 h-8 bg-secondary/50 border-border pl-8 pr-8 text-xs focus:bg-secondary"
+            className="w-36 lg:w-44 h-7 bg-secondary/50 border-border pl-7 pr-7 text-[11px] focus:bg-secondary"
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
           />
@@ -413,7 +413,7 @@ export function AppNavbar() {
         {/* Notifications */}
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative h-8 w-8">
+            <Button variant="ghost" size="icon" className="relative h-7 w-7">
               <Bell className="h-4 w-4 text-muted-foreground" />
               {unreadCount > 0 && (
                 <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-destructive-foreground">
@@ -474,9 +474,9 @@ export function AppNavbar() {
         {/* User Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="gap-1.5 h-8 px-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-primary">
-                <User className="h-3.5 w-3.5" />
+            <Button variant="ghost" size="sm" className="gap-1 h-7 px-1.5">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-primary">
+                <User className="h-3 w-3" />
               </div>
               <ChevronDown className="h-3 w-3 text-muted-foreground hidden sm:block" />
             </Button>
