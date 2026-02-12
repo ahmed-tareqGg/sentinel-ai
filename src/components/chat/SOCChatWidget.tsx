@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { X, Send, Bot, User, Loader2, Minimize2, Maximize2, Plus, History, ArrowLeft, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { backendUrl, publishableKey } from '@/integrations/backend/client';
+import { backendUrl, publishableKey, supabase } from '@/integrations/backend/client';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -140,11 +140,15 @@ export function SOCChatWidget() {
     let assistantContent = '';
 
     try {
+      // Get current user session for auth context
+      const { data: { session } } = await supabase.auth.getSession();
+      const authToken = session?.access_token;
+
       const resp = await fetch(CHAT_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publishableKey}`,
+          'Authorization': `Bearer ${authToken || publishableKey}`,
         },
         body: JSON.stringify({ messages: allMessages }),
       });

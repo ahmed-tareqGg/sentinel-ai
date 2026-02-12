@@ -19,6 +19,26 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Try to get the authenticated user from the JWT
+    let currentUserId: string | null = null;
+    let currentUserEmail: string | null = null;
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      // Try to get user from JWT (not the anon key)
+      const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+      if (token !== anonKey) {
+        const userClient = createClient(supabaseUrl, anonKey, {
+          global: { headers: { Authorization: `Bearer ${token}` } },
+        });
+        const { data: { user } } = await userClient.auth.getUser(token);
+        if (user) {
+          currentUserId = user.id;
+          currentUserEmail = user.email || null;
+        }
+      }
+    }
+
     const { messages, context_type } = await req.json();
 
     // Gather real-time SOC context
@@ -35,6 +55,17 @@ serve(async (req) => {
       supabase.from('incidents').select('id, incident_number, event_type, risk_level, status, created_at').eq('status', 'Open').order('created_at', { ascending: false }).limit(10),
       supabase.from('raw_logs').select('id', { count: 'exact', head: true }),
     ];
+
+    // Fetch team chat mentions for the current user
+    if (currentUserId) {
+      queries.push(
+        supabase.from('chat_messages')
+          .select('id, sender_name, sender_email, content, channel, created_at, mentions, priority')
+          .contains('mentions', [currentUserId])
+          .order('created_at', { ascending: false })
+          .limit(20)
+      );
+    }
 
     // Targeted searches based on user query
     if (hashMatch) {
@@ -60,8 +91,17 @@ serve(async (req) => {
     const openIncidents = recentRes.data || [];
     const totalLogs = statsRes.count || 0;
 
-    // Collect targeted search results
+    // Separate mentions from targeted results
+    let mentionMessages: any[] = [];
     const targetedResults: any[] = [];
+    
+    if (currentUserId) {
+      // First extra result is mentions if user is authenticated
+      const mentionsResult = extraResults.shift();
+      mentionMessages = mentionsResult?.data || [];
+    }
+    
+    // Collect remaining targeted search results
     for (const r of extraResults) {
       if (r.data && r.data.length > 0) targetedResults.push(...r.data);
     }
@@ -78,6 +118,19 @@ serve(async (req) => {
 ${unique.map(i => `• ${i.incident_number}: ${i.event_type} | Severity: ${i.severity} | Risk: ${i.risk_level} | Class: ${i.classification} | Hash: ${i.file_hash || 'N/A'} | Src: ${i.src_ip || 'N/A'} → Dst: ${i.dst_ip || 'N/A'} | MITRE: ${i.mitre_technique || 'N/A'} | Message: ${(i.message || '').slice(0, 200)} | Status: ${i.status}`).join('\n')}`;
     }
 
+    // Build mentions context
+    let mentionsContext = '';
+    if (mentionMessages.length > 0) {
+      // Clean mention tags from content for readability
+      const cleanContent = (text: string) => text
+        .replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1')
+        .replace(/#\[([^\]]+)\]\([^)]+\)/g, '#$1')
+        .replace(/\$\[([^\]]+)\]\([^)]+\)/g, '$$$1');
+      
+      mentionsContext = `\n\nTEAM CHAT MENTIONS (messages where the current user was @mentioned):
+${mentionMessages.map(m => `• [${m.channel}] ${m.sender_name || m.sender_email} (${new Date(m.created_at).toLocaleString()}): "${cleanContent(m.content)}" ${m.priority !== 'normal' ? `[Priority: ${m.priority}]` : ''}`).join('\n')}`;
+    }
+
     const systemPrompt = `You are SOCMind AI — an expert Security Operations Center assistant embedded in a real SOC platform.
 
 CURRENT SOC STATUS:
@@ -91,8 +144,8 @@ OPEN INCIDENTS:
 ${openIncidents.map(i => `• ${i.incident_number} — ${i.event_type} [${i.risk_level}] — ${i.status} — ${new Date(i.created_at).toLocaleString()}`).join('\n')}
 
 RECENT INCIDENT DETAILS (with file hashes):
-${incidents.slice(0, 20).map(i => `• ${i.incident_number}: ${i.event_type} | Severity: ${i.severity} | Risk: ${i.risk_level} | Class: ${i.classification} (${i.confidence}%) | Hash: ${i.file_hash || 'N/A'} | MITRE: ${i.mitre_technique || 'N/A'} | Src: ${i.src_ip || 'N/A'} → Dst: ${i.dst_ip || 'N/A'} | Status: ${i.status}`).join('\n')}${targetedContext}
-
+${incidents.slice(0, 20).map(i => `• ${i.incident_number}: ${i.event_type} | Severity: ${i.severity} | Risk: ${i.risk_level} | Class: ${i.classification} (${i.confidence}%) | Hash: ${i.file_hash || 'N/A'} | MITRE: ${i.mitre_technique || 'N/A'} | Src: ${i.src_ip || 'N/A'} → Dst: ${i.dst_ip || 'N/A'} | Status: ${i.status}`).join('\n')}${targetedContext}${mentionsContext}
+${currentUserId ? `\nCURRENT USER: ${currentUserEmail || 'Unknown'} (ID: ${currentUserId})` : ''}
 CAPABILITIES:
 - Search and find incidents by file hash, IP address, incident number, event type, or any field
 - Answer questions about incidents, threats, MITRE ATT&CK techniques
@@ -101,6 +154,7 @@ CAPABILITIES:
 - Suggest playbook actions and containment strategies
 - Analyze attack patterns and correlations between incidents
 - Look up IOCs (hashes, IPs, domains) across all incident data
+- Access TEAM CHAT MENTIONS: see who mentioned the current user, what they said, and in which channel
 
 RULES:
 - Be concise and actionable — you're talking to SOC analysts
@@ -110,6 +164,7 @@ RULES:
 - Provide risk-prioritized recommendations
 - If you find matching incidents, list them with: incident number, event type, severity, risk level, source/dest IPs, and status
 - If no match is found, say so clearly
+- When the user asks about mentions, team chat messages, or who mentioned them, use the TEAM CHAT MENTIONS data to answer. Tell them who mentioned them, what they said, which channel it was in, and when.
 - Answer in the same language the user uses (Arabic or English)
 - Be thorough — analysts depend on your accuracy`;
 
