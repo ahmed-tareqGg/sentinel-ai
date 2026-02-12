@@ -22,19 +22,61 @@ serve(async (req) => {
     const { messages, context_type } = await req.json();
 
     // Gather real-time SOC context
-    const [incidentsRes, recentRes, statsRes] = await Promise.all([
-      supabase.from('incidents').select('id, incident_number, event_type, severity, risk_level, classification, status, src_ip, dst_ip, mitre_technique, mitre_tactic, confidence, message, created_at').order('created_at', { ascending: false }).limit(50),
+    // Extract search terms from the last user message for targeted lookup
+    const lastUserMsg = messages?.filter((m: any) => m.role === 'user').pop()?.content || '';
+    
+    // Check if user is asking about a specific hash, IP, or incident number
+    const hashMatch = lastUserMsg.match(/[a-fA-F0-9]{32,64}/g);
+    const ipMatch = lastUserMsg.match(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/g);
+    const incidentMatch = lastUserMsg.match(/INC-\d+/gi);
+
+    const queries: Promise<any>[] = [
+      supabase.from('incidents').select('id, incident_number, event_type, severity, risk_level, classification, status, src_ip, dst_ip, mitre_technique, mitre_tactic, confidence, message, file_hash, assigned_to, evidence, recommended_actions, created_at').order('created_at', { ascending: false }).limit(50),
       supabase.from('incidents').select('id, incident_number, event_type, risk_level, status, created_at').eq('status', 'Open').order('created_at', { ascending: false }).limit(10),
       supabase.from('raw_logs').select('id', { count: 'exact', head: true }),
-    ]);
+    ];
+
+    // Targeted searches based on user query
+    if (hashMatch) {
+      for (const hash of hashMatch) {
+        queries.push(supabase.from('incidents').select('id, incident_number, event_type, severity, risk_level, classification, status, src_ip, dst_ip, file_hash, mitre_technique, mitre_tactic, message, created_at').ilike('file_hash', `%${hash}%`));
+      }
+    }
+    if (ipMatch) {
+      for (const ip of ipMatch) {
+        queries.push(supabase.from('incidents').select('id, incident_number, event_type, severity, risk_level, classification, status, src_ip, dst_ip, file_hash, mitre_technique, message, created_at').or(`src_ip.eq.${ip},dst_ip.eq.${ip}`));
+      }
+    }
+    if (incidentMatch) {
+      for (const inc of incidentMatch) {
+        queries.push(supabase.from('incidents').select('*').ilike('incident_number', `%${inc}%`));
+      }
+    }
+
+    const results = await Promise.all(queries);
+    const [incidentsRes, recentRes, statsRes, ...extraResults] = results;
 
     const incidents = incidentsRes.data || [];
     const openIncidents = recentRes.data || [];
     const totalLogs = statsRes.count || 0;
 
+    // Collect targeted search results
+    const targetedResults: any[] = [];
+    for (const r of extraResults) {
+      if (r.data && r.data.length > 0) targetedResults.push(...r.data);
+    }
+
     const criticalCount = incidents.filter(i => i.risk_level === 'Critical').length;
     const tpCount = incidents.filter(i => i.classification === 'True Positive').length;
     const fpCount = incidents.filter(i => i.classification === 'False Positive').length;
+
+    // Build targeted context section
+    let targetedContext = '';
+    if (targetedResults.length > 0) {
+      const unique = [...new Map(targetedResults.map(i => [i.id, i])).values()];
+      targetedContext = `\n\nSEARCH RESULTS (matching user query):
+${unique.map(i => `• ${i.incident_number}: ${i.event_type} | Severity: ${i.severity} | Risk: ${i.risk_level} | Class: ${i.classification} | Hash: ${i.file_hash || 'N/A'} | Src: ${i.src_ip || 'N/A'} → Dst: ${i.dst_ip || 'N/A'} | MITRE: ${i.mitre_technique || 'N/A'} | Message: ${(i.message || '').slice(0, 200)} | Status: ${i.status}`).join('\n')}`;
+    }
 
     const systemPrompt = `You are SOCMind AI — an expert Security Operations Center assistant embedded in a real SOC platform.
 
@@ -48,23 +90,28 @@ CURRENT SOC STATUS:
 OPEN INCIDENTS:
 ${openIncidents.map(i => `• ${i.incident_number} — ${i.event_type} [${i.risk_level}] — ${i.status} — ${new Date(i.created_at).toLocaleString()}`).join('\n')}
 
-RECENT INCIDENT DETAILS:
-${incidents.slice(0, 15).map(i => `• ${i.incident_number}: ${i.event_type} | Severity: ${i.severity} | Risk: ${i.risk_level} | Class: ${i.classification} (${i.confidence}%) | MITRE: ${i.mitre_technique || 'N/A'} | Src: ${i.src_ip || 'N/A'} | Status: ${i.status}`).join('\n')}
+RECENT INCIDENT DETAILS (with file hashes):
+${incidents.slice(0, 20).map(i => `• ${i.incident_number}: ${i.event_type} | Severity: ${i.severity} | Risk: ${i.risk_level} | Class: ${i.classification} (${i.confidence}%) | Hash: ${i.file_hash || 'N/A'} | MITRE: ${i.mitre_technique || 'N/A'} | Src: ${i.src_ip || 'N/A'} → Dst: ${i.dst_ip || 'N/A'} | Status: ${i.status}`).join('\n')}${targetedContext}
 
 CAPABILITIES:
+- Search and find incidents by file hash, IP address, incident number, event type, or any field
 - Answer questions about incidents, threats, MITRE ATT&CK techniques
 - Provide root cause analysis and investigation recommendations
 - Explain AI classifications and confidence scores
 - Suggest playbook actions and containment strategies
-- Analyze attack patterns and correlations
+- Analyze attack patterns and correlations between incidents
+- Look up IOCs (hashes, IPs, domains) across all incident data
 
 RULES:
 - Be concise and actionable — you're talking to SOC analysts
-- Reference specific incident numbers when relevant
+- ALWAYS reference specific incident numbers when you find matching data
+- When asked about a hash/IP/indicator, search the provided data and return ALL matching incidents with full details
 - Use MITRE ATT&CK framework terminology
 - Provide risk-prioritized recommendations
-- If asked about a specific incident, use the data provided
-- Answer in the same language the user uses (Arabic or English)`;
+- If you find matching incidents, list them with: incident number, event type, severity, risk level, source/dest IPs, and status
+- If no match is found, say so clearly
+- Answer in the same language the user uses (Arabic or English)
+- Be thorough — analysts depend on your accuracy`;
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
