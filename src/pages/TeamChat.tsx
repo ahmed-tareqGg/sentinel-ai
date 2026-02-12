@@ -15,6 +15,7 @@ import { ChatReactions } from '@/components/chat/ChatReactions';
 import { IncidentMentionDropdown } from '@/components/chat/IncidentMentionDropdown';
 import { TypingIndicator, useTypingBroadcast } from '@/components/chat/TypingIndicator';
 import { OnlineUsers } from '@/components/chat/OnlineUsers';
+import { ChatReadReceipts, useMarkAsRead } from '@/components/chat/ChatReadReceipts';
 
 interface ChatMessage {
   id: string;
@@ -320,6 +321,9 @@ export default function TeamChat() {
   const pinnedMessages = messages.filter(m => m.is_pinned);
   const displayMessages = showPinnedOnly ? pinnedMessages : messages;
 
+  // Mark visible messages as read
+  useMarkAsRead(displayMessages, channel);
+
   return (
     <AppLayout title="Team Chat" subtitle="Real-time SOC communication with @mentions and #incident linking">
       <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
@@ -446,6 +450,7 @@ export default function TeamChat() {
                           {msg.sender_name || msg.sender_email?.split('@')[0]}
                         </span>
                         <span className="text-[10px] text-muted-foreground">{formatTime(msg.created_at)}</span>
+                        <ChatReadReceipts messageId={msg.id} senderId={msg.sender_id} />
                         {msg.is_edited && <span className="text-[10px] text-muted-foreground italic">(edited)</span>}
                         {msg.is_pinned && (
                           <Pin className="h-3 w-3 text-yellow-500" />
