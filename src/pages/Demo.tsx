@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,8 @@ import {
 import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useIncidents } from '@/hooks/useIncidents';
+import { useAnalytics } from '@/hooks/useAnalytics';
 
 interface DemoStep {
   id: string;
@@ -231,38 +233,18 @@ const VIRUSTOTAL_RESULT: VirusTotalResult = {
   influence: 'Elevated classification confidence from 78% → 92% based on threat intel correlation'
 };
 
-const METRICS_COMPARISON: MetricsComparison[] = [
-  {
-    metric: 'Mean Time to Detect (MTTD)',
-    baseline: '45 minutes',
-    current: '2.1 minutes',
-    improvement: '95%',
-    explanation: 'AI analyzes logs in real-time vs. analyst queue delay'
-  },
-  {
-    metric: 'Mean Time to Respond (MTTR)',
-    baseline: '4.2 hours',
-    current: '4.5 minutes',
-    improvement: '98%',
-    explanation: 'Automated playbook execution vs. manual runbook'
-  },
-  {
-    metric: 'False Positive Rate',
-    baseline: '76%',
-    current: '6%',
-    improvement: '92%',
-    explanation: 'Multi-source correlation eliminates noise'
-  },
-  {
-    metric: 'Analyst Workload',
-    baseline: '120 alerts/day',
-    current: '8 escalations/day',
-    improvement: '93%',
-    explanation: 'Auto-triage handles routine, humans focus on complex'
-  },
-];
+// Dynamic metrics - will be populated from real data
+const METRICS_COMPARISON_TEMPLATE = {
+  mttd: { metric: 'Mean Time to Detect (MTTD)', baseline: '45 minutes', improvement: '95%', explanation: 'AI analyzes logs in real-time vs. analyst queue delay' },
+  mttr: { metric: 'Mean Time to Respond (MTTR)', baseline: '4.2 hours', improvement: '98%', explanation: 'Automated playbook execution vs. manual runbook' },
+  fp: { metric: 'False Positive Rate', baseline: '76%', improvement: '92%', explanation: 'Multi-source correlation eliminates noise' },
+  workload: { metric: 'Analyst Workload', baseline: '120 alerts/day', improvement: '93%', explanation: 'Auto-triage handles routine, humans focus on complex' },
+};
 
 export default function Demo() {
+  const { incidents } = useIncidents({ limit: 200 });
+  const metrics = useAnalytics(incidents);
+  
   const [steps, setSteps] = useState<DemoStep[]>(DEMO_STEPS);
   const [isRunning, setIsRunning] = useState(false);
   const [currentStep, setCurrentStep] = useState<number>(-1);
@@ -274,6 +256,51 @@ export default function Demo() {
   const [scenario, setScenario] = useState<'real' | 'false-positive' | 'manual'>('real');
   const [showDecisionDetails, setShowDecisionDetails] = useState(false);
   const [animatedMetrics, setAnimatedMetrics] = useState<{ [key: string]: number }>({});
+  const [aiGeneratedSummary, setAiGeneratedSummary] = useState(false);
+
+  // Dynamic playbook count from DB
+  const [playbookCount, setPlaybookCount] = useState(0);
+  useEffect(() => {
+    supabase.from('playbooks').select('id', { count: 'exact', head: true }).then(({ count }) => {
+      setPlaybookCount(count || 0);
+    });
+  }, []);
+
+  // Build dynamic metrics comparison from real data
+  const dynamicMetricsComparison: MetricsComparison[] = useMemo(() => {
+    const mttdCurrent = metrics.mttd > 0 ? `${metrics.mttd} min` : '< 1 min';
+    const mttrCurrent = metrics.mttr > 0 ? `${metrics.mttr} min` : '< 1 min';
+    const fpCurrent = `${metrics.falsePositiveRate}%`;
+    const automatedPct = metrics.playbookAutomationRate;
+    
+    const mttdImprovement = metrics.mttd > 0 ? `${Math.max(0, Math.round((1 - metrics.mttd / 45) * 100))}%` : '95%+';
+    const mttrImprovement = metrics.mttr > 0 ? `${Math.max(0, Math.round((1 - metrics.mttr / 252) * 100))}%` : '98%+';
+    const fpImprovement = metrics.falsePositiveRate > 0 ? `${Math.max(0, Math.round((1 - metrics.falsePositiveRate / 76) * 100))}%` : '92%+';
+    
+    return [
+      { metric: 'Mean Time to Detect (MTTD)', baseline: '45 minutes', current: mttdCurrent, improvement: mttdImprovement, explanation: 'AI analyzes logs in real-time vs. analyst queue delay' },
+      { metric: 'Mean Time to Respond (MTTR)', baseline: '4.2 hours', current: mttrCurrent, improvement: mttrImprovement, explanation: 'Automated playbook execution vs. manual runbook' },
+      { metric: 'False Positive Rate', baseline: '76%', current: fpCurrent, improvement: fpImprovement, explanation: 'Multi-source correlation eliminates noise' },
+      { metric: 'Analyst Workload', baseline: '120 alerts/day', current: `${Math.max(1, Math.round(metrics.totalIncidents * (1 - automatedPct / 100)))} escalations/day`, improvement: `${automatedPct}%`, explanation: 'Auto-triage handles routine, humans focus on complex' },
+    ];
+  }, [metrics]);
+
+  // Dynamic AI confidence from real data
+  const avgConfidence = useMemo(() => {
+    const withConfidence = incidents.filter(i => i.confidence && i.confidence > 0);
+    if (withConfidence.length === 0) return 0;
+    return Math.round(withConfidence.reduce((sum, i) => sum + (i.confidence || 0), 0) / withConfidence.length);
+  }, [incidents]);
+
+  // Dynamic value protected estimate based on critical/high incidents handled
+  const valueProtected = useMemo(() => {
+    const critical = metrics.criticalIncidents;
+    const high = metrics.highIncidents;
+    const value = critical * 250000 + high * 50000 + (metrics.totalIncidents - critical - high) * 5000;
+    if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+    if (value >= 1000) return `$${Math.round(value / 1000)}K`;
+    return `$${value}`;
+  }, [metrics]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -411,7 +438,7 @@ export default function Demo() {
       updateStep(6, { 
         status: 'completed', 
         duration: 500,
-        result: { metrics: METRICS_COMPARISON }
+        result: { metrics: dynamicMetricsComparison }
       });
 
       // Step 8: Executive Summary
@@ -443,6 +470,9 @@ export default function Demo() {
   };
 
   const generateExecutiveSummary = (incident: any) => {
+    const realMttd = metrics.mttd > 0 ? `${metrics.mttd} min` : '< 1 min';
+    const realMttr = metrics.mttr > 0 ? `${metrics.mttr} min` : '< 1 min';
+    
     return `
 ## 🎯 AI Security Decision Brief
 
@@ -453,7 +483,7 @@ export default function Demo() {
 ### 🧠 What AI Decided
 
 **Classification:** True Positive - Emotet Banking Trojan
-**Confidence:** 92% (elevated from 78% after threat intel correlation)
+**Confidence:** ${avgConfidence > 0 ? avgConfidence : 92}% (elevated after threat intel correlation)
 **Risk Level:** Critical
 
 **Why This Classification?**
@@ -468,7 +498,7 @@ export default function Demo() {
 
 **Selected Playbook:** Aggressive Containment
 **AI Reasoning:**
-> "Evaluated 3 response options. Rejected 'Gradual Response' (78% confidence) as it allows potential lateral movement. Rejected 'Full Lockdown' (95% confidence) as scope affects 47 unrelated hosts. Selected 'Aggressive Containment' as optimal balance of threat neutralization and business continuity."
+> "Evaluated ${playbookCount || 3} response options. Rejected 'Gradual Response' (78% confidence) as it allows potential lateral movement. Rejected 'Full Lockdown' (95% confidence) as scope affects 47 unrelated hosts. Selected 'Aggressive Containment' as optimal balance of threat neutralization and business continuity."
 
 **Actions Executed:**
 1. ✅ Host 192.168.1.100 isolated from network
@@ -482,12 +512,23 @@ export default function Demo() {
 
 | Metric | Before AI | After AI | Impact |
 |--------|-----------|----------|--------|
-| Detection Time | 45 min | 2.1 min | **95% faster** |
-| Response Time | 4.2 hrs | 4.5 min | **98% faster** |
-| Analyst Workload | 120/day | 8/day | **93% reduction** |
+| Detection Time | 45 min | ${realMttd} | **${metrics.mttd > 0 ? Math.round((1 - metrics.mttd / 45) * 100) : 95}% faster** |
+| Response Time | 4.2 hrs | ${realMttr} | **${metrics.mttr > 0 ? Math.round((1 - metrics.mttr / 252) * 100) : 98}% faster** |
+| False Positive Rate | 76% | ${metrics.falsePositiveRate}% | **${Math.round((1 - metrics.falsePositiveRate / 76) * 100)}% reduction** |
+| Analyst Workload | 120/day | ${Math.max(1, Math.round(metrics.totalIncidents * (1 - metrics.playbookAutomationRate / 100)))}/day | **${metrics.playbookAutomationRate}% reduction** |
 
-**Estimated Value Protected:** $250,000
-(Based on average cost of banking trojan data breach)
+**Estimated Value Protected:** ${valueProtected}
+(Based on ${metrics.criticalIncidents} critical + ${metrics.highIncidents} high severity incidents handled)
+
+---
+
+### 📊 Platform Statistics
+
+- **Total Incidents Processed:** ${metrics.totalIncidents}
+- **Open Incidents:** ${metrics.openIncidents}
+- **SLA Compliance:** ${metrics.slaCompliance}%
+- **AI Automation Rate:** ${metrics.playbookAutomationRate}%
+- **Active Playbooks:** ${playbookCount}
 
 ---
 
@@ -504,7 +545,7 @@ Without automated response:
 ### 📋 Next Steps (AI Recommended)
 
 1. Forensic analysis of affected workstation
-2. Scan 47 hosts in same subnet for IOCs
+2. Scan hosts in same subnet for IOCs
 3. User awareness training for affected employee
 4. Update endpoint signatures
 
@@ -515,6 +556,9 @@ Without automated response:
   };
 
   const getScenarioComparison = () => {
+    const realMttd = metrics.mttd > 0 ? `${metrics.mttd} min` : '< 1 min';
+    const realMttr = metrics.mttr > 0 ? `${metrics.mttr} min` : '< 1 min';
+    
     if (scenario === 'false-positive') {
       return {
         title: 'False Positive Scenario',
@@ -522,7 +566,9 @@ Without automated response:
         mttd: '45 min (analyst review)',
         mttr: '2 hours (investigation)',
         outcome: 'Unnecessary business disruption',
-        cost: '$15,000 in lost productivity'
+        cost: `$${Math.round(metrics.totalIncidents * 80).toLocaleString()} in lost productivity`,
+        aiMttd: realMttd,
+        aiMttr: realMttr,
       };
     }
     if (scenario === 'manual') {
@@ -532,10 +578,20 @@ Without automated response:
         mttd: '45 minutes',
         mttr: '4.2 hours',
         outcome: 'Potential lateral movement',
-        cost: '$250,000+ potential breach'
+        cost: `$${(metrics.criticalIncidents * 250000 + metrics.highIncidents * 50000).toLocaleString()}+ potential breach`,
+        aiMttd: realMttd,
+        aiMttr: realMttr,
       };
     }
-    return null;
+    // AI Response scenario - show real metrics
+    return {
+      title: 'AI-Powered SOC Response',
+      description: 'Real metrics from your SOCMind platform',
+      mttd: metrics.mttd > 0 ? `${metrics.mttd} min` : '< 1 min',
+      mttr: metrics.mttr > 0 ? `${metrics.mttr} min` : '< 1 min',
+      outcome: `${metrics.totalIncidents} incidents processed, ${metrics.slaCompliance}% SLA compliance`,
+      cost: `${valueProtected} protected`,
+    };
   };
 
   const completedSteps = steps.filter(s => s.status === 'completed').length;
@@ -627,17 +683,20 @@ Without automated response:
                 </TabsTrigger>
               </TabsList>
               {scenarioData && (
-                <div className="mt-4 p-4 rounded-lg bg-muted/50 border border-dashed">
+                <div className={cn(
+                  "mt-4 p-4 rounded-lg border border-dashed",
+                  scenario === 'real' ? 'bg-green-500/10 border-green-500/30' : 'bg-muted/50'
+                )}>
                   <h4 className="font-semibold text-sm mb-2">{scenarioData.title}</h4>
                   <p className="text-xs text-muted-foreground mb-3">{scenarioData.description}</p>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div>
                       <span className="text-muted-foreground">MTTD:</span>
-                      <span className="ml-2 font-medium text-destructive">{scenarioData.mttd}</span>
+                      <span className={cn("ml-2 font-medium", scenario === 'real' ? 'text-green-500' : 'text-destructive')}>{scenarioData.mttd}</span>
                     </div>
                     <div>
                       <span className="text-muted-foreground">MTTR:</span>
-                      <span className="ml-2 font-medium text-destructive">{scenarioData.mttr}</span>
+                      <span className={cn("ml-2 font-medium", scenario === 'real' ? 'text-green-500' : 'text-destructive')}>{scenarioData.mttr}</span>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Outcome:</span>
@@ -645,7 +704,7 @@ Without automated response:
                     </div>
                     <div>
                       <span className="text-muted-foreground">Cost:</span>
-                      <span className="ml-2 font-medium text-destructive">{scenarioData.cost}</span>
+                      <span className={cn("ml-2 font-medium", scenario === 'real' ? 'text-green-500' : 'text-destructive')}>{scenarioData.cost}</span>
                     </div>
                   </div>
                 </div>
@@ -846,7 +905,7 @@ Without automated response:
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 md:grid-cols-2">
-                {METRICS_COMPARISON.map((m) => (
+                {dynamicMetricsComparison.map((m) => (
                   <div key={m.metric} className="p-4 rounded-lg bg-muted/30 border">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-medium text-sm">{m.metric}</span>
@@ -894,7 +953,7 @@ Without automated response:
               <div className="flex items-center gap-3">
                 <Brain className="h-8 w-8 text-primary" />
                 <div>
-                  <p className="text-2xl font-bold text-primary">92%</p>
+                  <p className="text-2xl font-bold text-primary">{avgConfidence > 0 ? `${avgConfidence}%` : '--'}</p>
                   <p className="text-xs text-muted-foreground">AI Confidence</p>
                 </div>
               </div>
@@ -905,8 +964,8 @@ Without automated response:
               <div className="flex items-center gap-3">
                 <Scale className="h-8 w-8 text-purple-500" />
                 <div>
-                  <p className="text-2xl font-bold text-purple-500">3</p>
-                  <p className="text-xs text-muted-foreground">Playbooks Evaluated</p>
+                  <p className="text-2xl font-bold text-purple-500">{playbookCount > 0 ? playbookCount : '--'}</p>
+                  <p className="text-xs text-muted-foreground">Playbooks Available</p>
                 </div>
               </div>
             </CardContent>
@@ -916,7 +975,7 @@ Without automated response:
               <div className="flex items-center gap-3">
                 <DollarSign className="h-8 w-8 text-yellow-500" />
                 <div>
-                  <p className="text-2xl font-bold text-yellow-500">$250K</p>
+                  <p className="text-2xl font-bold text-yellow-500">{valueProtected}</p>
                   <p className="text-xs text-muted-foreground">Value Protected</p>
                 </div>
               </div>
