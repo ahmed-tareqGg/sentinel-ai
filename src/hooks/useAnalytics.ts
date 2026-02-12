@@ -78,15 +78,15 @@ export function useAnalytics(incidents: Incident[]): AnalyticsMetrics {
       i.status === 'Closed' || i.status === 'Resolved'
     );
     const mttrValues = resolvedIncidents
-      .filter(i => i.created_at)
+      .filter(i => i.created_at && ((i as any).resolved_at || (i as any).closed_at))
       .map(i => {
         const detectTime = new Date(i.created_at);
         const resolveTime = new Date(
-          (i as any).resolved_at || (i as any).closed_at || i.updated_at
+          (i as any).resolved_at || (i as any).closed_at
         );
         return differenceInMinutes(resolveTime, detectTime);
       })
-      .filter(v => v > 0 && v < 43200); // Filter reasonable values (< 30 days)
+      .filter(v => v > 0 && v < 1440); // Filter reasonable values (< 24h)
 
     const mttr = mttrValues.length > 0
       ? Math.round(mttrValues.reduce((a, b) => a + b, 0) / mttrValues.length)
