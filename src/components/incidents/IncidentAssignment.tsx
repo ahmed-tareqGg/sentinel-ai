@@ -134,6 +134,47 @@ export function IncidentAssignment({
         manager: 'soc_manager',
       };
 
+      // Gather investigation context in parallel
+      const [iocsRes, evidenceRes, notesRes, reportsRes] = await Promise.all([
+        supabase.from('incident_iocs').select('ioc_type, value, confidence').eq('incident_id', incidentId),
+        supabase.from('incident_evidence').select('title, evidence_type').eq('incident_id', incidentId),
+        supabase.from('analyst_notes').select('content, author_email, note_type, created_at').eq('incident_id', incidentId).order('created_at', { ascending: false }),
+        supabase.from('incident_reports').select('title, report_type, created_at').eq('incident_id', incidentId),
+      ]);
+
+      const iocs = iocsRes.data || [];
+      const evidence = evidenceRes.data || [];
+      const notes = notesRes.data || [];
+      const reports = reportsRes.data || [];
+
+      // Build investigation handoff summary
+      const summaryParts: string[] = [];
+      summaryParts.push(`Escalation Reason: ${escalateReason}`);
+      summaryParts.push(`Escalated by: ${profile?.email || 'analyst'} (${roleLabels[role || ''] || role})`);
+      
+      if (iocs.length > 0) {
+        summaryParts.push(`\n📌 IOCs (${iocs.length}):`);
+        iocs.forEach(ioc => summaryParts.push(`  • [${ioc.ioc_type}] ${ioc.value} (${ioc.confidence})`));
+      }
+      if (evidence.length > 0) {
+        summaryParts.push(`\n📎 Evidence (${evidence.length}):`);
+        evidence.forEach(ev => summaryParts.push(`  • ${ev.title} (${ev.evidence_type})`));
+      }
+      if (notes.length > 0) {
+        summaryParts.push(`\n📝 Analyst Notes (${notes.length}):`);
+        notes.slice(0, 5).forEach(n => summaryParts.push(`  • [${n.author_email || 'analyst'}]: ${n.content.slice(0, 120)}${n.content.length > 120 ? '…' : ''}`));
+        if (notes.length > 5) summaryParts.push(`  ... and ${notes.length - 5} more notes`);
+      }
+      if (reports.length > 0) {
+        summaryParts.push(`\n📄 Reports (${reports.length}):`);
+        reports.forEach(r => summaryParts.push(`  • ${r.title} (${r.report_type})`));
+      }
+      if (iocs.length === 0 && evidence.length === 0 && notes.length === 0 && reports.length === 0) {
+        summaryParts.push('\n⚠️ No investigation data attached yet');
+      }
+
+      const handoffSummary = summaryParts.join('\n');
+
       const { error } = await supabase
         .from('incidents')
         .update({
@@ -147,13 +188,14 @@ export function IncidentAssignment({
 
       if (error) throw error;
 
+      // Timeline entry with full handoff summary
       await supabase.from('incident_timeline').insert({
         incident_id: incidentId,
-        stage: `Escalated to ${escalateTo.toUpperCase()}`,
-        details: `${escalateReason} — by ${profile?.email || 'analyst'}`,
+        stage: `Escalated to ${escalateTo.toUpperCase()} — Investigation Handoff`,
+        details: handoffSummary,
       });
 
-      // Create an approval request so it appears on the Approvals page
+      // Create approval request with investigation context
       await supabase.from('approval_requests').insert({
         incident_id: incidentId,
         action_type: `escalation_${escalateTo}`,
@@ -161,6 +203,18 @@ export function IncidentAssignment({
         requested_by: profile?.email || user?.id || 'analyst',
         reason: escalateReason,
         sla_deadline: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        action_params: {
+          handoff_summary: {
+            iocs_count: iocs.length,
+            evidence_count: evidence.length,
+            notes_count: notes.length,
+            reports_count: reports.length,
+            iocs: iocs.slice(0, 10),
+            latest_notes: notes.slice(0, 3).map(n => ({ author: n.author_email, content: n.content.slice(0, 200) })),
+          },
+          escalated_from: role,
+          escalated_to: tierMap[escalateTo],
+        },
       });
 
       // Also call the escalation edge function
