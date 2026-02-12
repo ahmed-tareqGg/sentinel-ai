@@ -679,7 +679,7 @@ export default function IncidentDetail() {
             </div>
 
             {/* Actions */}
-            {canModifyIncidents && (
+            {canModifyIncidents && incident.status !== 'Closed' && (
               <div className="flex flex-wrap items-center gap-3 pt-4">
                 <Select value={incident.status} onValueChange={updateStatus} disabled={updating}>
                   <SelectTrigger className="w-44 bg-secondary/50">
