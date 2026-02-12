@@ -68,6 +68,8 @@ export default function IncidentDetail() {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [closeReason, setCloseReason] = useState('');
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
+  const [ownerDisplayName, setOwnerDisplayName] = useState<string | null>(null);
+  const [ownerRole, setOwnerRole] = useState<string | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
 
   useEffect(() => {
@@ -138,14 +140,17 @@ export default function IncidentDetail() {
       const inc = data as ExtendedIncident;
       setIncident(inc);
 
-      // Fetch owner email if assigned
+      // Fetch owner info if assigned
       if (inc?.incident_owner_id) {
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('email')
-          .eq('id', inc.incident_owner_id)
-          .maybeSingle();
-        if (profileData) setOwnerEmail(profileData.email);
+        const [profileRes, roleRes] = await Promise.all([
+          supabase.from('profiles').select('email, display_name, full_name').eq('id', inc.incident_owner_id).maybeSingle(),
+          supabase.from('user_roles').select('role').eq('user_id', inc.incident_owner_id).maybeSingle(),
+        ]);
+        if (profileRes.data) {
+          setOwnerEmail(profileRes.data.email);
+          setOwnerDisplayName(profileRes.data.display_name || profileRes.data.full_name || null);
+        }
+        if (roleRes.data) setOwnerRole(roleRes.data.role);
       }
     }
     setLoading(false);
@@ -665,6 +670,8 @@ export default function IncidentDetail() {
                 ownerId={incident.incident_owner_id || null}
                 ownerRole={incident.incident_owner_role || null}
                 ownerEmail={ownerEmail}
+                ownerDisplayName={ownerDisplayName}
+                ownerRoleFromDb={ownerRole}
                 assignedAt={incident.assigned_at || null}
                 status={incident.status}
                 onUpdate={() => { fetchIncident(); fetchTimeline(); }}

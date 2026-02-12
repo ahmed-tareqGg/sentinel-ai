@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { UserCheck, Lock, ArrowUpRight, Loader2 } from 'lucide-react';
@@ -16,6 +17,8 @@ interface IncidentAssignmentProps {
   ownerId: string | null;
   ownerRole: string | null;
   ownerEmail?: string | null;
+  ownerDisplayName?: string | null;
+  ownerRoleFromDb?: string | null;
   assignedAt: string | null;
   status: string;
   onUpdate: () => void;
@@ -27,11 +30,14 @@ export function IncidentAssignment({
   ownerId,
   ownerRole,
   ownerEmail,
+  ownerDisplayName,
+  ownerRoleFromDb,
   assignedAt,
   status,
   onUpdate,
 }: IncidentAssignmentProps) {
   const { user, profile, role, canModifyData } = useAuth();
+  const navigate = useNavigate();
   const [assigning, setAssigning] = useState(false);
   const [escalateOpen, setEscalateOpen] = useState(false);
   const [escalating, setEscalating] = useState(false);
@@ -64,6 +70,7 @@ export function IncidentAssignment({
         .update({
           incident_owner_id: user.id,
           incident_owner_role: role,
+          assigned_to: profile?.email || null,
           assigned_at: new Date().toISOString(),
           status: status === 'Open' || status === 'New' ? 'Assigned' : status,
         })
@@ -97,6 +104,7 @@ export function IncidentAssignment({
         .update({
           incident_owner_id: null,
           incident_owner_role: null,
+          assigned_to: null,
           assigned_at: null,
           status: 'Open',
         })
@@ -238,14 +246,30 @@ export function IncidentAssignment({
     <div className="flex flex-wrap items-center gap-3">
       {/* Assignment Status */}
       {isAssigned ? (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="border-primary/30 bg-primary/5 text-primary gap-1.5 py-1.5 px-3">
             <Lock className="h-3 w-3" />
-            {isOwner ? 'Assigned to You' : `Locked by ${ownerEmail || 'Analyst'}`}
+            {isOwner ? 'Assigned to You' : (
+              <>
+                Locked by{' '}
+                {canReassign && ownerId ? (
+                  <button
+                    onClick={() => navigate(`/profile/${ownerId}`)}
+                    className="underline hover:text-primary/80 transition-colors"
+                  >
+                    {ownerDisplayName || ownerEmail || 'Analyst'}
+                  </button>
+                ) : (
+                  ownerDisplayName || ownerEmail || 'Analyst'
+                )}
+              </>
+            )}
           </Badge>
-          <Badge variant="outline" className="border-muted-foreground/30 text-muted-foreground text-xs">
-            {roleLabels[ownerRole || ''] || ownerRole}
-          </Badge>
+          {(ownerRoleFromDb || ownerRole) && (
+            <Badge variant="outline" className="border-muted-foreground/30 text-muted-foreground text-xs">
+              {roleLabels[ownerRoleFromDb || ownerRole || ''] || ownerRoleFromDb || ownerRole}
+            </Badge>
+          )}
           {assignedAt && (
             <span className="text-xs text-muted-foreground">
               {new Date(assignedAt).toLocaleString()}

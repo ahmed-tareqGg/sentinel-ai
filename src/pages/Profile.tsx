@@ -125,17 +125,16 @@ export default function Profile() {
           .eq('user_id', targetUserId);
         setTargetRoles((rolesData || []).map(r => r.role));
 
-        // Stats - use email for incident queries
-        const email = profileData?.email;
+        // Stats - use owner ID for incident queries
         const [
           assignedRes, resolvedRes, closedRes, notesRes,
           escalatedRes, playbookRes, chatRes, approvalRes,
         ] = await Promise.all([
-          supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('assigned_to', email || ''),
-          supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('assigned_to', email || '').eq('status', 'Resolved'),
-          supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('assigned_to', email || '').eq('status', 'Closed'),
+          supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('incident_owner_id', targetUserId),
+          supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('incident_owner_id', targetUserId).eq('status', 'Resolved'),
+          supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('incident_owner_id', targetUserId).eq('status', 'Closed'),
           supabase.from('analyst_notes').select('id', { count: 'exact', head: true }).eq('author_id', targetUserId),
-          supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('escalated_to', email || ''),
+          supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('escalated_to', profileData?.email || ''),
           supabase.from('playbook_executions').select('id', { count: 'exact', head: true }).eq('incident_id', targetUserId), // approximate
           supabase.from('chat_messages').select('id', { count: 'exact', head: true }).eq('sender_id', targetUserId),
           supabase.from('approval_requests').select('id', { count: 'exact', head: true }).eq('approved_by', targetUserId),
@@ -156,8 +155,8 @@ export default function Profile() {
         const { data: incidents } = await supabase
           .from('incidents')
           .select('id, incident_number, event_type, severity, status, risk_level, assigned_at, created_at')
-          .eq('assigned_to', email || '')
-          .order('assigned_at', { ascending: false })
+          .eq('incident_owner_id', targetUserId)
+          .order('assigned_at', { ascending: false, nullsFirst: false })
           .limit(10);
         setRecentIncidents(incidents || []);
 
