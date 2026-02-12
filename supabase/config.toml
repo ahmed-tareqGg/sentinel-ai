@@ -44,3 +44,9 @@ verify_jwt = false
 
 [functions.threat-intel-lookup]
 verify_jwt = false
+
+[functions.soc-chat]
+verify_jwt = false
+
+[functions.root-cause-analysis]
+verify_jwt = false

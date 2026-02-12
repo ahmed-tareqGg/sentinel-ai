@@ -3,6 +3,7 @@ import { AppNavbar } from './AppNavbar';
 import { GlobalFooter } from './GlobalFooter';
 import { DemoBanner } from '@/components/demo/DemoBanner';
 import { GuidedTour } from '@/components/demo/GuidedTour';
+import { SOCChatWidget } from '@/components/chat/SOCChatWidget';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -20,6 +21,7 @@ export function AppLayout({ children, title, subtitle }: AppLayoutProps) {
         {children}
       </main>
       <GlobalFooter />
+      <SOCChatWidget />
     </div>
   );
 }
