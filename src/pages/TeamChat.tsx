@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield, Pencil, ArrowLeft, Lock, Plus, LogIn } from 'lucide-react';
+import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield, Pencil, ArrowLeft, Lock, Plus, LogIn, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -149,6 +149,7 @@ export default function TeamChat() {
   const [joinPassword, setJoinPassword] = useState('');
   const [creatingChannel, setCreatingChannel] = useState(false);
   const [joiningChannel, setJoiningChannel] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const myRoleLevel = role ? (ROLE_HIERARCHY[role] || 0) : 0;
 
@@ -569,12 +570,16 @@ export default function TeamChat() {
         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => navigate('/dashboard')}>
           <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSidebarOpen(prev => !prev)} title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}>
+          {sidebarOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
+        </Button>
         <Hash className="h-3.5 w-3.5 text-primary" />
         <span className="text-xs font-semibold text-foreground">Team Chat</span>
         <span className="text-[10px] text-muted-foreground">— {channel}</span>
       </div>
       <div className="flex flex-1 overflow-hidden">
         {/* Channels sidebar */}
+        {sidebarOpen && (
         <div className="w-56 border-r border-border/50 bg-card/50 flex flex-col shrink-0">
           <div className="p-4 border-b border-border/50">
             <h2 className="text-sm font-bold text-foreground">Channels</h2>
@@ -721,6 +726,7 @@ export default function TeamChat() {
           {/* Online users */}
           <OnlineUsers />
         </div>
+        )}
 
         {/* Chat area */}
         <div className="flex-1 flex flex-col min-w-0">
