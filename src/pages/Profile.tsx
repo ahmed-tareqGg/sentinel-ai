@@ -15,6 +15,7 @@ import {
   ClipboardList, MessageSquare, Zap, Calendar, Hash,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 const ROLE_HIERARCHY: Record<string, number> = {
@@ -73,6 +74,7 @@ export default function Profile() {
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
 
   // Check access: higher role can view lower role profiles
   useEffect(() => {
@@ -320,12 +322,12 @@ export default function Profile() {
           <div className="flex items-start gap-5">
             <div className="relative group">
               <Avatar className="h-20 w-20 border-2 border-primary/20">
-                <AvatarImage src={targetProfile?.avatar_url || undefined} alt="Avatar" />
+                <AvatarImage src={targetProfile?.avatar_url || undefined} alt="Avatar" className="object-cover" />
                 <AvatarFallback className="text-xl bg-primary/20 text-primary font-bold">
                   {initials}
                 </AvatarFallback>
               </Avatar>
-              {isOwnProfile && (
+              {isOwnProfile ? (
                 <>
                   <button
                     onClick={() => fileInputRef.current?.click()}
@@ -346,6 +348,13 @@ export default function Profile() {
                     onChange={handleAvatarUpload}
                   />
                 </>
+              ) : targetProfile?.avatar_url && (
+                <button
+                  onClick={() => setAvatarPreviewOpen(true)}
+                  className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                >
+                  <Eye className="h-5 w-5 text-white" />
+                </button>
               )}
             </div>
             <div className="flex-1 space-y-2">
@@ -530,6 +539,22 @@ export default function Profile() {
           )}
         </Tabs>
       </div>
+
+      {/* Avatar Full Preview Dialog */}
+      {targetProfile?.avatar_url && (
+        <Dialog open={avatarPreviewOpen} onOpenChange={setAvatarPreviewOpen}>
+          <DialogContent className="bg-card border-border max-w-lg p-2">
+            <DialogHeader>
+              <DialogTitle className="text-sm">{targetProfile.full_name || targetProfile.display_name || 'Avatar'}</DialogTitle>
+            </DialogHeader>
+            <img
+              src={targetProfile.avatar_url}
+              alt="Full avatar"
+              className="w-full h-auto rounded-lg object-contain max-h-[70vh]"
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </AppLayout>
   );
 }
