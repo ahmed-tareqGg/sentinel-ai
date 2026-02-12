@@ -63,26 +63,30 @@ export function useAnalytics(incidents: Incident[]): AnalyticsMetrics {
     const mttdValues = incidents
       .filter(i => i.timestamp && i.created_at)
       .map(i => {
-        const eventTime = new Date(i.timestamp);
-        const detectTime = new Date(i.created_at);
-        return Math.abs(differenceInMinutes(detectTime, eventTime));
+        const eventTime = new Date(i.timestamp).getTime();
+        const detectTime = new Date(i.created_at).getTime();
+        return Math.abs(detectTime - eventTime) / 60000; // minutes with decimal precision
       })
-      .filter(v => v >= 0 && v < 1440); // Filter reasonable values (< 24h)
+      .filter(v => v > 0 && v < 1440); // Filter reasonable values (< 24h)
 
     const mttd = mttdValues.length > 0
       ? Math.round(mttdValues.reduce((a, b) => a + b, 0) / mttdValues.length)
       : 0;
 
-    // Calculate MTTR: Time from detection (created_at) to resolution (updated_at for closed)
-    const closedIncidents = incidents.filter(i => i.status === 'Closed');
-    const mttrValues = closedIncidents
-      .filter(i => i.created_at && i.updated_at)
+    // Calculate MTTR: Time from detection (created_at) to resolution
+    const resolvedIncidents = incidents.filter(i => 
+      i.status === 'Closed' || i.status === 'Resolved'
+    );
+    const mttrValues = resolvedIncidents
+      .filter(i => i.created_at)
       .map(i => {
         const detectTime = new Date(i.created_at);
-        const resolveTime = new Date(i.updated_at);
+        const resolveTime = new Date(
+          (i as any).resolved_at || (i as any).closed_at || i.updated_at
+        );
         return differenceInMinutes(resolveTime, detectTime);
       })
-      .filter(v => v >= 0 && v < 1440); // Filter reasonable values
+      .filter(v => v > 0 && v < 43200); // Filter reasonable values (< 30 days)
 
     const mttr = mttrValues.length > 0
       ? Math.round(mttrValues.reduce((a, b) => a + b, 0) / mttrValues.length)
@@ -92,7 +96,7 @@ export function useAnalytics(incidents: Incident[]): AnalyticsMetrics {
     let slaCompliant = 0;
     let slaMeasurable = 0;
 
-    closedIncidents.forEach(i => {
+    resolvedIncidents.forEach(i => {
       if (i.created_at && i.updated_at) {
         const responseTime = differenceInMinutes(new Date(i.updated_at), new Date(i.created_at));
         const riskLevel = i.risk_level || getRiskLevelFromSeverity(i.severity);
@@ -205,7 +209,7 @@ export function useAnalytics(incidents: Incident[]): AnalyticsMetrics {
       falsePositives,
       totalIncidents: incidents.length,
       openIncidents,
-      closedIncidents: closedIncidents.length,
+      closedIncidents: resolvedIncidents.length,
       criticalIncidents,
       highIncidents,
       playbookAutomationRate,
