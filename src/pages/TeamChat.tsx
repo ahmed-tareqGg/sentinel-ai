@@ -859,9 +859,15 @@ export default function TeamChat() {
                         );
                       })()}
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-foreground">
-                          {nameInfo.displayName}
-                        </span>
+                        {myRoleLevel > (ROLE_HIERARCHY[getSenderRole(msg.sender_id) || ''] || 0) && msg.sender_id !== user?.id ? (
+                          <Link to={`/profile/${msg.sender_id}`} className="text-sm font-semibold text-foreground hover:text-primary hover:underline transition-colors">
+                            {nameInfo.displayName}
+                          </Link>
+                        ) : (
+                          <span className="text-sm font-semibold text-foreground">
+                            {nameInfo.displayName}
+                          </span>
+                        )}
                         {nameInfo.showRealName && nameInfo.realName !== nameInfo.displayName && (
                           <span className="text-[10px] text-muted-foreground">({nameInfo.realName})</span>
                         )}
