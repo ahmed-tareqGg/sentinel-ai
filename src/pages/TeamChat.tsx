@@ -904,7 +904,7 @@ export default function TeamChat() {
                           </Button>
                         </div>
                       ) : (
-                        <p className="text-sm text-foreground/90 break-words">{renderContent(msg.content)}</p>
+                        <p className="text-sm text-foreground/90 break-words" dir="auto">{renderContent(msg.content)}</p>
                       )}
 
                       {/* Attachments */}
@@ -1126,6 +1126,7 @@ export default function TeamChat() {
                   onKeyDown={handleKeyDown}
                   placeholder={`Message #${channel}... (@ mention, # incident, $ policy)`}
                   className="h-9 pr-16 bg-secondary/30 text-sm"
+                  dir="auto"
                   disabled={sending}
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">

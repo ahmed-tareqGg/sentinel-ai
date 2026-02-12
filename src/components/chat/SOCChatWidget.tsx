@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Send, Bot, User, Loader2, Minimize2, Maximize2, Plus, History, ArrowLeft, Trash2 } from 'lucide-react';
+import { X, Send, Bot, User, Loader2, Minimize2, Maximize2, Plus, History, ArrowLeft, Trash2, Paperclip, Image as ImageIcon, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { backendUrl, publishableKey, supabase } from '@/integrations/backend/client';
+import ReactMarkdown from 'react-markdown';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  attachments?: { name: string; type: string; base64: string; url?: string }[];
 }
 
 interface Conversation {
@@ -35,14 +37,15 @@ function loadConversations(): Conversation[] {
 }
 
 function saveConversations(convos: Conversation[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(convos));
-}
-
-function generateTitle(messages: Message[]): string {
-  const firstUser = messages.find(m => m.role === 'user');
-  if (!firstUser) return 'New Chat';
-  const text = firstUser.content.slice(0, 50);
-  return text.length < firstUser.content.length ? text + '...' : text;
+  // Don't persist base64 data to localStorage
+  const cleaned = convos.map(c => ({
+    ...c,
+    messages: c.messages.map(m => ({
+      ...m,
+      attachments: m.attachments?.map(a => ({ name: a.name, type: a.type, base64: '', url: a.url })),
+    })),
+  }));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
 }
 
 function createNewConversation(): Conversation {
@@ -53,6 +56,20 @@ function createNewConversation(): Conversation {
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove data URL prefix to get just base64
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 export function SOCChatWidget() {
@@ -66,13 +83,14 @@ export function SOCChatWidget() {
   });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
 
-  // Persist
   useEffect(() => {
     saveConversations(conversations);
   }, [conversations]);
@@ -110,8 +128,20 @@ export function SOCChatWidget() {
     }
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      setPendingFiles(prev => [...prev, ...files].slice(0, 5)); // Max 5 files
+    }
+    e.target.value = '';
+  };
+
+  const removePendingFile = (idx: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== idx));
+  };
+
   const sendMessage = async (text: string) => {
-    if (!text.trim() || isLoading) return;
+    if ((!text.trim() && pendingFiles.length === 0) || isLoading) return;
 
     let currentId = activeId;
     if (!currentId) {
@@ -121,28 +151,73 @@ export function SOCChatWidget() {
       setActiveId(currentId);
     }
 
-    const userMsg: Message = { role: 'user', content: text.trim() };
-    
-    // Update conversation with user message
+    // Process file attachments
+    const attachments: { name: string; type: string; base64: string; url?: string }[] = [];
+    for (const file of pendingFiles) {
+      try {
+        const base64 = await fileToBase64(file);
+        attachments.push({
+          name: file.name,
+          type: file.type,
+          base64,
+          url: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+        });
+      } catch (err) {
+        console.error('Failed to read file:', err);
+      }
+    }
+
+    const messageText = text.trim() || (attachments.length > 0 ? `📎 Attached ${attachments.length} file(s) for analysis` : '');
+    const userMsg: Message = { role: 'user', content: messageText, attachments };
+
     const convo = conversations.find(c => c.id === currentId) || createNewConversation();
     const allMessages = [...convo.messages, userMsg];
-    
+
     updateConvo(currentId!, c => ({
       ...c,
       messages: allMessages,
-      title: c.messages.length === 0 ? text.trim().slice(0, 50) + (text.trim().length > 50 ? '...' : '') : c.title,
+      title: c.messages.length === 0 ? messageText.slice(0, 50) + (messageText.length > 50 ? '...' : '') : c.title,
       updatedAt: Date.now(),
     }));
-    
+
     setInput('');
+    setPendingFiles([]);
     setIsLoading(true);
 
     let assistantContent = '';
 
     try {
-      // Get current user session for auth context
       const { data: { session } } = await supabase.auth.getSession();
       const authToken = session?.access_token;
+
+      // Build messages for the API - include file data as content parts
+      const apiMessages = allMessages.map(m => {
+        if (m.attachments && m.attachments.length > 0) {
+          // For messages with attachments, build multimodal content
+          const parts: any[] = [];
+          if (m.content && !m.content.startsWith('📎')) {
+            parts.push({ type: 'text', text: m.content });
+          } else if (m.content) {
+            parts.push({ type: 'text', text: m.content });
+          }
+          for (const att of m.attachments) {
+            if (att.base64 && att.type.startsWith('image/')) {
+              parts.push({
+                type: 'image_url',
+                image_url: { url: `data:${att.type};base64,${att.base64}` },
+              });
+            } else if (att.base64) {
+              // For non-image files, include as text description
+              parts.push({
+                type: 'text',
+                text: `[Attached file: ${att.name} (${att.type})]`,
+              });
+            }
+          }
+          return { role: m.role, content: parts };
+        }
+        return { role: m.role, content: m.content };
+      });
 
       const resp = await fetch(CHAT_URL, {
         method: 'POST',
@@ -150,7 +225,7 @@ export function SOCChatWidget() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken || publishableKey}`,
         },
-        body: JSON.stringify({ messages: allMessages }),
+        body: JSON.stringify({ messages: apiMessages }),
       });
 
       if (!resp.ok || !resp.body) {
@@ -213,6 +288,13 @@ export function SOCChatWidget() {
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(input);
+    }
+  };
+
   if (!isOpen) {
     return (
       <button
@@ -230,43 +312,45 @@ export function SOCChatWidget() {
       'fixed z-50 flex flex-col rounded-xl border border-border bg-card shadow-2xl animate-scale-in transition-all duration-300',
       isExpanded
         ? 'bottom-4 right-4 left-4 top-20 md:left-auto md:w-[700px] md:top-4'
-        : 'bottom-6 right-6 w-[400px] h-[560px]'
+        : 'bottom-6 right-6 w-[420px] h-[600px]'
     )}>
       {/* Header */}
-      <div className="flex items-center justify-between rounded-t-xl bg-primary/10 border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between rounded-t-xl bg-gradient-to-r from-primary/15 to-primary/5 border-b border-border px-4 py-3">
+        <div className="flex items-center gap-2.5">
           {showHistory ? (
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowHistory(false)}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
           ) : (
             <div className="relative">
-              <Bot className="h-5 w-5 text-primary" />
-              <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-success animate-pulse" />
+              <div className="rounded-lg bg-primary/20 p-1.5">
+                <Bot className="h-4 w-4 text-primary" />
+              </div>
+              <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-card" />
             </div>
           )}
           <div>
             <p className="text-sm font-semibold text-foreground">
-              {showHistory ? 'Chat History' : 'SOCMind AI Assistant'}
+              {showHistory ? 'Chat History' : 'SOCMind AI'}
             </p>
-            {!showHistory && <p className="text-xs text-muted-foreground">Real-time SOC Intelligence</p>}
+            {!showHistory && <p className="text-[10px] text-muted-foreground">Online — Real-time SOC Intelligence</p>}
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           {!showHistory && (
             <>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={startNewChat} title="New Chat">
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={startNewChat} title="New Chat">
                 <Plus className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowHistory(true)} title="Chat History">
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => setShowHistory(true)} title="Chat History">
                 <History className="h-4 w-4" />
               </Button>
             </>
           )}
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsExpanded(!isExpanded)}>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => setIsExpanded(!isExpanded)}>
             {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setIsOpen(false); setShowHistory(false); }}>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => { setIsOpen(false); setShowHistory(false); }}>
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -323,17 +407,20 @@ export function SOCChatWidget() {
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.length === 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Bot className="h-5 w-5 text-primary" />
-                  <p className="text-sm">Hi! I'm SOCMind AI Assistant. How can I help you?</p>
+              <div className="space-y-4 pt-4">
+                <div className="text-center">
+                  <div className="inline-flex items-center justify-center rounded-xl bg-primary/10 p-3 mb-3">
+                    <Bot className="h-6 w-6 text-primary" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground">Hi! I'm SOCMind AI</p>
+                  <p className="text-xs text-muted-foreground mt-1">Ask me anything about your incidents & threats</p>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
                   {QUICK_PROMPTS.map((prompt, i) => (
                     <button
                       key={i}
                       onClick={() => sendMessage(prompt)}
-                      className="text-left text-xs rounded-lg border border-border bg-secondary/50 px-3 py-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                      className="text-left text-xs rounded-lg border border-border/50 bg-secondary/30 px-3 py-2.5 text-muted-foreground hover:bg-secondary hover:text-foreground hover:border-border transition-all"
                     >
                       {prompt}
                     </button>
@@ -343,25 +430,46 @@ export function SOCChatWidget() {
             )}
 
             {messages.map((msg, i) => (
-              <div key={i} className={cn('flex gap-2', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+              <div key={i} className={cn('flex gap-2.5', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                 {msg.role === 'assistant' && (
                   <div className="flex-shrink-0 mt-1">
-                    <div className="rounded-full bg-primary/20 p-1.5">
+                    <div className="rounded-lg bg-primary/15 p-1.5">
                       <Bot className="h-3.5 w-3.5 text-primary" />
                     </div>
                   </div>
                 )}
                 <div className={cn(
-                  'max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap',
+                  'max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm',
                   msg.role === 'user'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-secondary text-foreground'
-                )}>
-                  {msg.content}
+                    ? 'bg-primary text-primary-foreground rounded-br-sm'
+                    : 'bg-secondary/80 text-foreground rounded-bl-sm'
+                )} dir="auto" style={{ unicodeBidi: 'plaintext' } as React.CSSProperties}>
+                  {/* Attachment previews */}
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {msg.attachments.map((att, idx) => (
+                        att.type.startsWith('image/') && att.url ? (
+                          <img key={idx} src={att.url} alt={att.name} className="max-w-[160px] max-h-[120px] rounded-md object-cover border border-white/10" />
+                        ) : (
+                          <div key={idx} className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/10 text-[10px]">
+                            <FileText className="h-3 w-3" />
+                            {att.name}
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  )}
+                  {msg.role === 'assistant' ? (
+                    <div className="prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_p]:my-1 [&_li]:my-0.5 [&_code]:text-primary [&_code]:bg-primary/10 [&_code]:px-1 [&_code]:rounded [&_pre]:bg-black/20 [&_pre]:rounded-lg [&_pre]:p-2 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm" dir="auto" style={{ unicodeBidi: 'plaintext' } as React.CSSProperties}>
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <span dir="auto" style={{ unicodeBidi: 'plaintext' } as React.CSSProperties}>{msg.content}</span>
+                  )}
                 </div>
                 {msg.role === 'user' && (
                   <div className="flex-shrink-0 mt-1">
-                    <div className="rounded-full bg-secondary p-1.5">
+                    <div className="rounded-lg bg-secondary p-1.5">
                       <User className="h-3.5 w-3.5 text-muted-foreground" />
                     </div>
                   </div>
@@ -370,12 +478,16 @@ export function SOCChatWidget() {
             ))}
 
             {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
-              <div className="flex gap-2">
-                <div className="rounded-full bg-primary/20 p-1.5 mt-1">
+              <div className="flex gap-2.5">
+                <div className="rounded-lg bg-primary/15 p-1.5 mt-1">
                   <Bot className="h-3.5 w-3.5 text-primary" />
                 </div>
-                <div className="bg-secondary rounded-lg px-3 py-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <div className="bg-secondary/80 rounded-xl rounded-bl-sm px-3.5 py-2.5">
+                  <div className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
+                  </div>
                 </div>
               </div>
             )}
@@ -383,25 +495,73 @@ export function SOCChatWidget() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
-          <div className="border-t border-border p-3">
-            <form
-              onSubmit={e => { e.preventDefault(); sendMessage(input); }}
-              className="flex gap-2"
-            >
+          {/* Input area */}
+          <div className="border-t border-border p-3 space-y-2">
+            {/* Pending files preview */}
+            {pendingFiles.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {pendingFiles.map((file, idx) => {
+                  const isImage = file.type.startsWith('image/');
+                  return (
+                    <div key={idx} className="relative group flex items-center gap-1.5 px-2 py-1 rounded-lg border border-border/50 bg-secondary/30 text-xs">
+                      {isImage ? (
+                        <img src={URL.createObjectURL(file)} alt={file.name} className="h-8 w-8 rounded object-cover" />
+                      ) : (
+                        <FileText className="h-3.5 w-3.5 text-primary" />
+                      )}
+                      <span className="text-foreground max-w-[80px] truncate">{file.name}</span>
+                      <button
+                        onClick={() => removePendingFile(idx)}
+                        className="h-4 w-4 rounded-full bg-destructive/80 text-destructive-foreground flex items-center justify-center hover:bg-destructive"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex items-end gap-2">
+              {/* File upload */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading}
+                title="Attach files or images"
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
               <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,.pdf,.txt,.csv,.json,.log,.xml,.yaml,.yml"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <textarea
                 ref={inputRef}
-                type="text"
                 value={input}
                 onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
                 placeholder="Ask about any incident or threat..."
-                className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                className="flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary min-h-[36px] max-h-[100px]"
+                dir="auto"
                 disabled={isLoading}
+                rows={1}
               />
-              <Button type="submit" size="icon" disabled={isLoading || !input.trim()} className="h-9 w-9">
+              <Button
+                type="button"
+                size="icon"
+                disabled={isLoading || (!input.trim() && pendingFiles.length === 0)}
+                className="h-8 w-8 shrink-0"
+                onClick={() => sendMessage(input)}
+              >
                 <Send className="h-4 w-4" />
               </Button>
-            </form>
+            </div>
           </div>
         </>
       )}
