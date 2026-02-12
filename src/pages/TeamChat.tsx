@@ -110,7 +110,7 @@ interface PrivateChannel {
 
 export default function TeamChat() {
   const navigate = useNavigate();
-  const { user, profile, role } = useAuth();
+  const { user, profile, role, isDemoUser } = useAuth();
   const HIGH_ROLES = ['admin', 'ciso', 'soc_manager', 'soc_tier_3'];
   const canPinAny = role ? HIGH_ROLES.includes(role) : false;
   const canDeleteAny = role ? ['admin', 'ciso', 'soc_manager'].includes(role) : false;
@@ -445,6 +445,7 @@ export default function TeamChat() {
   };
 
   const sendMessage = async () => {
+    if (isDemoUser) { toast.error('Locked in Demo Mode'); return; }
     if ((!newMessage.trim() && pendingFiles.length === 0) || !user) return;
     setSending(true);
     setUploading(pendingFiles.length > 0);
@@ -653,7 +654,8 @@ export default function TeamChat() {
               </button>
             ))}
 
-            {/* Private Channels */}
+            {/* Private Channels - hidden for demo users */}
+            {!isDemoUser && (
             <div className="mt-3 pt-3 border-t border-border/30">
               <div className="flex items-center justify-between px-3 mb-2">
                 <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Private Channels</span>
@@ -704,6 +706,7 @@ export default function TeamChat() {
                 <p className="px-3 py-1 text-[10px] text-muted-foreground italic">No private channels yet</p>
               )}
             </div>
+            )}
           </div>
 
           {/* Pinned messages shortcut */}
@@ -732,7 +735,8 @@ export default function TeamChat() {
             </div>
           )}
 
-          {/* Display Name Editor */}
+          {/* Display Name Editor - hidden for demo */}
+          {!isDemoUser && (
           <div className="p-3 border-t border-border/50">
             {editingDisplayName ? (
               <div className="space-y-2">
@@ -776,6 +780,17 @@ export default function TeamChat() {
               </div>
             )}
           </div>
+          )}
+          {isDemoUser && role && (
+            <div className="p-3 border-t border-border/50">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className={cn('text-[9px] px-1.5 py-0', ROLE_BADGE_COLORS[role] || '')}>
+                  {ROLE_LABELS[role] || role}
+                </Badge>
+                <span className="text-[10px] text-muted-foreground">Your role</span>
+              </div>
+            </div>
+          )}
 
           {/* Online users */}
           <OnlineUsers />
@@ -1085,6 +1100,12 @@ export default function TeamChat() {
             )}
 
             {/* Priority selector + attach + input */}
+            {isDemoUser ? (
+              <div className="flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-secondary/30 border border-border/50">
+                <Lock className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Chat is read-only in Demo Mode</span>
+              </div>
+            ) : (
             <div className="flex items-center gap-2">
               {/* Priority toggle */}
               <button
@@ -1145,6 +1166,7 @@ export default function TeamChat() {
                 {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
               </Button>
             </div>
+            )}
             </div>
           </div>
         </div>
