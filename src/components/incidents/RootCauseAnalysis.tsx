@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Brain, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/backend/client';
@@ -11,7 +11,32 @@ interface RootCauseAnalysisProps {
 export function RootCauseAnalysis({ incidentId }: RootCauseAnalysisProps) {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [expanded, setExpanded] = useState(true);
+
+  // Load persisted RCA from DB on mount
+  useEffect(() => {
+    const loadSavedAnalysis = async () => {
+      try {
+        const { data } = await supabase
+          .from('incidents')
+          .select('ai_analysis')
+          .eq('id', incidentId)
+          .single();
+
+        const rca = (data?.ai_analysis as any)?.root_cause_analysis;
+        if (rca) {
+          setAnalysis(rca);
+        }
+      } catch (err) {
+        console.error('Failed to load saved RCA:', err);
+      } finally {
+        setInitialLoading(false);
+      }
+    };
+
+    loadSavedAnalysis();
+  }, [incidentId]);
 
   const runAnalysis = async () => {
     setLoading(true);
@@ -23,8 +48,29 @@ export function RootCauseAnalysis({ incidentId }: RootCauseAnalysisProps) {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      setAnalysis(data.analysis);
+      const analysisText = data.analysis;
+      setAnalysis(analysisText);
       setExpanded(true);
+
+      // Persist RCA to incident's ai_analysis field
+      const { data: incident } = await supabase
+        .from('incidents')
+        .select('ai_analysis')
+        .eq('id', incidentId)
+        .single();
+
+      const existingAnalysis = (incident?.ai_analysis as Record<string, unknown>) || {};
+      await supabase
+        .from('incidents')
+        .update({
+          ai_analysis: {
+            ...existingAnalysis,
+            root_cause_analysis: analysisText,
+            rca_generated_at: new Date().toISOString(),
+          } as any,
+        })
+        .eq('id', incidentId);
+
       toast.success('Root Cause Analysis complete');
     } catch (err) {
       console.error('RCA error:', err);
@@ -33,6 +79,14 @@ export function RootCauseAnalysis({ incidentId }: RootCauseAnalysisProps) {
       setLoading(false);
     }
   };
+
+  if (initialLoading) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-6 text-center">
+        <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-border bg-card">
