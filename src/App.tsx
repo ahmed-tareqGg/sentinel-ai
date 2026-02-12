@@ -33,7 +33,8 @@ import LiveLogs from "./pages/LiveLogs";
 import ThreatHunting from "./pages/ThreatHunting";
 import ThreatIntel from "./pages/ThreatIntel";
 import TeamChat from "./pages/TeamChat";
-
+import Profile from "./pages/Profile";
+import { CommandPalette } from "./components/CommandPalette";
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -43,6 +44,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <CommandPalette />
           <Routes>
             {/* Public Routes with PublicLayout */}
             <Route element={<PublicLayout />}>
@@ -78,6 +80,7 @@ const App = () => (
             <Route path="/threat-hunting" element={<ProtectedRoute><ThreatHunting /></ProtectedRoute>} />
             <Route path="/threat-intel" element={<ProtectedRoute><ThreatIntel /></ProtectedRoute>} />
             <Route path="/team-chat" element={<ProtectedRoute><TeamChat /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/admin/cloud" element={<ProtectedRoute requiredRole="ciso"><CloudAdmin /></ProtectedRoute>} />
             
             {/* Fallback */}
