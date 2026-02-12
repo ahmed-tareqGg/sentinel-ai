@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { AppLayout } from '@/components/layout/AppLayout';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield, Pencil } from 'lucide-react';
+import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield, Pencil, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { format, isToday, isYesterday } from 'date-fns';
@@ -93,6 +93,7 @@ const PRIORITY_OPTIONS = [
 ];
 
 export default function TeamChat() {
+  const navigate = useNavigate();
   const { user, profile, role } = useAuth();
   const HIGH_ROLES = ['admin', 'ciso', 'soc_manager', 'soc_tier_3'];
   const canPinAny = role ? HIGH_ROLES.includes(role) : false;
@@ -466,9 +467,19 @@ export default function TeamChat() {
   // Mark visible messages as read
   useMarkAsRead(displayMessages, channel);
 
+
   return (
-    <AppLayout title="Team Chat" subtitle="Real-time SOC communication with @mentions and #incident linking">
-      <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+    <div className="h-screen flex flex-col bg-background">
+      {/* Compact chat header */}
+      <div className="flex items-center gap-2 h-9 px-3 border-b border-border/50 bg-card/80 shrink-0">
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => navigate('/dashboard')}>
+          <ArrowLeft className="h-3.5 w-3.5" />
+        </Button>
+        <Hash className="h-3.5 w-3.5 text-primary" />
+        <span className="text-xs font-semibold text-foreground">Team Chat</span>
+        <span className="text-[10px] text-muted-foreground">— {channel}</span>
+      </div>
+      <div className="flex flex-1 overflow-hidden">
         {/* Channels sidebar */}
         <div className="w-56 border-r border-border/50 bg-card/50 flex flex-col shrink-0">
           <div className="p-4 border-b border-border/50">
@@ -855,6 +866,6 @@ export default function TeamChat() {
           </div>
         </div>
       </div>
-    </AppLayout>
+    </div>
   );
 }
