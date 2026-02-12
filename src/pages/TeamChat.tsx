@@ -135,7 +135,12 @@ export default function TeamChat() {
 
   // Private channels state
   const [privateChannels, setPrivateChannels] = useState<PrivateChannel[]>([]);
-  const [unlockedChannels, setUnlockedChannels] = useState<Set<string>>(new Set());
+  const [unlockedChannels, setUnlockedChannels] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('socmind_unlocked_channels');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  });
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const [joinTargetChannel, setJoinTargetChannel] = useState<PrivateChannel | null>(null);
@@ -196,7 +201,11 @@ export default function TeamChat() {
     } else {
       toast.success('Private channel created!');
       const channelId = data as string;
-      setUnlockedChannels(prev => new Set(prev).add(channelId));
+      setUnlockedChannels(prev => {
+        const next = new Set(prev).add(channelId);
+        localStorage.setItem('socmind_unlocked_channels', JSON.stringify([...next]));
+        return next;
+      });
       setChannel(`private:${channelId}`);
       setCreateDialogOpen(false);
       setNewChannelName('');
@@ -216,7 +225,11 @@ export default function TeamChat() {
       toast.error('Wrong password!');
     } else {
       toast.success(`Joined #${joinTargetChannel.name}`);
-      setUnlockedChannels(prev => new Set(prev).add(joinTargetChannel.id));
+      setUnlockedChannels(prev => {
+        const next = new Set(prev).add(joinTargetChannel.id);
+        localStorage.setItem('socmind_unlocked_channels', JSON.stringify([...next]));
+        return next;
+      });
       setChannel(`private:${joinTargetChannel.id}`);
       setJoinDialogOpen(false);
       setJoinPassword('');
@@ -583,10 +596,18 @@ export default function TeamChat() {
 
             {/* Private Channels */}
             <div className="mt-3 pt-3 border-t border-border/30">
-              <div className="flex items-center justify-between px-3 mb-1">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Private</span>
-                <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setCreateDialogOpen(true)} title="Create Private Channel">
-                  <Plus className="h-3 w-3" />
+              <div className="flex items-center justify-between px-3 mb-2">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Private Channels</span>
+              </div>
+              {/* Create & Join buttons */}
+              <div className="flex gap-1 px-2 mb-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-7 text-[10px] gap-1"
+                  onClick={() => setCreateDialogOpen(true)}
+                >
+                  <Plus className="h-3 w-3" /> Create
                 </Button>
               </div>
               {privateChannels.map(pc => {
@@ -612,12 +633,16 @@ export default function TeamChat() {
                   >
                     <Lock className="h-3.5 w-3.5" />
                     <span className="truncate flex-1 text-left">{pc.name}</span>
-                    {!isUnlocked && <LogIn className="h-3 w-3 opacity-50" />}
+                    {!isUnlocked && (
+                      <Badge variant="outline" className="text-[8px] px-1 py-0 border-primary/30 text-primary">
+                        Join
+                      </Badge>
+                    )}
                   </button>
                 );
               })}
               {privateChannels.length === 0 && (
-                <p className="px-3 py-1 text-[10px] text-muted-foreground">No private channels</p>
+                <p className="px-3 py-1 text-[10px] text-muted-foreground italic">No private channels yet</p>
               )}
             </div>
           </div>
