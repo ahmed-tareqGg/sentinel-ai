@@ -576,6 +576,89 @@ for a in data[-5:]:
     fi
 }
 
+cmd_test() {
+    echo -e "${YELLOW}============================================${NC}"
+    echo -e "${YELLOW}  SOCMind Linux Agent v$AGENT_VERSION - TEST MODE${NC}"
+    echo -e "${YELLOW}  No license required | Fast collection${NC}"
+    echo -e "${YELLOW}============================================${NC}"
+
+    local endpoint=$(read_config "api_endpoint")
+    local key=$(read_config "api_key")
+
+    [ -z "$endpoint" ] || [ -z "$key" ] && { echo -e "${RED}[FATAL] Not configured. Run '$0 configure' first.${NC}"; exit 1; }
+
+    # Clear position tracking so we read ALL current logs
+    echo -e "${CYAN}[TEST] Clearing position cache...${NC}"
+    rm -rf "$POSITION_DIR" 2>/dev/null
+    mkdir -p "$POSITION_DIR"
+
+    echo -e "${CYAN}[TEST] API Endpoint: $endpoint${NC}"
+    echo -e "${CYAN}[TEST] API Key: ${key:0:12}...${NC}"
+    echo -e "${GREEN}[TEST] Skipping license validation${NC}"
+    echo -e "${CYAN}[TEST] Collection interval: 10 seconds${NC}"
+    echo -e "${CYAN}[TEST] Starting... (Ctrl+C to stop)${NC}"
+    echo ""
+
+    local collection_interval=10
+    local action_poll_interval=5
+    local last_action_poll=0
+    local cycle=0
+
+    while true; do
+        cycle=$((cycle + 1))
+        echo -e "${CYAN}--- Cycle $cycle ---${NC}"
+
+        # Collect and send logs
+        local logs=$(collect_logs 200)
+        local log_count=$(echo "$logs" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+        echo -e "${CYAN}[TEST] Collected $log_count log entries${NC}"
+
+        if [ "$log_count" -gt 0 ]; then
+            # Show sample of what was collected
+            echo "$logs" | python3 -c "
+import sys, json
+logs = json.load(sys.stdin)
+for l in logs[:5]:
+    sev = l.get('severity', 0)
+    color = '\033[0;31m' if sev >= 4 else '\033[0;33m' if sev >= 3 else '\033[0m'
+    mitre = l.get('mitre_technique', '')
+    mitre_str = f' [MITRE:{mitre}]' if mitre else ''
+    print(f\"{color}  [SEV:{sev}]{mitre_str} {l.get('message','')[:120]}\033[0m\")
+if len(logs) > 5:
+    print(f'  ... and {len(logs)-5} more entries')
+" 2>/dev/null
+
+            send_logs "$endpoint" "$key" "$logs"
+        fi
+
+        # Poll for SOAR actions
+        local now=$(date +%s)
+        if [ $((now - last_action_poll)) -ge $action_poll_interval ]; then
+            local actions_resp=$(poll_actions "$endpoint" "$key")
+            local action_count=$(echo "$actions_resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('actions',[])))" 2>/dev/null || echo "0")
+
+            if [ "$action_count" -gt 0 ]; then
+                echo -e "${MAGENTA}[ACTION] Received $action_count action(s) from platform${NC}"
+                echo "$actions_resp" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for a in data.get('actions', []):
+    print(json.dumps(a))
+" 2>/dev/null | while IFS= read -r action_line; do
+                    execute_action "$action_line" "true"
+                done
+            fi
+            last_action_poll=$now
+        fi
+
+        # Heartbeat
+        send_heartbeat "$endpoint" "$key"
+
+        echo ""
+        sleep $collection_interval
+    done
+}
+
 cmd_help() {
     echo -e "${CYAN}SOCMind Linux Agent v$AGENT_VERSION - Universal Executor${NC}"
     echo -e "${CYAN}=====================================================${NC}"
@@ -584,6 +667,7 @@ cmd_help() {
     echo "  configure     - Set up API credentials and license"
     echo "  run           - Start agent (collect logs + execute actions)"
     echo "  run --dry-run - Start in simulation mode (no real actions)"
+    echo "  test          - Test mode (no license, fast collection, verbose)"
     echo "  status        - Check agent status and recent actions"
     echo "  help          - Show this message"
     echo ""
@@ -599,6 +683,7 @@ case "${1:-help}" in
     configure) cmd_configure ;;
     run)       cmd_run "$2" ;;
     start)     cmd_run "$2" ;;
+    test)      cmd_test ;;
     status)    cmd_status ;;
     help)      cmd_help ;;
     *)         cmd_help ;;
