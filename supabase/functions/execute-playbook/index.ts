@@ -124,11 +124,89 @@ const AUTO_RESPONSE_CONFIG = {
   actions: ['block_ip', 'isolate_host', 'disable_user']
 };
 
+async function findAgentForIncident(supabase: any, incident: Record<string, unknown>): Promise<string | null> {
+  // Try to find the agent/data source that originated this incident
+  // 1. Check raw_logs linked to this incident
+  const { data: rawLog } = await supabase
+    .from('raw_logs')
+    .select('data_source_id')
+    .eq('incident_id', incident.id)
+    .not('data_source_id', 'is', null)
+    .limit(1)
+    .single();
+  
+  if (rawLog?.data_source_id) return rawLog.data_source_id;
+
+  // 2. Check for any active agent matching the source IP
+  if (incident.src_ip) {
+    const { data: ds } = await supabase
+      .from('data_sources')
+      .select('id')
+      .eq('ip_address', incident.src_ip)
+      .eq('status', 'active')
+      .limit(1)
+      .single();
+    if (ds?.id) return ds.id;
+  }
+
+  // 3. Fallback: pick the most recently active agent
+  const { data: anyAgent } = await supabase
+    .from('data_sources')
+    .select('id')
+    .eq('status', 'active')
+    .order('last_heartbeat', { ascending: false })
+    .limit(1)
+    .single();
+
+  return anyAgent?.id || null;
+}
+
+async function dispatchToAgent(
+  supabase: any,
+  dataSourceId: string,
+  incident: Record<string, unknown>,
+  actionType: string,
+  target: string,
+  reason: string,
+  durationSeconds?: number,
+  executionMode: string = 'real'
+) {
+  const actionId = `PB-${Date.now().toString(36).toUpperCase()}`;
+  
+  const { data, error } = await supabase
+    .from('soar_actions')
+    .insert({
+      action_id: actionId,
+      incident_id: incident.id,
+      data_source_id: dataSourceId,
+      action_type: actionType,
+      target,
+      target_type: actionType.includes('ip') ? 'ip' : actionType.includes('user') ? 'user' : 'host',
+      status: 'approved',  // Ready for agent to pick up
+      execution_mode: executionMode,
+      reason,
+      duration_seconds: durationSeconds || null,
+      dispatched_at: new Date().toISOString(),
+      requires_approval: false,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error(`Failed to dispatch ${actionType}:`, error);
+    return null;
+  }
+
+  console.log(`⚡ Dispatched ${actionType} -> Agent ${dataSourceId} (${actionId})`);
+  return data;
+}
+
 async function executeAction(
   action: PlaybookAction, 
   incident: Record<string, unknown>, 
   supabase: any,
-  mode: 'live' | 'simulated' = 'live'
+  mode: 'live' | 'simulated' = 'live',
+  agentDataSourceId: string | null = null
 ) {
   console.log(`Executing action: ${action.type} (mode: ${mode})`, action.params);
   
@@ -146,6 +224,77 @@ async function executeAction(
     return results;
   }
 
+  // Actions that should be dispatched to the agent for OS-level execution
+  const agentActions = ['block_ip', 'unblock_ip', 'disable_user', 'enable_user', 'lock_user', 
+    'lock_account', 'isolate_host', 'unisolate_host', 'kill_process', 'quarantine_file', 
+    'delete_file', 'stop_service', 'start_service'];
+
+  if (agentActions.includes(action.type) && agentDataSourceId) {
+    // Extract target based on action type
+    let target = '';
+    let duration: number | undefined;
+    
+    switch (action.type) {
+      case 'block_ip':
+      case 'unblock_ip':
+        target = (incident.src_ip || action.params?.ip) as string || '';
+        duration = action.params?.duration as number;
+        break;
+      case 'disable_user':
+      case 'enable_user':
+      case 'lock_user':
+      case 'lock_account':
+        // Extract username from incident message or params
+        target = (action.params?.user || action.params?.target || '') as string;
+        if (!target) {
+          // Try to extract from incident message (e.g., "Failed password for fakeuser")
+          const msg = (incident.message || '') as string;
+          const userMatch = msg.match(/for (?:invalid user )?(\S+)/i) 
+            || msg.match(/user[= ]+(\S+)/i)
+            || msg.match(/account[= ]+(\S+)/i);
+          target = userMatch?.[1] || 'unknown';
+        }
+        duration = action.params?.duration as number || 180; // default 3 min lock
+        break;
+      case 'isolate_host':
+      case 'unisolate_host':
+        target = (incident.src_ip || action.params?.host) as string || '';
+        break;
+      case 'kill_process':
+        target = (action.params?.process || action.params?.target) as string || '';
+        break;
+      default:
+        target = (action.params?.target || incident.src_ip) as string || '';
+    }
+
+    const dispatched = await dispatchToAgent(
+      supabase, agentDataSourceId, incident,
+      action.type, target,
+      `Playbook action: ${action.type} for incident ${incident.incident_number}`,
+      duration
+    );
+
+    if (dispatched) {
+      results.status = 'dispatched_to_agent';
+      results.action_id = dispatched.action_id;
+      results.target = target;
+      results.agent_data_source_id = agentDataSourceId;
+      results.note = `Action dispatched to agent for OS-level execution`;
+      
+      // Log to incident timeline
+      await supabase.from('incident_timeline').insert({
+        incident_id: incident.id,
+        stage: `SOAR Action Dispatched: ${action.type}`,
+        details: `Target: ${target} | Agent: ${agentDataSourceId} | Action ID: ${dispatched.action_id}`,
+      });
+    } else {
+      results.status = 'dispatch_failed';
+      results.note = 'Failed to dispatch to agent';
+    }
+
+    return results;
+  }
+
   switch (action.type) {
     case 'notify_slack':
       const slackWebhook = Deno.env.get('SLACK_WEBHOOK_URL');
@@ -160,9 +309,9 @@ async function executeAction(
       break;
 
     case 'block_ip':
+      // Fallback: log to soar_actions when no agent available
       const ipToBlock = (incident.src_ip || action.params?.ip) as string;
       if (ipToBlock) {
-        // Log the block action in soar_actions table
         await supabase.from('soar_actions').insert({
           incident_id: incident.id,
           action_type: 'block_ip',
@@ -172,15 +321,35 @@ async function executeAction(
           details: {
             blocked_at: new Date().toISOString(),
             reason: `Auto-blocked due to ${incident.classification} - ${incident.risk_level}`,
-            firewall_rule: `DENY_INBOUND_${ipToBlock.replace(/\./g, '_')}`
+            firewall_rule: `DENY_INBOUND_${ipToBlock.replace(/\./g, '_')}`,
+            note: 'No agent available - logged only',
           }
         });
-        
         results.ip = ipToBlock;
-        results.firewall_rule = `DENY_INBOUND_${ipToBlock.replace(/\./g, '_')}`;
-        results.status = 'blocked';
-        results.note = 'IP block rule created - integrate with firewall API for enforcement';
-        console.log(`🚫 Blocked IP: ${ipToBlock}`);
+        results.status = 'logged';
+        results.note = 'No active agent found - action logged for manual execution';
+      }
+      break;
+
+    case 'disable_user':
+    case 'lock_user':
+      const userTarget = action.params?.user as string;
+      if (userTarget) {
+        await supabase.from('soar_actions').insert({
+          incident_id: incident.id,
+          action_type: action.type,
+          target: userTarget,
+          status: 'executed',
+          execution_mode: mode,
+          details: {
+            disabled_at: new Date().toISOString(),
+            reason: `User disabled due to security incident`,
+            note: 'No agent available - logged only',
+          }
+        });
+        results.user = userTarget;
+        results.status = 'logged';
+        results.note = 'No active agent found - action logged for manual execution';
       }
       break;
 
@@ -196,53 +365,25 @@ async function executeAction(
           details: {
             isolated_at: new Date().toISOString(),
             reason: `Host isolation due to ${incident.event_type}`,
-            edr_command: 'NETWORK_ISOLATE'
+            note: 'No agent available - logged only',
           }
         });
-        
         results.host = hostToIsolate;
-        results.status = 'isolated';
-        results.note = 'Host isolation initiated - integrate with EDR API for enforcement';
-        console.log(`🔒 Isolated host: ${hostToIsolate}`);
-      }
-      break;
-
-    case 'disable_user':
-      const userToDisable = action.params?.user as string;
-      if (userToDisable) {
-        await supabase.from('soar_actions').insert({
-          incident_id: incident.id,
-          action_type: 'disable_user',
-          target: userToDisable,
-          status: 'executed',
-          execution_mode: mode,
-          details: {
-            disabled_at: new Date().toISOString(),
-            reason: `User disabled due to security incident`
-          }
-        });
-        
-        results.user = userToDisable;
-        results.status = 'disabled';
-        results.note = 'User disable request logged - integrate with IAM API for enforcement';
-        console.log(`👤 Disabled user: ${userToDisable}`);
+        results.status = 'logged';
       }
       break;
 
     case 'reset_credentials':
-      const targetUser = action.params?.user as string;
+      const resetUser = action.params?.user as string;
       await supabase.from('soar_actions').insert({
         incident_id: incident.id,
         action_type: 'reset_credentials',
-        target: targetUser || 'affected_users',
+        target: resetUser || 'affected_users',
         status: 'executed',
         execution_mode: mode,
-        details: {
-          reset_at: new Date().toISOString(),
-          type: 'password_reset'
-        }
+        details: { reset_at: new Date().toISOString(), type: 'password_reset' }
       });
-      results.user = targetUser;
+      results.user = resetUser;
       results.status = 'reset_initiated';
       break;
 
@@ -254,14 +395,10 @@ async function executeAction(
         target: ticketId,
         status: 'executed',
         execution_mode: mode,
-        details: {
-          ticket_id: ticketId,
-          created_at: new Date().toISOString(),
-          incident_number: incident.incident_number
-        }
+        details: { ticket_id: ticketId, created_at: new Date().toISOString(), incident_number: incident.incident_number }
       });
       results.ticket = ticketId;
-      results.note = 'Ticket created - integrate with ticketing system';
+      results.note = 'Ticket created';
       console.log(`🎫 Created ticket: ${ticketId}`);
       break;
 
@@ -273,13 +410,9 @@ async function executeAction(
         target: team,
         status: 'executed',
         execution_mode: mode,
-        details: {
-          escalated_to: team,
-          escalated_at: new Date().toISOString()
-        }
+        details: { escalated_to: team, escalated_at: new Date().toISOString() }
       });
       results.escalated_to = team;
-      results.note = 'Escalation logged';
       console.log(`📢 Escalated to: ${team}`);
       break;
 
@@ -291,10 +424,7 @@ async function executeAction(
         target: geoIp,
         status: 'executed',
         execution_mode: mode,
-        details: {
-          blocked_region: 'auto-detected',
-          blocked_at: new Date().toISOString()
-        }
+        details: { blocked_region: 'auto-detected', blocked_at: new Date().toISOString() }
       });
       results.ip = geoIp;
       results.status = 'geo_blocked';
@@ -439,6 +569,7 @@ serve(async (req) => {
       if (risk_level === 'Critical') {
         actionsToExecute = [
           { type: 'notify_slack', params: { message: `🚨 CRITICAL: ${incident.message}` } },
+          { type: 'disable_user', params: { user: '' } },  // user extracted from incident
           { type: 'block_ip', params: { ip: incident.src_ip } },
           { type: 'isolate_host', params: { host: incident.src_ip } },
           { type: 'escalate', params: { team: 'SOC Leadership' } },
@@ -446,13 +577,19 @@ serve(async (req) => {
         ];
         matchedPlaybook = { name: 'Critical Auto-Response' };
       } else if (risk_level === 'High' || classification === 'True Positive') {
+        // Check if it's a brute force / auth incident
+        const isBruteForce = (incident.event_type || '').toString().toLowerCase().includes('brute') ||
+          (incident.message || '').toString().toLowerCase().includes('failed password') ||
+          (incident.mitre_technique || '').toString().includes('T1110');
+
         actionsToExecute = [
           { type: 'notify_slack', params: { message: `⚠️ HIGH RISK: ${incident.message || incident.event_type}` } },
+          ...(isBruteForce ? [{ type: 'disable_user', params: { user: '' } }] : []),
           { type: 'block_ip', params: { ip: incident.src_ip } },
           { type: 'create_ticket' },
           { type: 'escalate', params: { team: 'SOC Analysts' } },
         ];
-        matchedPlaybook = { name: 'High Risk Auto-Response' };
+        matchedPlaybook = { name: isBruteForce ? 'Brute Force Auto-Response' : 'High Risk Auto-Response' };
       } else if (risk_level === 'Medium') {
         actionsToExecute = [
           { type: 'create_ticket' },
@@ -490,10 +627,14 @@ serve(async (req) => {
       .select()
       .single();
 
+    // Find the agent to dispatch OS-level actions to
+    const agentDataSourceId = await findAgentForIncident(supabase, incident);
+    console.log(`🔍 Agent for incident: ${agentDataSourceId || 'none found'}`);
+
     // Execute each action
     const actionResults = [];
     for (const action of actionsToExecute) {
-      const result = await executeAction(action, incident, supabase);
+      const result = await executeAction(action, incident, supabase, 'live', agentDataSourceId);
       actionResults.push(result);
     }
 
