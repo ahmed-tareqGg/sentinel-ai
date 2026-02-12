@@ -17,7 +17,8 @@ import {
   Target,
   Server,
   ScrollText,
-  ChevronRight
+  ChevronRight,
+  MessageSquare
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth, AppRole } from '@/hooks/useAuth';
@@ -43,6 +44,7 @@ const navGroups = [
       { icon: Target, label: 'MITRE Coverage', path: '/mitre-coverage' },
       { icon: Zap, label: 'Playbooks', path: '/playbooks' },
       { icon: ClipboardCheck, label: 'Approvals', path: '/approvals' },
+      { icon: MessageSquare, label: 'Team Chat', path: '/team-chat' },
     ],
   },
   {

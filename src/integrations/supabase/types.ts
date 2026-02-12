@@ -304,6 +304,56 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_messages: {
+        Row: {
+          channel: string
+          content: string
+          created_at: string
+          id: string
+          incident_id: string | null
+          is_edited: boolean | null
+          mentions: string[] | null
+          sender_email: string | null
+          sender_id: string
+          sender_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          channel?: string
+          content: string
+          created_at?: string
+          id?: string
+          incident_id?: string | null
+          is_edited?: boolean | null
+          mentions?: string[] | null
+          sender_email?: string | null
+          sender_id: string
+          sender_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          content?: string
+          created_at?: string
+          id?: string
+          incident_id?: string | null
+          is_edited?: boolean | null
+          mentions?: string[] | null
+          sender_email?: string | null
+          sender_id?: string
+          sender_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       compliance_audit_logs: {
         Row: {
           action: string
