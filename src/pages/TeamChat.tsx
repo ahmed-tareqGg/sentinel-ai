@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield, Pencil, ArrowLeft, Lock, Plus, LogIn, PanelLeftClose, PanelLeftOpen, Paperclip, Image, FileText, Download } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
@@ -48,6 +48,7 @@ interface UserProfile {
   email: string;
   full_name: string | null;
   display_name: string | null;
+  avatar_url: string | null;
 }
 
 interface UserRole {
@@ -168,7 +169,7 @@ export default function TeamChat() {
   useEffect(() => {
     const loadUsers = async () => {
       const [profilesRes, rolesRes] = await Promise.all([
-        supabase.from('profiles').select('id, email, full_name, display_name'),
+        supabase.from('profiles').select('id, email, full_name, display_name, avatar_url'),
         supabase.from('user_roles').select('user_id, role'),
       ]);
       if (profilesRes.data) setUsers(profilesRes.data as UserProfile[]);
@@ -605,7 +606,7 @@ export default function TeamChat() {
       toast.success('Display name updated');
       setEditingDisplayName(false);
       // Refresh users
-      const { data } = await supabase.from('profiles').select('id, email, full_name, display_name');
+      const { data } = await supabase.from('profiles').select('id, email, full_name, display_name, avatar_url');
       if (data) setUsers(data as UserProfile[]);
     }
   };
@@ -617,6 +618,22 @@ export default function TeamChat() {
   // Mark visible messages as read
   useMarkAsRead(displayMessages, channel);
 
+
+  // Block demo users entirely
+  if (isDemoUser) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <Lock className="h-10 w-10 text-muted-foreground mx-auto" />
+          <h1 className="text-xl font-bold text-foreground">Access Denied</h1>
+          <p className="text-sm text-muted-foreground">Team Chat is not available in Demo Mode.</p>
+          <Button variant="outline" onClick={() => navigate('/dashboard')}>
+            <ArrowLeft className="h-4 w-4 mr-2" /> Back to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -853,6 +870,9 @@ export default function TeamChat() {
                     )}
                   >
                     <Avatar className="h-8 w-8 shrink-0 mt-0.5">
+                      {users.find(u => u.id === msg.sender_id)?.avatar_url && (
+                        <AvatarImage src={users.find(u => u.id === msg.sender_id)!.avatar_url!} className="object-cover" />
+                      )}
                       <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
                         {getInitials(nameInfo.displayName, msg.sender_email)}
                       </AvatarFallback>
