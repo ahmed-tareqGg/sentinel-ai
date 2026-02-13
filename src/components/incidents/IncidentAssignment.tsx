@@ -62,6 +62,19 @@ export function IncidentAssignment({
 
   const handleAssign = async () => {
     if (!user || !canModifyData) return;
+    
+    // Verify session is still valid before attempting
+    const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !currentSession) {
+      toast.error('Session expired — please log in again', {
+        action: {
+          label: 'Login',
+          onClick: () => navigate('/auth'),
+        },
+      });
+      return;
+    }
+
     setAssigning(true);
 
     try {
@@ -86,9 +99,19 @@ export function IncidentAssignment({
 
       toast.success('Incident assigned to you');
       onUpdate();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Assignment failed:', err);
-      toast.error('Failed to assign incident');
+      const msg = err?.message || '';
+      if (msg.includes('JWT') || msg.includes('token') || msg.includes('refresh') || err?.code === 'PGRST301') {
+        toast.error('Session expired — please log in again', {
+          action: {
+            label: 'Login',
+            onClick: () => navigate('/auth'),
+          },
+        });
+      } else {
+        toast.error(`Failed to assign: ${msg || 'Unknown error'}`);
+      }
     } finally {
       setAssigning(false);
     }
