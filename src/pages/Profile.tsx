@@ -136,7 +136,7 @@ export default function Profile() {
           supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('incident_owner_id', targetUserId).eq('status', 'Resolved'),
           supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('incident_owner_id', targetUserId).eq('status', 'Closed'),
           supabase.from('analyst_notes').select('id', { count: 'exact', head: true }).eq('author_id', targetUserId),
-          supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('escalated_to', profileData?.email || ''),
+          supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('incident_owner_id', targetUserId).eq('status', 'Escalated'),
           supabase.from('playbook_executions').select('id', { count: 'exact', head: true }).eq('incident_id', targetUserId), // approximate
           supabase.from('chat_messages').select('id', { count: 'exact', head: true }).eq('sender_id', targetUserId),
           supabase.from('approval_requests').select('id', { count: 'exact', head: true }).eq('approved_by', targetUserId),
@@ -296,12 +296,15 @@ export default function Profile() {
     );
   }
 
+  const primaryRole = targetRoles[0] || '';
+  const isTier1 = primaryRole === 'soc_tier_1';
+
   const statCards = [
     { icon: AlertTriangle, label: 'Assigned', value: stats.assigned, color: 'text-amber-400' },
     { icon: CheckCircle, label: 'Resolved', value: stats.resolved, color: 'text-emerald-400' },
-    { icon: Eye, label: 'Closed', value: stats.closed, color: 'text-blue-400' },
+    ...(!isTier1 ? [{ icon: Eye, label: 'Closed', value: stats.closed, color: 'text-blue-400' }] : []),
     { icon: Activity, label: 'Notes', value: stats.notes, color: 'text-primary' },
-    { icon: Zap, label: 'Escalated To', value: stats.escalated, color: 'text-orange-400' },
+    { icon: Zap, label: 'Escalated', value: stats.escalated, color: 'text-orange-400' },
     { icon: MessageSquare, label: 'Messages', value: stats.chatMessages, color: 'text-cyan-400' },
     { icon: ClipboardList, label: 'Approvals', value: stats.approvals, color: 'text-purple-400' },
   ];
