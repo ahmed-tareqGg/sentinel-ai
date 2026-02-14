@@ -42,13 +42,30 @@ export function IncidentAssignment({
   const [escalateOpen, setEscalateOpen] = useState(false);
   const [escalating, setEscalating] = useState(false);
   const [escalateReason, setEscalateReason] = useState('');
-  const [escalateTo, setEscalateTo] = useState<string>('tier2');
+  const [escalateTo, setEscalateTo] = useState<string>('');
 
   const isOwner = user?.id === ownerId;
   const isAssigned = !!ownerId;
 
   const canReassign = canModifyData && role && ['soc_manager', 'admin', 'ciso'].includes(role);
   const canEscalate = canModifyData && role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'admin'].includes(role);
+
+  // Determine which escalation tiers are available (only tiers ABOVE current role)
+  const ROLE_TIER_LEVEL: Record<string, number> = {
+    soc_tier_1: 1,
+    soc_tier_2: 2,
+    soc_tier_3: 3,
+    soc_manager: 4,
+    admin: 5,
+    ciso: 5,
+  };
+  const currentTierLevel = ROLE_TIER_LEVEL[role || ''] ?? 0;
+
+  const escalationOptions = [
+    { value: 'tier2', label: 'SOC Tier 2 — Senior Analyst', level: 2 },
+    { value: 'tier3', label: 'SOC Tier 3 — Incident Commander', level: 3 },
+    { value: 'manager', label: 'SOC Manager', level: 4 },
+  ].filter(opt => opt.level > currentTierLevel);
 
   const roleLabels: Record<string, string> = {
     soc_tier_1: 'SOC Tier 1',
@@ -322,12 +339,15 @@ export function IncidentAssignment({
         )
       )}
 
-      {/* Escalate Button */}
-      {canEscalate && status !== 'Closed' && status !== 'Resolved' && (
+      {/* Escalate Button — hidden on Closed/Resolved/Escalated, and only if higher tiers exist */}
+      {canEscalate && !['Closed', 'Resolved'].includes(status) && escalationOptions.length > 0 && (
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setEscalateOpen(true)}
+          onClick={() => {
+            setEscalateTo(escalationOptions[0].value);
+            setEscalateOpen(true);
+          }}
           className="border-warning/30 text-warning hover:bg-warning/10"
         >
           <ArrowUpRight className="h-4 w-4 mr-1" />
@@ -344,14 +364,14 @@ export function IncidentAssignment({
           <div className="space-y-4 mt-2">
             <div className="space-y-2">
               <Label>Escalate To</Label>
-              <Select value={escalateTo} onValueChange={setEscalateTo}>
+              <Select value={escalateTo} onValueChange={setEscalateTo} defaultValue={escalationOptions[0]?.value}>
                 <SelectTrigger className="bg-secondary/50">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="tier2">SOC Tier 2 — Senior Analyst</SelectItem>
-                  <SelectItem value="tier3">SOC Tier 3 — Incident Commander</SelectItem>
-                  <SelectItem value="manager">SOC Manager</SelectItem>
+                  {escalationOptions.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
