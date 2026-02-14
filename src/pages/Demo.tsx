@@ -35,6 +35,8 @@ import { useIncidents } from '@/hooks/useIncidents';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { DemoScenarioComparison } from '@/components/demo/DemoScenarioComparison';
 import { DemoKeyHighlights } from '@/components/demo/DemoKeyHighlights';
+import { DemoCompetitiveSection } from '@/components/demo/DemoCompetitiveSection';
+import { DemoLiveActivityFeed } from '@/components/demo/DemoLiveActivityFeed';
 import ReactMarkdown from 'react-markdown';
 
 interface DemoStep {
@@ -248,6 +250,7 @@ export default function Demo() {
   const [totalTime, setTotalTime] = useState(0);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [showInvestorTips, setShowInvestorTips] = useState(true);
+  const [autoPlay, setAutoPlay] = useState(false);
   
   const [showDecisionDetails, setShowDecisionDetails] = useState(false);
   const [animatedMetrics, setAnimatedMetrics] = useState<{ [key: string]: number }>({});
@@ -570,7 +573,7 @@ Without automated response:
                   Watch real AI reasoning, not scripted automation
                 </CardDescription>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
                   <Switch 
                     id="investor-tips" 
@@ -578,6 +581,18 @@ Without automated response:
                     onCheckedChange={setShowInvestorTips}
                   />
                   <Label htmlFor="investor-tips" className="text-sm">Investor Tips</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch 
+                    id="auto-play" 
+                    checked={autoPlay}
+                    onCheckedChange={(v) => {
+                      setAutoPlay(v);
+                      if (v && currentStep === -1) runDemo();
+                    }}
+                    disabled={isRunning}
+                  />
+                  <Label htmlFor="auto-play" className="text-sm">Auto-Play</Label>
                 </div>
                 {!isRunning && currentStep === -1 && (
                   <Button onClick={runDemo} className="gap-2" size="lg">
@@ -875,12 +890,48 @@ Without automated response:
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="prose prose-sm dark:prose-invert max-w-none overflow-auto max-h-[500px] bg-secondary/50 p-6 rounded-lg">
+              <div className="prose prose-sm dark:prose-invert max-w-none overflow-auto max-h-[600px] bg-secondary/50 p-6 rounded-lg 
+                prose-headings:text-foreground prose-strong:text-foreground prose-th:text-foreground
+                prose-td:text-muted-foreground prose-td:py-2 prose-th:py-2
+                prose-table:border-border prose-hr:border-border">
                 <ReactMarkdown>{executiveSummary}</ReactMarkdown>
               </div>
             </CardContent>
           </Card>
         )}
+
+        {/* Why SOCMind - Competitive Comparison */}
+        <Card className="border-primary/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-primary" />
+              Why SOCMind?
+            </CardTitle>
+            <CardDescription>
+              How SOCMind compares to traditional SOAR platforms
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DemoCompetitiveSection 
+              mttd={metrics.mttd > 0 ? `${metrics.mttd} min` : '< 1 min'}
+              mttr={metrics.mttr > 0 ? `${metrics.mttr} min` : '< 1 min'}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Live Activity Feed */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Activity className="h-4 w-4 text-green-500" />
+              Real-Time SOC Activity
+            </CardTitle>
+            <CardDescription>Live incidents being processed right now</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DemoLiveActivityFeed />
+          </CardContent>
+        </Card>
       </div>
     </AppLayout>
   );
