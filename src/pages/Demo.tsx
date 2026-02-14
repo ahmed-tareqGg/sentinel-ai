@@ -9,7 +9,6 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { 
   Play, 
-  Pause, 
   RotateCcw, 
   CheckCircle2, 
   Clock, 
@@ -23,17 +22,10 @@ import {
   Zap,
   ArrowRight,
   Loader2,
-  XCircle,
   TrendingDown,
-  TrendingUp,
   DollarSign,
-  Target,
   Scale,
   Sparkles,
-  AlertOctagon,
-  User,
-  Lightbulb,
-  ChevronRight,
   Activity
 } from 'lucide-react';
 import { supabase } from '@/integrations/backend/client';
@@ -41,6 +33,9 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useIncidents } from '@/hooks/useIncidents';
 import { useAnalytics } from '@/hooks/useAnalytics';
+import { DemoScenarioComparison } from '@/components/demo/DemoScenarioComparison';
+import { DemoKeyHighlights } from '@/components/demo/DemoKeyHighlights';
+import ReactMarkdown from 'react-markdown';
 
 interface DemoStep {
   id: string;
@@ -253,7 +248,7 @@ export default function Demo() {
   const [totalTime, setTotalTime] = useState(0);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [showInvestorTips, setShowInvestorTips] = useState(true);
-  const [scenario, setScenario] = useState<'real' | 'false-positive' | 'manual'>('real');
+  
   const [showDecisionDetails, setShowDecisionDetails] = useState(false);
   const [animatedMetrics, setAnimatedMetrics] = useState<{ [key: string]: number }>({});
   const [aiGeneratedSummary, setAiGeneratedSummary] = useState(false);
@@ -556,48 +551,8 @@ Without automated response:
 `;
   };
 
-  const getScenarioComparison = () => {
-    const realMttd = metrics.mttd > 0 ? `${metrics.mttd} min` : '< 1 min';
-    const realMttr = metrics.mttr > 0 ? `${metrics.mttr} min` : '< 1 min';
-    
-    if (scenario === 'false-positive') {
-      return {
-        title: 'False Positive Scenario',
-        description: 'What if this was a false alarm?',
-        mttd: '45 min (analyst review)',
-        mttr: '2 hours (investigation)',
-        outcome: 'Unnecessary business disruption',
-        cost: `$${Math.round(metrics.totalIncidents * 80).toLocaleString()} in lost productivity`,
-        aiMttd: realMttd,
-        aiMttr: realMttr,
-      };
-    }
-    if (scenario === 'manual') {
-      return {
-        title: 'Manual SOC Scenario',
-        description: 'Without AI automation',
-        mttd: '45 minutes',
-        mttr: '4.2 hours',
-        outcome: 'Potential lateral movement',
-        cost: `$${(metrics.criticalIncidents * 250000 + metrics.highIncidents * 50000).toLocaleString()}+ potential breach`,
-        aiMttd: realMttd,
-        aiMttr: realMttr,
-      };
-    }
-    // AI Response scenario - show real metrics
-    return {
-      title: 'AI-Powered SOC Response',
-      description: 'Real metrics from your SOCMind platform',
-      mttd: metrics.mttd > 0 ? `${metrics.mttd} min` : '< 1 min',
-      mttr: metrics.mttr > 0 ? `${metrics.mttr} min` : '< 1 min',
-      outcome: `${metrics.totalIncidents} incidents processed, ${metrics.slaCompliance}% SLA compliance`,
-      cost: `${valueProtected} protected`,
-    };
-  };
-
   const completedSteps = steps.filter(s => s.status === 'completed').length;
   const progress = (completedSteps / steps.length) * 100;
-  const scenarioData = getScenarioComparison();
 
   return (
     <AppLayout title="Investor Demo" subtitle="Autonomous SOC Intelligence Platform">
@@ -659,58 +614,21 @@ Without automated response:
           </CardContent>
         </Card>
 
-        {/* What-If Scenarios */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Lightbulb className="h-4 w-4 text-yellow-500" />
-              What-If Scenarios
+        {/* ROI Comparison - Dynamic */}
+        <Card className="border-primary/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Scale className="h-5 w-5 text-primary" />
+              ROI Impact: Traditional SOC vs SOCMind AI
             </CardTitle>
+            <CardDescription>Live metrics from your platform — not estimates</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs value={scenario} onValueChange={(v) => setScenario(v as any)}>
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="real" className="gap-1">
-                  <Shield className="h-3 w-3" />
-                  AI Response
-                </TabsTrigger>
-                <TabsTrigger value="false-positive" className="gap-1">
-                  <XCircle className="h-3 w-3" />
-                  False Positive
-                </TabsTrigger>
-                <TabsTrigger value="manual" className="gap-1">
-                  <User className="h-3 w-3" />
-                  Manual SOC
-                </TabsTrigger>
-              </TabsList>
-              {scenarioData && (
-                <div className={cn(
-                  "mt-4 p-4 rounded-lg border border-dashed",
-                  scenario === 'real' ? 'bg-green-500/10 border-green-500/30' : 'bg-muted/50'
-                )}>
-                  <h4 className="font-semibold text-sm mb-2">{scenarioData.title}</h4>
-                  <p className="text-xs text-muted-foreground mb-3">{scenarioData.description}</p>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-muted-foreground">MTTD:</span>
-                      <span className={cn("ml-2 font-medium", scenario === 'real' ? 'text-green-500' : 'text-destructive')}>{scenarioData.mttd}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">MTTR:</span>
-                      <span className={cn("ml-2 font-medium", scenario === 'real' ? 'text-green-500' : 'text-destructive')}>{scenarioData.mttr}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Outcome:</span>
-                      <span className="ml-2 font-medium">{scenarioData.outcome}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Cost:</span>
-                      <span className={cn("ml-2 font-medium", scenario === 'real' ? 'text-green-500' : 'text-destructive')}>{scenarioData.cost}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </Tabs>
+            <DemoScenarioComparison 
+              metrics={metrics} 
+              valueProtected={valueProtected} 
+              incidentsLoading={incidentsLoading} 
+            />
           </CardContent>
         </Card>
 
@@ -894,13 +812,23 @@ Without automated response:
           })}
         </div>
 
-        {/* Metrics Comparison */}
+        {/* Key Highlights - Always visible, dynamic */}
+        <DemoKeyHighlights
+          totalTime={totalTime}
+          avgConfidence={avgConfidence}
+          playbookCount={playbookCount}
+          valueProtected={valueProtected}
+          incidentsLoading={incidentsLoading}
+          metrics={metrics}
+        />
+
+        {/* Metrics Comparison - after demo completes */}
         {steps.find(s => s.id === 'metrics')?.status === 'completed' && (
           <Card className="border-primary/30">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="h-5 w-5 text-primary" />
-                Metrics Impact Analysis
+                Detailed Metrics Breakdown
               </CardTitle>
               <CardDescription>Before/After with AI-driven explanations</CardDescription>
             </CardHeader>
@@ -934,57 +862,7 @@ Without automated response:
           </Card>
         )}
 
-        {/* Key Highlights */}
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card className="bg-gradient-to-br from-green-500/20 to-green-500/5 border-green-500/30">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <Clock className="h-8 w-8 text-green-500" />
-                <div>
-                  <p className="text-2xl font-bold text-green-500">
-                    {totalTime > 0 ? `${(totalTime / 1000).toFixed(1)}s` : '--'}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Total Response</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-primary/20 to-primary/5 border-primary/30">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <Brain className="h-8 w-8 text-primary" />
-                <div>
-                  <p className="text-2xl font-bold text-primary">{avgConfidence !== null && avgConfidence > 0 ? `${avgConfidence}%` : incidentsLoading ? '...' : '--'}</p>
-                  <p className="text-xs text-muted-foreground">AI Confidence</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-purple-500/20 to-purple-500/5 border-purple-500/30">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <Scale className="h-8 w-8 text-purple-500" />
-                <div>
-                  <p className="text-2xl font-bold text-purple-500">{playbookCount > 0 ? playbookCount : '--'}</p>
-                  <p className="text-xs text-muted-foreground">Playbooks Available</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-yellow-500/20 to-yellow-500/5 border-yellow-500/30">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <DollarSign className="h-8 w-8 text-yellow-500" />
-                <div>
-                  <p className="text-2xl font-bold text-yellow-500">{valueProtected !== null ? valueProtected : incidentsLoading ? '...' : '$0'}</p>
-                  <p className="text-xs text-muted-foreground">Value Protected</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Executive Summary */}
+        {/* Executive Summary - Rendered as Markdown */}
         {executiveSummary && (
           <Card className="border-primary/30">
             <CardHeader>
@@ -997,10 +875,8 @@ Without automated response:
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <pre className="whitespace-pre-wrap text-sm bg-secondary/50 p-6 rounded-lg overflow-auto max-h-[500px] font-mono">
-                  {executiveSummary}
-                </pre>
+              <div className="prose prose-sm dark:prose-invert max-w-none overflow-auto max-h-[500px] bg-secondary/50 p-6 rounded-lg">
+                <ReactMarkdown>{executiveSummary}</ReactMarkdown>
               </div>
             </CardContent>
           </Card>
