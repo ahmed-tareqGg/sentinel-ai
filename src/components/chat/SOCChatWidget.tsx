@@ -16,6 +16,7 @@ interface Conversation {
   id: string;
   title: string;
   messages: Message[];
+  messageCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -59,32 +60,37 @@ export function SOCChatWidget() {
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
 
-  // Load conversations from DB
+  // Load conversations from DB with message counts
   const loadConversations = useCallback(async () => {
+    setLoadingConvos(true);
     try {
       const { data: convos, error } = await supabase
         .from('ai_conversations')
-        .select('*')
+        .select('*, ai_messages(count)')
         .order('updated_at', { ascending: false });
       
       if (error) { console.error('Load convos error:', error); return; }
       
-      const mapped: Conversation[] = (convos || []).map(c => ({
+      const mapped: Conversation[] = (convos || []).map((c: any) => ({
         id: c.id,
         title: c.title,
         messages: [],
+        messageCount: c.ai_messages?.[0]?.count || 0,
         createdAt: c.created_at,
         updatedAt: c.updated_at,
       }));
       
       setConversations(mapped);
-      if (!activeId && mapped.length > 0) setActiveId(mapped[0].id);
+      setActiveId(prev => {
+        if (!prev && mapped.length > 0) return mapped[0].id;
+        return prev;
+      });
     } catch (e) {
       console.error('Load conversations failed:', e);
     } finally {
       setLoadingConvos(false);
     }
-  }, [activeId]);
+  }, []);
 
   // Load messages for active conversation
   const loadMessages = useCallback(async (convoId: string) => {
@@ -409,7 +415,7 @@ export function SOCChatWidget() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{convo.title}</p>
                   <p className="text-xs text-muted-foreground">
-                    {convo.messages.length} msgs • {new Date(convo.updatedAt).toLocaleDateString('en-US')}
+                    {convo.messageCount || convo.messages.length} msgs • {new Date(convo.updatedAt).toLocaleDateString('en-US')}
                   </p>
                 </div>
                 <Button
