@@ -65,6 +65,7 @@ export function IncidentAssignment({
     { value: 'tier2', label: 'SOC Tier 2 — Senior Analyst', level: 2 },
     { value: 'tier3', label: 'SOC Tier 3 — Incident Commander', level: 3 },
     { value: 'manager', label: 'SOC Manager', level: 4 },
+    { value: 'ciso', label: 'CISO — Executive', level: 5 },
   ].filter(opt => opt.level > currentTierLevel);
 
   const roleLabels: Record<string, string> = {
@@ -180,6 +181,7 @@ export function IncidentAssignment({
         tier2: 'soc_tier_2',
         tier3: 'soc_tier_3',
         manager: 'soc_manager',
+        ciso: 'ciso',
       };
 
       // Gather investigation context in parallel
