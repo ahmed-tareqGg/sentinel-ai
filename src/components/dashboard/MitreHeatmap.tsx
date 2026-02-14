@@ -265,7 +265,7 @@ export function MitreHeatmap({ incidents = [], showTitle = true, compact = false
           expanded ? "h-[calc(100%-60px)]" : compact ? "max-h-[250px]" : "max-h-[400px]"
         )}>
           {/* Tactic Headers */}
-          <div className="flex gap-1 min-w-max">
+          <div className="flex gap-1 min-w-max items-start">
             {TACTICS.map((tactic) => {
               const count = getTacticCount(tactic.name);
               const techniques = techniquesByTactic[tactic.name] || [];
