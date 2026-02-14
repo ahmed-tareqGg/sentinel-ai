@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/backend/client';
 import { cn } from '@/lib/utils';
 import { 
@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ExternalLink, Maximize2, Minimize2 } from 'lucide-react';
 
-interface MitreTechnique {
+interface MitreCoverageRow {
   technique_id: string;
   technique_name: string;
   tactic: string;
@@ -26,6 +26,7 @@ interface Incident {
   ai_analysis?: {
     mitre_techniques?: Array<{
       technique_id: string;
+      technique_name?: string;
       tactic: string;
     }>;
   } | null;
@@ -55,110 +56,129 @@ const TACTICS = [
   { id: 'TA0040', name: 'Impact', shortName: 'Impact' },
 ];
 
-// Sample techniques per tactic (common ones)
-const TECHNIQUE_MAP: Record<string, { id: string; name: string }[]> = {
-  'Reconnaissance': [
-    { id: 'T1595', name: 'Active Scanning' },
-    { id: 'T1592', name: 'Gather Victim Host Info' },
-  ],
-  'Initial Access': [
-    { id: 'T1566', name: 'Phishing' },
-    { id: 'T1190', name: 'Exploit Public-Facing App' },
-    { id: 'T1189', name: 'Drive-by Compromise' },
-  ],
-  'Execution': [
-    { id: 'T1059', name: 'Command & Scripting' },
-    { id: 'T1204', name: 'User Execution' },
-    { id: 'T1053', name: 'Scheduled Task' },
-  ],
-  'Persistence': [
-    { id: 'T1547', name: 'Boot Autostart' },
-    { id: 'T1543', name: 'Create System Process' },
-    { id: 'T1136', name: 'Create Account' },
-  ],
-  'Privilege Escalation': [
-    { id: 'T1548', name: 'Abuse Elevation' },
-    { id: 'T1134', name: 'Access Token Manipulation' },
-  ],
-  'Defense Evasion': [
-    { id: 'T1027', name: 'Obfuscated Files' },
-    { id: 'T1070', name: 'Indicator Removal' },
-    { id: 'T1562', name: 'Impair Defenses' },
-  ],
-  'Credential Access': [
-    { id: 'T1110', name: 'Brute Force' },
-    { id: 'T1003', name: 'OS Credential Dumping' },
-    { id: 'T1555', name: 'Credentials from Stores' },
-  ],
-  'Discovery': [
-    { id: 'T1082', name: 'System Info Discovery' },
-    { id: 'T1046', name: 'Network Service Scan' },
-    { id: 'T1087', name: 'Account Discovery' },
-  ],
-  'Lateral Movement': [
-    { id: 'T1021', name: 'Remote Services' },
-    { id: 'T1091', name: 'Replication via Media' },
-  ],
-  'Collection': [
-    { id: 'T1005', name: 'Local Data Collection' },
-    { id: 'T1114', name: 'Email Collection' },
-  ],
-  'Command and Control': [
-    { id: 'T1071', name: 'Application Layer Protocol' },
-    { id: 'T1105', name: 'Ingress Tool Transfer' },
-    { id: 'T1132', name: 'Data Encoding' },
-  ],
-  'Exfiltration': [
-    { id: 'T1041', name: 'Exfil Over C2' },
-    { id: 'T1048', name: 'Exfil Over Alt Protocol' },
-  ],
-  'Impact': [
-    { id: 'T1486', name: 'Data Encrypted' },
-    { id: 'T1485', name: 'Data Destruction' },
-    { id: 'T1499', name: 'Endpoint DoS' },
-  ],
+// Normalize tactic names for matching
+const normalizeTactic = (tactic: string): string => {
+  const map: Record<string, string> = {
+    'reconnaissance': 'Reconnaissance',
+    'resource development': 'Resource Development',
+    'initial access': 'Initial Access',
+    'initial-access': 'Initial Access',
+    'execution': 'Execution',
+    'persistence': 'Persistence',
+    'privilege escalation': 'Privilege Escalation',
+    'privilege-escalation': 'Privilege Escalation',
+    'defense evasion': 'Defense Evasion',
+    'defense-evasion': 'Defense Evasion',
+    'credential access': 'Credential Access',
+    'credential-access': 'Credential Access',
+    'discovery': 'Discovery',
+    'lateral movement': 'Lateral Movement',
+    'lateral-movement': 'Lateral Movement',
+    'collection': 'Collection',
+    'command and control': 'Command and Control',
+    'command-and-control': 'Command and Control',
+    'exfiltration': 'Exfiltration',
+    'impact': 'Impact',
+  };
+  return map[tactic.toLowerCase()] || tactic;
 };
 
+interface TechniqueData {
+  id: string;
+  name: string;
+  count: number;
+  hasPlaybook: boolean;
+}
+
 export function MitreHeatmap({ incidents = [], showTitle = true, compact = false }: MitreHeatmapProps) {
-  const [coverage, setCoverage] = useState<MitreTechnique[]>([]);
+  const [coverage, setCoverage] = useState<MitreCoverageRow[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [hoveredTactic, setHoveredTactic] = useState<string | null>(null);
 
   useEffect(() => {
+    const fetchCoverage = async () => {
+      const { data } = await supabase
+        .from('mitre_coverage')
+        .select('*');
+      if (data) setCoverage(data as MitreCoverageRow[]);
+    };
     fetchCoverage();
   }, []);
 
-  const fetchCoverage = async () => {
-    const { data } = await supabase
-      .from('mitre_coverage')
-      .select('*');
-    if (data) setCoverage(data);
-  };
+  // Build dynamic technique map from coverage DB + incidents
+  const techniquesByTactic = useMemo(() => {
+    const map: Record<string, Map<string, TechniqueData>> = {};
+    TACTICS.forEach(t => { map[t.name] = new Map(); });
 
-  // Count detections per technique from incidents
-  const getDetectionCount = (techniqueId: string): number => {
-    // First check coverage table
-    const coverageData = coverage.find(c => c.technique_id === techniqueId);
-    if (coverageData?.detection_count) return coverageData.detection_count;
-    
-    // Then count from incidents
-    let count = 0;
+    // 1. Add from mitre_coverage table
+    coverage.forEach(row => {
+      const tactic = normalizeTactic(row.tactic);
+      if (!map[tactic]) return;
+      const existing = map[tactic].get(row.technique_id);
+      if (existing) {
+        existing.count = Math.max(existing.count, row.detection_count || 0);
+        existing.hasPlaybook = existing.hasPlaybook || row.has_playbook;
+        if (row.technique_name && row.technique_name !== 'Unknown') existing.name = row.technique_name;
+      } else {
+        map[tactic].set(row.technique_id, {
+          id: row.technique_id,
+          name: row.technique_name || row.technique_id,
+          count: row.detection_count || 0,
+          hasPlaybook: row.has_playbook || false,
+        });
+      }
+    });
+
+    // 2. Merge from incidents
     incidents.forEach(inc => {
-      if (inc.mitre_technique?.includes(techniqueId)) count++;
+      // Primary technique
+      if (inc.mitre_technique) {
+        const tactic = normalizeTactic(inc.mitre_tactic || 'Unknown');
+        if (map[tactic]) {
+          const existing = map[tactic].get(inc.mitre_technique);
+          if (existing) {
+            existing.count++;
+          } else {
+            map[tactic].set(inc.mitre_technique, {
+              id: inc.mitre_technique,
+              name: inc.mitre_technique,
+              count: 1,
+              hasPlaybook: false,
+            });
+          }
+        }
+      }
+      // AI analysis techniques
       inc.ai_analysis?.mitre_techniques?.forEach(t => {
-        if (t.technique_id?.includes(techniqueId)) count++;
+        const tactic = normalizeTactic(t.tactic || 'Unknown');
+        if (!map[tactic]) return;
+        const existing = map[tactic].get(t.technique_id);
+        if (existing) {
+          existing.count++;
+          if (t.technique_name && t.technique_name !== 'Unknown') existing.name = t.technique_name;
+        } else {
+          map[tactic].set(t.technique_id, {
+            id: t.technique_id,
+            name: t.technique_name || t.technique_id,
+            count: 1,
+            hasPlaybook: false,
+          });
+        }
       });
     });
-    return count;
-  };
 
-  // Get tactic detection count
+    // Convert to sorted arrays
+    const result: Record<string, TechniqueData[]> = {};
+    TACTICS.forEach(t => {
+      result[t.name] = Array.from(map[t.name].values()).sort((a, b) => b.count - a.count);
+    });
+    return result;
+  }, [coverage, incidents]);
+
   const getTacticCount = (tacticName: string): number => {
-    const techniques = TECHNIQUE_MAP[tacticName] || [];
-    return techniques.reduce((sum, tech) => sum + getDetectionCount(tech.id), 0);
+    return (techniquesByTactic[tacticName] || []).reduce((sum, t) => sum + t.count, 0);
   };
 
-  // Get heat color based on count
   const getHeatColor = (count: number): string => {
     if (count === 0) return 'bg-muted/30';
     if (count <= 2) return 'bg-cyan-500/30';
@@ -167,7 +187,6 @@ export function MitreHeatmap({ incidents = [], showTitle = true, compact = false
     return 'bg-red-500/60';
   };
 
-  // Get text color based on count
   const getTextColor = (count: number): string => {
     if (count === 0) return 'text-muted-foreground';
     if (count <= 5) return 'text-cyan-400';
@@ -175,12 +194,21 @@ export function MitreHeatmap({ incidents = [], showTitle = true, compact = false
     return 'text-red-400';
   };
 
-  // Check if has playbook
-  const hasPlaybook = (techniqueId: string): boolean => {
-    return coverage.find(c => c.technique_id === techniqueId)?.has_playbook || false;
+  const getTacticHeaderColor = (count: number): string => {
+    if (count === 0) return 'bg-muted/30';
+    if (count <= 10) return 'bg-cyan-600/30 border-cyan-500/40';
+    if (count <= 30) return 'bg-cyan-600/40 border-cyan-500/50';
+    if (count <= 60) return 'bg-orange-600/30 border-orange-500/40';
+    return 'bg-red-600/30 border-red-500/40';
   };
 
-  // Open MITRE page
+  const getTacticTextColor = (count: number): string => {
+    if (count === 0) return 'text-muted-foreground';
+    if (count <= 30) return 'text-cyan-400';
+    if (count <= 60) return 'text-orange-400';
+    return 'text-red-400';
+  };
+
   const openMitrePage = (techniqueId: string) => {
     const id = techniqueId.replace('.', '/');
     window.open(`https://attack.mitre.org/techniques/${id}/`, '_blank');
@@ -188,6 +216,9 @@ export function MitreHeatmap({ incidents = [], showTitle = true, compact = false
 
   const totalDetections = TACTICS.reduce((sum, tactic) => sum + getTacticCount(tactic.name), 0);
   const coveredTactics = TACTICS.filter(t => getTacticCount(t.name) > 0).length;
+
+  // Max techniques in any single tactic (for grid alignment)
+  const maxTechniques = Math.max(...TACTICS.map(t => (techniquesByTactic[t.name] || []).length), 0);
 
   return (
     <div className={cn(
@@ -237,12 +268,14 @@ export function MitreHeatmap({ incidents = [], showTitle = true, compact = false
           <div className="flex gap-1 min-w-max">
             {TACTICS.map((tactic) => {
               const count = getTacticCount(tactic.name);
+              const techniques = techniquesByTactic[tactic.name] || [];
+
               return (
                 <div 
                   key={tactic.id}
                   className={cn(
-                    "flex flex-col w-20 shrink-0",
-                    expanded ? "w-28" : ""
+                    "flex flex-col shrink-0",
+                    expanded ? "w-28" : "w-20"
                   )}
                   onMouseEnter={() => setHoveredTactic(tactic.name)}
                   onMouseLeave={() => setHoveredTactic(null)}
@@ -251,19 +284,20 @@ export function MitreHeatmap({ incidents = [], showTitle = true, compact = false
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div className={cn(
-                        "text-center p-2 rounded-t-lg border border-border transition-all cursor-pointer",
-                        count > 0 ? "bg-primary/20 border-primary/30" : "bg-muted/30",
+                        "text-center p-2 rounded-t-lg border transition-all cursor-pointer",
+                        getTacticHeaderColor(count),
+                        count === 0 ? "border-border" : "",
                         hoveredTactic === tactic.name ? "ring-2 ring-primary" : ""
                       )}>
                         <div className={cn(
                           "text-[10px] font-semibold truncate",
-                          count > 0 ? "text-primary" : "text-muted-foreground"
+                          count > 0 ? getTacticTextColor(count) : "text-muted-foreground"
                         )}>
                           {expanded ? tactic.name : tactic.shortName}
                         </div>
                         <div className={cn(
                           "text-lg font-bold mt-1",
-                          getTextColor(count)
+                          getTacticTextColor(count)
                         )}>
                           {count}
                         </div>
@@ -271,58 +305,53 @@ export function MitreHeatmap({ incidents = [], showTitle = true, compact = false
                     </TooltipTrigger>
                     <TooltipContent>
                       <p className="font-semibold">{tactic.name}</p>
-                      <p className="text-xs text-muted-foreground">{count} detections</p>
+                      <p className="text-xs text-muted-foreground">{count} detections · {techniques.length} techniques</p>
                     </TooltipContent>
                   </Tooltip>
 
                   {/* Techniques */}
                   <div className="space-y-0.5 mt-1">
-                    {(TECHNIQUE_MAP[tactic.name] || []).map((tech) => {
-                      const techCount = getDetectionCount(tech.id);
-                      const hasPb = hasPlaybook(tech.id);
-                      
-                      return (
-                        <Tooltip key={tech.id}>
-                          <TooltipTrigger asChild>
-                            <div 
-                              className={cn(
-                                "p-1.5 rounded border border-transparent transition-all cursor-pointer",
-                                getHeatColor(techCount),
-                                techCount > 0 ? "hover:border-primary" : "hover:border-border",
-                                hasPb ? "ring-1 ring-green-500/30" : ""
-                              )}
-                              onClick={() => openMitrePage(tech.id)}
-                            >
-                              <div className="text-[9px] font-mono text-center truncate">
-                                {tech.id}
-                              </div>
-                              {expanded && (
-                                <div className="text-[8px] text-center truncate text-muted-foreground mt-0.5">
-                                  {tech.name}
-                                </div>
-                              )}
-                              {techCount > 0 && (
-                                <div className={cn(
-                                  "text-[10px] font-bold text-center mt-0.5",
-                                  getTextColor(techCount)
-                                )}>
-                                  {techCount}
-                                </div>
-                              )}
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            <p className="font-semibold">{tech.id} - {tech.name}</p>
-                            <p className="text-xs text-muted-foreground">{techCount} detections</p>
-                            {hasPb && (
-                              <Badge className="mt-1 bg-green-500/20 text-green-400 text-[10px]">
-                                Has Playbook
-                              </Badge>
+                    {techniques.map((tech) => (
+                      <Tooltip key={tech.id}>
+                        <TooltipTrigger asChild>
+                          <div 
+                            className={cn(
+                              "p-1.5 rounded border border-transparent transition-all cursor-pointer",
+                              getHeatColor(tech.count),
+                              tech.count > 0 ? "hover:border-primary" : "hover:border-border",
+                              tech.hasPlaybook ? "ring-1 ring-green-500/30" : ""
                             )}
-                          </TooltipContent>
-                        </Tooltip>
-                      );
-                    })}
+                            onClick={() => openMitrePage(tech.id)}
+                          >
+                            <div className="text-[9px] font-mono text-center truncate">
+                              {tech.id}
+                            </div>
+                            {expanded && (
+                              <div className="text-[8px] text-center truncate text-muted-foreground mt-0.5">
+                                {tech.name}
+                              </div>
+                            )}
+                            {tech.count > 0 && (
+                              <div className={cn(
+                                "text-[10px] font-bold text-center mt-0.5",
+                                getTextColor(tech.count)
+                              )}>
+                                {tech.count}
+                              </div>
+                            )}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p className="font-semibold">{tech.id} - {tech.name}</p>
+                          <p className="text-xs text-muted-foreground">{tech.count} detections</p>
+                          {tech.hasPlaybook && (
+                            <Badge className="mt-1 bg-green-500/20 text-green-400 text-[10px]">
+                              Has Playbook
+                            </Badge>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    ))}
                   </div>
                 </div>
               );
@@ -359,7 +388,6 @@ export function MitreHeatmap({ incidents = [], showTitle = true, compact = false
         </div>
       </TooltipProvider>
 
-      {/* Expanded overlay backdrop */}
       {expanded && (
         <div 
           className="fixed inset-0 bg-background/80 -z-10"
