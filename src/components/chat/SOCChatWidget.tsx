@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Send, Bot, User, Loader2, Minimize2, Maximize2, Plus, History, ArrowLeft, Trash2, Paperclip, Image as ImageIcon, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -6,6 +6,7 @@ import { backendUrl, publishableKey, supabase } from '@/integrations/backend/cli
 import ReactMarkdown from 'react-markdown';
 
 interface Message {
+  id?: string;
   role: 'user' | 'assistant';
   content: string;
   attachments?: { name: string; type: string; base64: string; url?: string }[];
@@ -15,55 +16,24 @@ interface Conversation {
   id: string;
   title: string;
   messages: Message[];
-  createdAt: number;
-  updatedAt: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const CHAT_URL = `${backendUrl}/functions/v1/soc-chat`;
-const STORAGE_KEY = 'socmind-conversations';
 
 const QUICK_PROMPTS = [
   'Current security posture summary',
   'What are the open critical incidents?',
-  'Top MITRE techniques detected',
+  'Show me compliance coverage status',
   'Which incidents need immediate action?',
 ];
-
-function loadConversations(): Conversation[] {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
-  } catch { return []; }
-}
-
-function saveConversations(convos: Conversation[]) {
-  // Don't persist base64 data to localStorage
-  const cleaned = convos.map(c => ({
-    ...c,
-    messages: c.messages.map(m => ({
-      ...m,
-      attachments: m.attachments?.map(a => ({ name: a.name, type: a.type, base64: '', url: a.url })),
-    })),
-  }));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
-}
-
-function createNewConversation(): Conversation {
-  return {
-    id: crypto.randomUUID(),
-    title: 'New Chat',
-    messages: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-}
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      // Remove data URL prefix to get just base64
       const base64 = result.split(',')[1];
       resolve(base64);
     };
@@ -76,14 +46,12 @@ export function SOCChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
-  const [activeId, setActiveId] = useState<string | null>(() => {
-    const convos = loadConversations();
-    return convos.length > 0 ? convos[0].id : null;
-  });
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [loadingConvos, setLoadingConvos] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -91,9 +59,57 @@ export function SOCChatWidget() {
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
 
+  // Load conversations from DB
+  const loadConversations = useCallback(async () => {
+    try {
+      const { data: convos, error } = await supabase
+        .from('ai_conversations')
+        .select('*')
+        .order('updated_at', { ascending: false });
+      
+      if (error) { console.error('Load convos error:', error); return; }
+      
+      const mapped: Conversation[] = (convos || []).map(c => ({
+        id: c.id,
+        title: c.title,
+        messages: [],
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+      }));
+      
+      setConversations(mapped);
+      if (!activeId && mapped.length > 0) setActiveId(mapped[0].id);
+    } catch (e) {
+      console.error('Load conversations failed:', e);
+    } finally {
+      setLoadingConvos(false);
+    }
+  }, [activeId]);
+
+  // Load messages for active conversation
+  const loadMessages = useCallback(async (convoId: string) => {
+    const { data: msgs, error } = await supabase
+      .from('ai_messages')
+      .select('*')
+      .eq('conversation_id', convoId)
+      .order('created_at', { ascending: true });
+    
+    if (error) { console.error('Load messages error:', error); return; }
+    
+    setConversations(prev => prev.map(c => 
+      c.id === convoId 
+        ? { ...c, messages: (msgs || []).map(m => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content })) }
+        : c
+    ));
+  }, []);
+
   useEffect(() => {
-    saveConversations(conversations);
-  }, [conversations]);
+    if (isOpen) loadConversations();
+  }, [isOpen, loadConversations]);
+
+  useEffect(() => {
+    if (activeId) loadMessages(activeId);
+  }, [activeId, loadMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -103,14 +119,31 @@ export function SOCChatWidget() {
     if (isOpen && !showHistory) inputRef.current?.focus();
   }, [isOpen, showHistory]);
 
-  const updateConvo = (id: string, updater: (c: Conversation) => Conversation) => {
-    setConversations(prev => prev.map(c => c.id === id ? updater(c) : c));
+  const updateConvoMessages = (id: string, updater: (msgs: Message[]) => Message[]) => {
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, messages: updater(c.messages) } : c));
   };
 
-  const startNewChat = () => {
-    const newConvo = createNewConversation();
+  const startNewChat = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('ai_conversations')
+      .insert({ user_id: user.id, title: 'New Chat' })
+      .select()
+      .single();
+    
+    if (error || !data) { console.error('Create convo error:', error); return; }
+    
+    const newConvo: Conversation = {
+      id: data.id,
+      title: data.title,
+      messages: [],
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
     setConversations(prev => [newConvo, ...prev]);
-    setActiveId(newConvo.id);
+    setActiveId(data.id);
     setShowHistory(false);
   };
 
@@ -119,8 +152,9 @@ export function SOCChatWidget() {
     setShowHistory(false);
   };
 
-  const deleteConvo = (id: string, e: React.MouseEvent) => {
+  const deleteConvo = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    await supabase.from('ai_conversations').delete().eq('id', id);
     setConversations(prev => prev.filter(c => c.id !== id));
     if (activeId === id) {
       const remaining = conversations.filter(c => c.id !== id);
@@ -130,9 +164,7 @@ export function SOCChatWidget() {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (files.length > 0) {
-      setPendingFiles(prev => [...prev, ...files].slice(0, 5)); // Max 5 files
-    }
+    if (files.length > 0) setPendingFiles(prev => [...prev, ...files].slice(0, 5));
     e.target.value = '';
   };
 
@@ -145,40 +177,45 @@ export function SOCChatWidget() {
 
     let currentId = activeId;
     if (!currentId) {
-      const newConvo = createNewConversation();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data, error } = await supabase
+        .from('ai_conversations')
+        .insert({ user_id: user.id, title: 'New Chat' })
+        .select()
+        .single();
+      if (error || !data) return;
+      const newConvo: Conversation = { id: data.id, title: data.title, messages: [], createdAt: data.created_at, updatedAt: data.updated_at };
       setConversations(prev => [newConvo, ...prev]);
-      currentId = newConvo.id;
+      currentId = data.id;
       setActiveId(currentId);
     }
 
-    // Process file attachments
+    // Process attachments
     const attachments: { name: string; type: string; base64: string; url?: string }[] = [];
     for (const file of pendingFiles) {
       try {
         const base64 = await fileToBase64(file);
-        attachments.push({
-          name: file.name,
-          type: file.type,
-          base64,
-          url: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
-        });
-      } catch (err) {
-        console.error('Failed to read file:', err);
-      }
+        attachments.push({ name: file.name, type: file.type, base64, url: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined });
+      } catch (err) { console.error('Failed to read file:', err); }
     }
 
     const messageText = text.trim() || (attachments.length > 0 ? `📎 Attached ${attachments.length} file(s) for analysis` : '');
     const userMsg: Message = { role: 'user', content: messageText, attachments };
 
-    const convo = conversations.find(c => c.id === currentId) || createNewConversation();
-    const allMessages = [...convo.messages, userMsg];
+    // Save user message to DB
+    await supabase.from('ai_messages').insert({ conversation_id: currentId, role: 'user', content: messageText });
 
-    updateConvo(currentId!, c => ({
-      ...c,
-      messages: allMessages,
-      title: c.messages.length === 0 ? messageText.slice(0, 50) + (messageText.length > 50 ? '...' : '') : c.title,
-      updatedAt: Date.now(),
-    }));
+    // Update title if first message
+    const convo = conversations.find(c => c.id === currentId);
+    if (convo && convo.messages.length === 0) {
+      const title = messageText.slice(0, 50) + (messageText.length > 50 ? '...' : '');
+      await supabase.from('ai_conversations').update({ title }).eq('id', currentId);
+      setConversations(prev => prev.map(c => c.id === currentId ? { ...c, title } : c));
+    }
+
+    const allMessages = [...(convo?.messages || []), userMsg];
+    updateConvoMessages(currentId!, () => allMessages);
 
     setInput('');
     setPendingFiles([]);
@@ -190,28 +227,15 @@ export function SOCChatWidget() {
       const { data: { session } } = await supabase.auth.getSession();
       const authToken = session?.access_token;
 
-      // Build messages for the API - include file data as content parts
       const apiMessages = allMessages.map(m => {
         if (m.attachments && m.attachments.length > 0) {
-          // For messages with attachments, build multimodal content
           const parts: any[] = [];
-          if (m.content && !m.content.startsWith('📎')) {
-            parts.push({ type: 'text', text: m.content });
-          } else if (m.content) {
-            parts.push({ type: 'text', text: m.content });
-          }
+          parts.push({ type: 'text', text: m.content });
           for (const att of m.attachments) {
             if (att.base64 && att.type.startsWith('image/')) {
-              parts.push({
-                type: 'image_url',
-                image_url: { url: `data:${att.type};base64,${att.base64}` },
-              });
+              parts.push({ type: 'image_url', image_url: { url: `data:${att.type};base64,${att.base64}` } });
             } else if (att.base64) {
-              // For non-image files, include as text description
-              parts.push({
-                type: 'text',
-                text: `[Attached file: ${att.name} (${att.type})]`,
-              });
+              parts.push({ type: 'text', text: `[Attached file: ${att.name} (${att.type})]` });
             }
           }
           return { role: m.role, content: parts };
@@ -259,15 +283,12 @@ export function SOCChatWidget() {
             if (content) {
               assistantContent += content;
               const snapshot = assistantContent;
-              updateConvo(currentId!, c => {
-                const msgs = [...c.messages];
+              updateConvoMessages(currentId!, msgs => {
                 const last = msgs[msgs.length - 1];
                 if (last?.role === 'assistant') {
-                  msgs[msgs.length - 1] = { ...last, content: snapshot };
-                } else {
-                  msgs.push({ role: 'assistant', content: snapshot });
+                  return msgs.map((m, i) => i === msgs.length - 1 ? { ...m, content: snapshot } : m);
                 }
-                return { ...c, messages: msgs, updatedAt: Date.now() };
+                return [...msgs, { role: 'assistant', content: snapshot }];
               });
             }
           } catch {
@@ -276,13 +297,17 @@ export function SOCChatWidget() {
           }
         }
       }
+
+      // Save assistant message to DB
+      if (assistantContent) {
+        await supabase.from('ai_messages').insert({ conversation_id: currentId, role: 'assistant', content: assistantContent });
+      }
+
     } catch (e) {
       console.error('Chat error:', e);
-      updateConvo(currentId!, c => ({
-        ...c,
-        messages: [...c.messages, { role: 'assistant', content: `⚠️ ${e instanceof Error ? e.message : 'Connection failed'}` }],
-        updatedAt: Date.now(),
-      }));
+      const errMsg = `⚠️ ${e instanceof Error ? e.message : 'Connection failed'}`;
+      updateConvoMessages(currentId!, msgs => [...msgs, { role: 'assistant', content: errMsg }]);
+      await supabase.from('ai_messages').insert({ conversation_id: currentId, role: 'assistant', content: errMsg });
     } finally {
       setIsLoading(false);
     }
@@ -359,7 +384,11 @@ export function SOCChatWidget() {
       {/* History View */}
       {showHistory ? (
         <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          {conversations.length === 0 ? (
+          {loadingConvos ? (
+            <div className="flex items-center justify-center h-full">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : conversations.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
               <History className="h-8 w-8 opacity-50" />
               <p className="text-sm">No previous conversations</p>
@@ -380,7 +409,7 @@ export function SOCChatWidget() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{convo.title}</p>
                   <p className="text-xs text-muted-foreground">
-                    {convo.messages.length} messages • {new Date(convo.updatedAt).toLocaleDateString('en-US')}
+                    {convo.messages.length} msgs • {new Date(convo.updatedAt).toLocaleDateString('en-US')}
                   </p>
                 </div>
                 <Button
@@ -413,7 +442,7 @@ export function SOCChatWidget() {
                     <Bot className="h-6 w-6 text-primary" />
                   </div>
                   <p className="text-sm font-medium text-foreground">Hi! I'm SOCMind AI</p>
-                  <p className="text-xs text-muted-foreground mt-1">Ask me anything about your incidents & threats</p>
+                  <p className="text-xs text-muted-foreground mt-1">Ask me anything about incidents, compliance, threats & more</p>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
                   {QUICK_PROMPTS.map((prompt, i) => (
@@ -444,7 +473,6 @@ export function SOCChatWidget() {
                     ? 'bg-primary text-primary-foreground rounded-br-sm'
                     : 'bg-secondary/80 text-foreground rounded-bl-sm'
                 )} dir="auto" style={{ unicodeBidi: 'plaintext' } as React.CSSProperties}>
-                  {/* Attachment previews */}
                   {msg.attachments && msg.attachments.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mb-2">
                       {msg.attachments.map((att, idx) => (
@@ -497,7 +525,6 @@ export function SOCChatWidget() {
 
           {/* Input area */}
           <div className="border-t border-border p-3 space-y-2">
-            {/* Pending files preview */}
             {pendingFiles.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {pendingFiles.map((file, idx) => {
@@ -522,7 +549,6 @@ export function SOCChatWidget() {
               </div>
             )}
             <div className="flex items-end gap-2">
-              {/* File upload */}
               <Button
                 variant="ghost"
                 size="icon"
@@ -546,7 +572,7 @@ export function SOCChatWidget() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask about any incident or threat..."
+                placeholder="Ask about any incident, compliance, or threat..."
                 className="flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary min-h-[36px] max-h-[100px]"
                 dir="auto"
                 disabled={isLoading}
