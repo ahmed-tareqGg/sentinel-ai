@@ -83,7 +83,7 @@ export function IncidentAssignment({
         .update({
           incident_owner_id: user.id,
           incident_owner_role: role,
-          assigned_to: profile?.email || null,
+          assigned_to: user.id,
           assigned_at: new Date().toISOString(),
           status: status === 'Open' || status === 'New' ? 'Assigned' : status,
         })
