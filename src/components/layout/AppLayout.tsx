@@ -4,7 +4,7 @@ import { GlobalFooter } from './GlobalFooter';
 import { DemoBanner } from '@/components/demo/DemoBanner';
 import { GuidedTour } from '@/components/demo/GuidedTour';
 import { SOCChatWidget } from '@/components/chat/SOCChatWidget';
-import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
+
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -13,7 +13,6 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children, title, subtitle }: AppLayoutProps) {
-  useRealtimeNotifications();
   return (
     <div className="min-h-screen bg-background bg-grid flex flex-col">
       <DemoBanner />
