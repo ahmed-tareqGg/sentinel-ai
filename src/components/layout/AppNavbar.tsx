@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTheme } from '@/hooks/useTheme';
+import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import {
   LayoutDashboard,
   AlertTriangle,
@@ -96,14 +97,7 @@ const navGroups = [
   },
 ];
 
-interface Notification {
-  id: string;
-  title: string;
-  message: string;
-  time: string;
-  read: boolean;
-  type: 'critical' | 'warning' | 'info';
-}
+// Old notification interface removed — now using NotificationCenter component
 
 export function AppNavbar() {
   const location = useLocation();
@@ -112,7 +106,6 @@ export function AppNavbar() {
   const { profile, role, signOut } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
 
@@ -166,80 +159,6 @@ export function AppNavbar() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     performSearch(searchQuery);
-  };
-
-  // Notifications
-  useEffect(() => {
-    const fetchNotifications = async () => {
-      const { data } = await supabase
-        .from('incidents')
-        .select('id, incident_number, message, risk_level, created_at')
-        .in('risk_level', ['Critical', 'High'])
-        .eq('status', 'Open')
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (data) {
-        setNotifications(
-          data.map((incident) => ({
-            id: incident.id,
-            title: `${incident.incident_number} - ${incident.risk_level}`,
-            message: incident.message || 'New security incident detected',
-            time: new Date(incident.created_at).toLocaleTimeString('en-US', {
-              hour: '2-digit',
-              minute: '2-digit',
-            }),
-            read: false,
-            type: incident.risk_level === 'Critical' ? 'critical' as const : 'warning' as const,
-          }))
-        );
-      }
-    };
-
-    fetchNotifications();
-
-    const channel = supabase
-      .channel('navbar-incidents')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'incidents' },
-        (payload) => {
-          const incident = payload.new as any;
-          if (incident.risk_level === 'Critical' || incident.risk_level === 'High') {
-            setNotifications((prev) =>
-              [
-                {
-                  id: incident.id,
-                  title: `${incident.incident_number} - ${incident.risk_level}`,
-                  message: incident.message || 'New security incident detected',
-                  time: 'Just now',
-                  read: false,
-                  type: incident.risk_level === 'Critical' ? 'critical' as const : 'warning' as const,
-                },
-                ...prev,
-              ].slice(0, 5)
-            );
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
-  const handleNotificationClick = (notification: Notification) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
-    );
-    navigate(`/incidents/${notification.id}`);
-  };
-
-  const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   };
 
   const allNavItems = navGroups.flatMap((g) => g.items).filter((item) => isItemAllowed(item.path));
@@ -429,65 +348,7 @@ export function AppNavbar() {
         </Popover>
 
         {/* Notifications */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative h-7 w-7">
-              <Bell className="h-4 w-4 text-muted-foreground" />
-              {unreadCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-destructive-foreground">
-                  {unreadCount}
-                </span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80 p-0" align="end">
-            <div className="flex items-center justify-between p-3 border-b border-border">
-              <h4 className="font-semibold text-sm text-foreground">Notifications</h4>
-              {unreadCount > 0 && (
-                <Button variant="ghost" size="sm" className="text-xs h-6" onClick={markAllAsRead}>
-                  Mark all read
-                </Button>
-              )}
-            </div>
-            <div className="max-h-64 overflow-y-auto">
-              {notifications.length === 0 ? (
-                <div className="p-6 text-center text-muted-foreground">
-                  <Bell className="h-6 w-6 mx-auto mb-2 opacity-50" />
-                  <p className="text-xs">No notifications</p>
-                </div>
-              ) : (
-                notifications.map((notification) => (
-                  <button
-                    key={notification.id}
-                    onClick={() => handleNotificationClick(notification)}
-                    className={cn(
-                      'w-full p-3 text-left hover:bg-secondary/50 transition-colors border-b border-border last:border-0',
-                      !notification.read && 'bg-primary/5'
-                    )}
-                  >
-                    <div className="flex items-start gap-2">
-                      <div
-                        className={cn(
-                          'h-2 w-2 rounded-full mt-1.5 shrink-0',
-                          notification.type === 'critical' && 'bg-destructive',
-                          notification.type === 'warning' && 'bg-warning',
-                          notification.type === 'info' && 'bg-primary'
-                        )}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-medium text-xs text-foreground truncate">{notification.title}</p>
-                          <span className="text-[10px] text-muted-foreground shrink-0">{notification.time}</span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{notification.message}</p>
-                      </div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
+        <NotificationCenter />
 
         {/* Theme Toggle */}
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={toggleTheme} title={theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}>

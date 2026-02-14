@@ -1540,6 +1540,54 @@ export type Database = {
         }
         Relationships: []
       }
+      notifications: {
+        Row: {
+          body: string | null
+          created_at: string
+          icon: string | null
+          id: string
+          is_read: boolean
+          link: string | null
+          metadata: Json | null
+          reference_id: string | null
+          reference_type: string | null
+          severity: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          is_read?: boolean
+          link?: string | null
+          metadata?: Json | null
+          reference_id?: string | null
+          reference_type?: string | null
+          severity?: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          is_read?: boolean
+          link?: string | null
+          metadata?: Json | null
+          reference_id?: string | null
+          reference_type?: string | null
+          severity?: string | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       playbook_executions: {
         Row: {
           ai_explanation: string | null
@@ -2543,6 +2591,35 @@ export type Database = {
           _entity_type: string
           _new_value?: Json
           _old_value?: Json
+        }
+        Returns: string
+      }
+      notify_all_users: {
+        Args: {
+          _body?: string
+          _icon?: string
+          _link?: string
+          _metadata?: Json
+          _reference_id?: string
+          _reference_type?: string
+          _severity?: string
+          _title: string
+          _type: string
+        }
+        Returns: number
+      }
+      notify_user: {
+        Args: {
+          _body?: string
+          _icon?: string
+          _link?: string
+          _metadata?: Json
+          _reference_id?: string
+          _reference_type?: string
+          _severity?: string
+          _title: string
+          _type: string
+          _user_id: string
         }
         Returns: string
       }
