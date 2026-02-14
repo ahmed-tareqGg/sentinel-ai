@@ -1540,6 +1540,66 @@ export type Database = {
         }
         Relationships: []
       }
+      notification_preferences: {
+        Row: {
+          created_at: string
+          email_approvals: boolean
+          email_assignments: boolean
+          email_critical_incidents: boolean
+          email_digest: boolean
+          email_escalations: boolean
+          email_mentions: boolean
+          id: string
+          in_app_approvals: boolean
+          in_app_assignments: boolean
+          in_app_escalations: boolean
+          in_app_incidents: boolean
+          in_app_mentions: boolean
+          in_app_system: boolean
+          sound_enabled: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email_approvals?: boolean
+          email_assignments?: boolean
+          email_critical_incidents?: boolean
+          email_digest?: boolean
+          email_escalations?: boolean
+          email_mentions?: boolean
+          id?: string
+          in_app_approvals?: boolean
+          in_app_assignments?: boolean
+          in_app_escalations?: boolean
+          in_app_incidents?: boolean
+          in_app_mentions?: boolean
+          in_app_system?: boolean
+          sound_enabled?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email_approvals?: boolean
+          email_assignments?: boolean
+          email_critical_incidents?: boolean
+          email_digest?: boolean
+          email_escalations?: boolean
+          email_mentions?: boolean
+          id?: string
+          in_app_approvals?: boolean
+          in_app_assignments?: boolean
+          in_app_escalations?: boolean
+          in_app_incidents?: boolean
+          in_app_mentions?: boolean
+          in_app_system?: boolean
+          sound_enabled?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           body: string | null
@@ -2630,6 +2690,14 @@ export type Database = {
           _target_user: string
         }
         Returns: undefined
+      }
+      user_wants_email: {
+        Args: { _type: string; _user_id: string }
+        Returns: boolean
+      }
+      user_wants_notification: {
+        Args: { _type: string; _user_id: string }
+        Returns: boolean
       }
       validate_agent_license: {
         Args: { _hardware_id?: string; _license_key: string }
