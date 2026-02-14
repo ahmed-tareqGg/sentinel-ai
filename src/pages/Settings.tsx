@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Key, Bell, Users, Webhook, Shield, Plus, Trash2 } from 'lucide-react';
+import { NotificationPreferences } from '@/components/settings/NotificationPreferences';
 import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -265,64 +266,8 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="notifications">
-          <div className="rounded-xl border border-border bg-card p-6 space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold text-foreground mb-2">Notification Settings</h3>
-              <p className="text-sm text-muted-foreground">Configure alert delivery channels</p>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30">
-                <div>
-                  <p className="font-medium text-foreground">Critical Alerts</p>
-                  <p className="text-sm text-muted-foreground">Immediate notification for critical incidents</p>
-                </div>
-                <Switch 
-                  checked={notifications.criticalAlerts}
-                  onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, criticalAlerts: checked }))}
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30">
-                <div>
-                  <p className="font-medium text-foreground">Slack Integration</p>
-                  <p className="text-sm text-muted-foreground">Send alerts to Slack channel</p>
-                </div>
-                <Switch 
-                  checked={notifications.slackEnabled}
-                  onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, slackEnabled: checked }))}
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30">
-                <div>
-                  <p className="font-medium text-foreground">Email Digest</p>
-                  <p className="text-sm text-muted-foreground">Daily summary of incidents</p>
-                </div>
-                <Switch 
-                  checked={notifications.emailDigest}
-                  onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, emailDigest: checked }))}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="slack-webhook">Slack Webhook URL</Label>
-                <Input 
-                  id="slack-webhook" 
-                  placeholder="https://hooks.slack.com/..." 
-                  className="bg-secondary/50"
-                  value={notifications.slackWebhook}
-                  onChange={(e) => setNotifications(prev => ({ ...prev, slackWebhook: e.target.value }))}
-                />
-              </div>
-            </div>
-
-            <Button 
-              onClick={handleSaveNotifications}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              Save Changes
-            </Button>
+          <div className="rounded-xl border border-border bg-card p-6">
+            <NotificationPreferences />
           </div>
         </TabsContent>
 
