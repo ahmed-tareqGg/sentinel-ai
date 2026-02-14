@@ -70,6 +70,7 @@ export default function IncidentDetail() {
   const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
   const [ownerDisplayName, setOwnerDisplayName] = useState<string | null>(null);
   const [ownerRole, setOwnerRole] = useState<string | null>(null);
+  const [ownerAvatarUrl, setOwnerAvatarUrl] = useState<string | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
 
   useEffect(() => {
@@ -143,12 +144,13 @@ export default function IncidentDetail() {
       // Fetch owner info if assigned
       if (inc?.incident_owner_id) {
         const [profileRes, roleRes] = await Promise.all([
-          supabase.from('profiles').select('email, display_name, full_name').eq('id', inc.incident_owner_id).maybeSingle(),
+          supabase.from('profiles').select('email, display_name, full_name, avatar_url').eq('id', inc.incident_owner_id).maybeSingle(),
           supabase.from('user_roles').select('role').eq('user_id', inc.incident_owner_id).maybeSingle(),
         ]);
         if (profileRes.data) {
           setOwnerEmail(profileRes.data.email);
           setOwnerDisplayName(profileRes.data.display_name || profileRes.data.full_name || null);
+          setOwnerAvatarUrl(profileRes.data.avatar_url || null);
         }
         if (roleRes.data) setOwnerRole(roleRes.data.role);
       }
@@ -671,6 +673,7 @@ export default function IncidentDetail() {
                 ownerRole={incident.incident_owner_role || null}
                 ownerEmail={ownerEmail}
                 ownerDisplayName={ownerDisplayName}
+                ownerAvatarUrl={ownerAvatarUrl}
                 ownerRoleFromDb={ownerRole}
                 assignedAt={incident.assigned_at || null}
                 status={incident.status}

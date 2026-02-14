@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { UserCheck, Lock, ArrowUpRight, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
@@ -18,6 +19,7 @@ interface IncidentAssignmentProps {
   ownerRole: string | null;
   ownerEmail?: string | null;
   ownerDisplayName?: string | null;
+  ownerAvatarUrl?: string | null;
   ownerRoleFromDb?: string | null;
   assignedAt: string | null;
   status: string;
@@ -31,6 +33,7 @@ export function IncidentAssignment({
   ownerRole,
   ownerEmail,
   ownerDisplayName,
+  ownerAvatarUrl,
   ownerRoleFromDb,
   assignedAt,
   status,
@@ -48,6 +51,7 @@ export function IncidentAssignment({
   const isAssigned = !!ownerId;
 
   const canReassign = canModifyData && role && ['soc_manager', 'admin', 'ciso'].includes(role);
+  const canViewOwnerProfile = role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'admin', 'ciso'].includes(role);
   const canEscalate = canModifyData && role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'admin'].includes(role);
 
   // Determine which escalation tiers are available (only tiers ABOVE current role)
@@ -289,20 +293,34 @@ export function IncidentAssignment({
       {/* Assignment Status */}
       {isAssigned ? (
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="outline" className="border-primary/30 bg-primary/5 text-primary gap-1.5 py-1.5 px-3">
+          <Badge variant="outline" className="border-primary/30 bg-primary/5 text-primary gap-1.5 py-1 px-2.5">
+            {!isOwner && ownerAvatarUrl ? (
+              <Avatar className="h-5 w-5 border border-primary/20">
+                <AvatarImage src={ownerAvatarUrl} alt="Owner" className="object-cover" />
+                <AvatarFallback className="text-[8px] bg-primary/20 text-primary">
+                  {(ownerDisplayName || ownerEmail || 'A').charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            ) : !isOwner ? (
+              <Avatar className="h-5 w-5 border border-primary/20">
+                <AvatarFallback className="text-[8px] bg-primary/20 text-primary">
+                  {(ownerDisplayName || ownerEmail || 'A').charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            ) : null}
             <Lock className="h-3 w-3" />
             {isOwner ? 'Assigned to You' : (
               <>
                 Locked by{' '}
-                {canReassign && ownerId ? (
+                {canViewOwnerProfile && ownerId ? (
                   <button
                     onClick={() => navigate(`/profile/${ownerId}`)}
-                    className="underline hover:text-primary/80 transition-colors"
+                    className="underline hover:text-primary/80 transition-colors font-semibold"
                   >
                     {ownerDisplayName || ownerEmail || 'Analyst'}
                   </button>
                 ) : (
-                  ownerDisplayName || ownerEmail || 'Analyst'
+                  <span className="font-semibold">{ownerDisplayName || ownerEmail || 'Analyst'}</span>
                 )}
               </>
             )}
