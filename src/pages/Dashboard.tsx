@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle, Clock, Shield, TrendingDown, Activity, Zap, Target } from 'lucide-react';
+import { AnalystLeaderboard } from '@/components/gamification/AnalystLeaderboard';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { IncidentTable } from '@/components/dashboard/IncidentTable';
@@ -165,9 +166,9 @@ export default function Dashboard() {
           </div>
         </AnimatedSection>
 
-        {/* MITRE & Recent Incidents */}
+        {/* MITRE, Recent Incidents & Leaderboard */}
         <AnimatedSection>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
             <MitreChart incidents={incidents} />
             <div className="lg:col-span-2">
               <div className="rounded-xl border border-border bg-card p-5">
@@ -194,6 +195,11 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+        </AnimatedSection>
+
+        {/* Analyst Leaderboard */}
+        <AnimatedSection>
+          <AnalystLeaderboard />
         </AnimatedSection>
       </AnimatedPage>
     </AppLayout>
