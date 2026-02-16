@@ -43,11 +43,10 @@ export default function DemoLanding() {
   const handleSendOtp = async () => {
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: 'tarekaboya2019@gmail.com',
-      });
-      
-      if (error) throw error;
+      const res = await supabase.functions.invoke('send-demo-otp', { method: 'POST', body: {} });
+      if (res.error) throw res.error;
+      const data = res.data as any;
+      if (!data?.success) throw new Error(data?.error || 'Failed to send OTP');
       
       setOtpSent(true);
       toast.success('تم إرسال كود الدخول! اطلب الكود من مسؤول النظام.');
@@ -65,13 +64,22 @@ export default function DemoLanding() {
     }
     setVerifying(true);
     try {
-      const { error } = await supabase.auth.verifyOtp({
-        email: 'tarekaboya2019@gmail.com',
-        token: otpCode,
-        type: 'email',
-      });
+      const res = await supabase.functions.invoke('verify-demo-otp', { method: 'POST', body: { code: otpCode } });
+      if (res.error) throw res.error;
+      const data = res.data as any;
+      if (!data?.success) {
+        toast.error('كود غير صحيح أو منتهي الصلاحية');
+        return;
+      }
       
-      if (error) throw error;
+      // Use the token_hash to sign in as demo user
+      if (data.token_hash) {
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: data.token_hash,
+          type: 'magiclink',
+        });
+        if (error) throw error;
+      }
       
       toast.success('Welcome to SOCMind Demo! 👋');
       navigate('/dashboard');
