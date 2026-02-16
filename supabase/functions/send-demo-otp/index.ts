@@ -31,24 +31,23 @@ serve(async (req) => {
     });
     if (insertError) throw insertError;
 
-    // Find admin user ID
-    const { data: adminProfile } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("email", ADMIN_EMAIL)
-      .maybeSingle();
+    // Send in-app notification to ALL admin users
+    const { data: adminUsers } = await supabase
+      .from("user_roles")
+      .select("user_id")
+      .in("role", ["admin", "ciso", "soc_manager"]);
 
-    if (adminProfile?.id) {
-      // Send in-app notification with the code
-      await supabase.from("notifications").insert({
-        user_id: adminProfile.id,
+    if (adminUsers && adminUsers.length > 0) {
+      const notifications = adminUsers.map((u: any) => ({
+        user_id: u.user_id,
         type: "system",
         title: `🔑 Demo Access Code: ${code}`,
         body: `Someone requested demo access. Share this code with them. Expires in 10 minutes.`,
         icon: "🔑",
         severity: "warning",
         link: "/demo-landing",
-      });
+      }));
+      await supabase.from("notifications").insert(notifications);
     }
 
     // Also try sending email via notification function
