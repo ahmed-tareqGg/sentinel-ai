@@ -25,6 +25,7 @@ import { IOCManager } from '@/components/incidents/IOCManager';
 import { EvidenceManager } from '@/components/incidents/EvidenceManager';
 import { AIReportGenerator } from '@/components/incidents/AIReportGenerator';
 import { RootCauseAnalysis } from '@/components/incidents/RootCauseAnalysis';
+import { CorrelatedLogs } from '@/components/incidents/CorrelatedLogs';
 
 interface TimelineEntry {
   id: string;
@@ -773,6 +774,7 @@ export default function IncidentDetail() {
       <Tabs defaultValue="analysis" className="space-y-6">
         <TabsList className="bg-secondary/50 flex-wrap">
           <TabsTrigger value="analysis">AI Analysis</TabsTrigger>
+          <TabsTrigger value="correlation">🔗 Correlated Logs</TabsTrigger>
           <TabsTrigger value="investigation">🧪 Investigation</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
@@ -831,6 +833,14 @@ export default function IncidentDetail() {
               </div>
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="correlation" className="space-y-6">
+          <CorrelatedLogs
+            incidentId={incident.id}
+            srcIp={incident.src_ip}
+            eventType={incident.event_type}
+          />
         </TabsContent>
 
         <TabsContent value="investigation" className="space-y-6">
