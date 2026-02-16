@@ -312,6 +312,54 @@ export default function Reports() {
       y = (doc as any).lastAutoTable.finalY + 10;
     }
 
+    // Performance Metrics (only for Performance reports)
+    if (data.performance_metrics) {
+      sectionHeading('SOC Performance Metrics', [0, 140, 100]);
+      const perfRows = [
+        ['Total Processed', String(data.performance_metrics.total_processed || 0)],
+        ['Resolved Count', String(data.performance_metrics.resolved_count || 0)],
+        ['Resolution Rate', data.performance_metrics.resolution_rate || 'N/A'],
+        ['Avg Resolution Time (MTTR)', data.performance_metrics.avg_resolution_time || 'N/A'],
+        ['Escalation Count', String(data.performance_metrics.escalation_count || 0)],
+        ['Escalation Rate', data.performance_metrics.escalation_rate || 'N/A'],
+        ['SLA Compliance', data.performance_metrics.sla_compliance || 'N/A'],
+        ['False Positive Rate', data.performance_metrics.false_positive_rate || 'N/A'],
+        ['AI Accuracy', data.performance_metrics.ai_accuracy || 'N/A'],
+        ['Avg AI Confidence', data.performance_metrics.avg_confidence || 'N/A'],
+      ];
+      autoTable(doc, {
+        startY: y,
+        head: [],
+        body: perfRows,
+        theme: 'plain',
+        margin: { left: margin, right: margin },
+        styles: { fontSize: 9, cellPadding: 3, textColor: C.dark },
+        columnStyles: {
+          0: { fontStyle: 'bold', cellWidth: 55, textColor: C.medium },
+          1: { cellWidth: contentWidth - 55 },
+        },
+        alternateRowStyles: { fillColor: C.bgLight },
+      });
+      y = (doc as any).lastAutoTable.finalY + 10;
+    }
+
+    // Event Type Breakdown
+    if (data.event_type_breakdown?.length > 0) {
+      sectionHeading('Event Type Distribution', [180, 120, 0]);
+      const evtData = data.event_type_breakdown.map((e: any) => [e.type, String(e.count)]);
+      autoTable(doc, {
+        startY: y,
+        head: [['Event Type', 'Count']],
+        body: evtData,
+        theme: 'grid',
+        margin: { left: margin, right: margin },
+        headStyles: { fillColor: [180, 120, 0] as any, textColor: C.white, fontSize: 9, fontStyle: 'bold' },
+        bodyStyles: { fontSize: 8, textColor: C.dark, cellPadding: 2.5 },
+        alternateRowStyles: { fillColor: C.bgLight },
+      });
+      y = (doc as any).lastAutoTable.finalY + 10;
+    }
+
     // Key Findings
     if (data.key_findings?.length > 0) {
       sectionHeading('Key Findings', [0, 140, 100]);

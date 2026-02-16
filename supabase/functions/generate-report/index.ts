@@ -337,9 +337,100 @@ serve(async (req) => {
       ? Math.round((closedCritical.length / criticalIncidents.length) * 100)
       : 100;
 
+    // Build report based on type
+    const reportType = (report_type || 'Executive').toLowerCase();
+
+    let keyFindings: string[] = [];
+    let recommendations: (string | null)[] = [];
+    let detailedIncidents: any[] = [];
+    let performanceMetrics: any = null;
+
+    if (reportType === 'performance') {
+      // === PERFORMANCE REPORT: SOC metrics & analyst productivity ===
+      const resolvedIncidents = incidentList.filter(i => i.status === 'Closed' || i.status === 'Resolved');
+      const avgResolutionTimeMs = resolvedIncidents.length > 0
+        ? resolvedIncidents.reduce((sum, i) => {
+            const closed = (i as any).closed_at || (i as any).resolved_at;
+            if (!closed) return sum;
+            const diff = new Date(closed).getTime() - new Date(i.created_at).getTime();
+            return sum + Math.min(diff, 24 * 60 * 60 * 1000); // cap at 24h
+          }, 0) / resolvedIncidents.length
+        : 0;
+      const avgResolutionMinutes = Math.round(avgResolutionTimeMs / 60000);
+
+      const escalatedCount = incidentList.filter(i => (i as any).escalated_at).length;
+      const reopenedCount = 0; // placeholder
+
+      performanceMetrics = {
+        total_processed: totalIncidents,
+        resolved_count: resolvedIncidents.length,
+        resolution_rate: totalIncidents > 0 ? `${Math.round((resolvedIncidents.length / totalIncidents) * 100)}%` : '0%',
+        avg_resolution_time: avgResolutionMinutes > 60 ? `${(avgResolutionMinutes / 60).toFixed(1)} hours` : `${avgResolutionMinutes} minutes`,
+        escalation_count: escalatedCount,
+        escalation_rate: totalIncidents > 0 ? `${Math.round((escalatedCount / totalIncidents) * 100)}%` : '0%',
+        sla_compliance: `${slaCompliance}%`,
+        false_positive_rate: `${falsePositiveRate}%`,
+        ai_accuracy: `${aiAccuracy}%`,
+        avg_confidence: `${avgConfidence}%`,
+      };
+
+      keyFindings = [
+        `${resolvedIncidents.length} out of ${totalIncidents} incidents resolved (${performanceMetrics.resolution_rate})`,
+        `Average resolution time: ${performanceMetrics.avg_resolution_time}`,
+        `${escalatedCount} incidents escalated (${performanceMetrics.escalation_rate} escalation rate)`,
+        `AI classification accuracy: ${aiAccuracy}% with ${avgConfidence}% average confidence`,
+        `SLA compliance: ${slaCompliance}%`,
+        `False positive rate: ${falsePositiveRate}%`,
+      ];
+
+      recommendations = [
+        avgResolutionMinutes > 120 ? 'Reduce MTTR by automating initial triage with playbooks' : null,
+        falsePositiveRate > 30 ? `High false positive rate (${falsePositiveRate}%) — tune detection rules` : null,
+        slaCompliance < 95 ? `SLA compliance at ${slaCompliance}% — review response workflows` : null,
+        escalatedCount > totalIncidents * 0.3 ? 'High escalation rate — improve Tier 1 playbooks' : null,
+        'Review analyst workload distribution for balanced coverage',
+        'Update automation playbooks based on recurring incident patterns',
+      ].filter(Boolean);
+
+      // Show event type distribution for performance
+      detailedIncidents = []; // No detailed incidents for performance report
+    } else {
+      // === EXECUTIVE REPORT: High-level summary for leadership ===
+      keyFindings = [
+        `${totalIncidents} total security incidents detected in the reporting period`,
+        `${truePositives} confirmed true positives (${Math.round((truePositives/Math.max(totalIncidents,1))*100)}% confirmation rate)`,
+        `${severityBreakdown.critical} critical and ${severityBreakdown.high} high severity incidents identified`,
+        riskBreakdown.critical > 0 ? `${riskBreakdown.critical} incidents classified as critical risk requiring immediate attention` : 'No critical risk incidents — security posture is strong',
+        topMitreTechniques.length > 0 
+          ? `Most common attack technique: ${topMitreTechniques[0].technique} (${topMitreTechniques[0].count} occurrences)`
+          : 'No MITRE ATT&CK techniques mapped yet',
+        `AI-driven detection accuracy: ${aiAccuracy}% | SLA compliance: ${slaCompliance}%`,
+      ];
+
+      recommendations = [
+        riskBreakdown.critical > 0 ? `Prioritize remediation of ${riskBreakdown.critical} critical-risk incidents` : null,
+        severityBreakdown.critical > 0 ? `Investigate ${severityBreakdown.critical} critical severity events immediately` : null,
+        falsePositiveRate > 40 ? 'Tune detection rules to reduce false positive rate' : null,
+        slaCompliance < 90 ? 'Review incident response procedures to improve SLA compliance' : null,
+        'Continue investment in AI-driven detection capabilities',
+        'Schedule quarterly review of MITRE ATT&CK coverage gaps',
+      ].filter(Boolean);
+
+      detailedIncidents = incidentList.slice(0, 20).map(i => ({
+        id: i.incident_number,
+        timestamp: i.created_at,
+        event_type: i.event_type,
+        severity: i.severity,
+        classification: i.classification,
+        confidence: i.confidence,
+        risk_level: i.risk_level,
+        status: i.status,
+      }));
+    }
+
     const report = {
       metadata: {
-        report_type: report_type || 'security_summary',
+        report_type: report_type || 'Executive',
         generated_at: new Date().toISOString(),
         generated_by: user.email || user.id,
         period: { start: startDate, end: endDate },
@@ -362,31 +453,10 @@ serve(async (req) => {
         top_techniques: topMitreTechniques,
       },
       event_type_breakdown: topEventTypes,
-      key_findings: [
-        `${totalIncidents} total security incidents detected`,
-        `${truePositives} confirmed true positives (${Math.round((truePositives/totalIncidents)*100) || 0}% rate)`,
-        `AI classification: ${avgConfidence}% avg confidence`,
-        `SLA compliance: ${slaCompliance}%`,
-        topMitreTechniques.length > 0 
-          ? `Top MITRE: ${topMitreTechniques[0].technique} (${topMitreTechniques[0].count})`
-          : 'No MITRE techniques mapped',
-      ],
-      recommendations: [
-        riskBreakdown.critical > 0 ? `Address ${riskBreakdown.critical} critical incidents` : null,
-        falsePositiveRate > 40 ? 'Tune detection rules to reduce false positives' : null,
-        slaCompliance < 90 ? 'Review response procedures for SLA improvement' : null,
-        'Continue monitoring and update playbooks',
-      ].filter(Boolean),
-      detailed_incidents: incidentList.slice(0, 20).map(i => ({
-        id: i.incident_number,
-        timestamp: i.created_at,
-        event_type: i.event_type,
-        severity: i.severity,
-        classification: i.classification,
-        confidence: i.confidence,
-        risk_level: i.risk_level,
-        status: i.status,
-      })),
+      performance_metrics: performanceMetrics,
+      key_findings: keyFindings,
+      recommendations,
+      detailed_incidents: detailedIncidents,
     };
 
     const pdfContent = generatePDFContent(report);
