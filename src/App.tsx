@@ -93,7 +93,7 @@ const App = () => (
               <Route path="/profile/:userId" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="/war-room/:id" element={<ProtectedRoute><WarRoom /></ProtectedRoute>} />
               <Route path="/attack-simulator" element={<ProtectedRoute><AttackSimulator /></ProtectedRoute>} />
-              <Route path="/executive" element={<ProtectedRoute requiredRole="ciso"><ExecutiveDashboard /></ProtectedRoute>} />
+              <Route path="/executive" element={<ProtectedRoute><ExecutiveDashboard /></ProtectedRoute>} />
               <Route path="/admin/cloud" element={<ProtectedRoute requiredRole="ciso"><CloudAdmin /></ProtectedRoute>} />
               
               {/* Fallback */}

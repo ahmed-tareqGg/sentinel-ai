@@ -18,7 +18,10 @@ import {
   Server,
   ScrollText,
   ChevronRight,
-  MessageSquare
+  MessageSquare,
+  Swords,
+  Trophy,
+  PieChart
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth, AppRole } from '@/hooks/useAuth';
@@ -41,8 +44,10 @@ const navGroups = [
     label: 'Intelligence',
     items: [
       { icon: BarChart3, label: 'Analytics', path: '/analytics' },
+      { icon: PieChart, label: 'Executive Dashboard', path: '/executive' },
       { icon: Target, label: 'MITRE Coverage', path: '/mitre-coverage' },
       { icon: Zap, label: 'Playbooks', path: '/playbooks' },
+      { icon: Swords, label: 'Attack Simulator', path: '/attack-simulator' },
       { icon: ClipboardCheck, label: 'Approvals', path: '/approvals' },
       { icon: MessageSquare, label: 'Team Chat', path: '/team-chat' },
     ],
