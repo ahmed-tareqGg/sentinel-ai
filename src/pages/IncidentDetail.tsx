@@ -51,12 +51,7 @@ interface ExtendedIncident extends IIncident {
 export default function IncidentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { role, isDemoUser, canModifyData, profile } = useAuth();
-
-  const canModifyIncidents = canModifyData && role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
-  const canCloseIncident = canModifyData && role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
-  const canRunPlaybook = canModifyData && role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
-  const canCreateTicket = canModifyData;
+  const { user, role, isDemoUser, canModifyData, profile } = useAuth();
 
   const [incident, setIncident] = useState<ExtendedIncident | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
@@ -73,6 +68,12 @@ export default function IncidentDetail() {
   const [ownerRole, setOwnerRole] = useState<string | null>(null);
   const [ownerAvatarUrl, setOwnerAvatarUrl] = useState<string | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
+
+  const isCurrentUserOwner = !!user && !!incident?.incident_owner_id && user.id === incident.incident_owner_id;
+  const canModifyIncidents = canModifyData && isCurrentUserOwner && role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
+  const canCloseIncident = canModifyData && isCurrentUserOwner && role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
+  const canRunPlaybook = canModifyData && isCurrentUserOwner && role && ['soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
+  const canCreateTicket = canModifyData && isCurrentUserOwner;
 
   useEffect(() => {
     if (id) {
@@ -814,6 +815,9 @@ export default function IncidentDetail() {
           {incident.recommended_actions && incident.recommended_actions.length > 0 && (
             <div className="rounded-xl border border-border bg-card p-5">
               <h3 className="text-sm font-semibold text-foreground mb-4">Recommended Actions</h3>
+              {!isCurrentUserOwner && (
+                <p className="text-xs text-warning mb-3">⚠️ You must assign this incident to yourself before executing actions.</p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {incident.recommended_actions.map((action, idx) => (
                   <Button
@@ -821,7 +825,7 @@ export default function IncidentDetail() {
                     variant="outline"
                     size="sm"
                     className="border-primary/30 text-primary hover:bg-primary/10"
-                    disabled={executingAction === action}
+                    disabled={!isCurrentUserOwner || executingAction === action}
                     onClick={() => handleRecommendedAction(action)}
                   >
                     {executingAction === action ? (
@@ -932,6 +936,9 @@ export default function IncidentDetail() {
               <Shield className="h-4 w-4 text-primary" />
               Containment Actions
             </h3>
+            {!isCurrentUserOwner && (
+              <p className="text-xs text-warning mb-3">⚠️ You must assign this incident to yourself before executing containment actions.</p>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
                 { key: 'blockip', label: '🚫 Block IP', icon: 'Block IP', needsApproval: true },
@@ -947,7 +954,7 @@ export default function IncidentDetail() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={!canModifyData || executingAction === action.icon}
+                    disabled={!isCurrentUserOwner || executingAction === action.icon}
                     onClick={() => handleRecommendedAction(action.icon)}
                     className={cn("justify-start w-full", action.needsApproval && "border-warning/20")}
                   >
