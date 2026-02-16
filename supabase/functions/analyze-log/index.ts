@@ -196,7 +196,9 @@ serve(async (req) => {
     console.log('Keyword-based MITRE detection:', keywordMitre);
 
     // Build AI prompt
-    const aiPrompt = `You are an expert SOC analyst performing threat classification. Analyze this security log:
+    const aiPrompt = `You are an expert SOC analyst specializing in noise reduction and accurate threat classification. Your goal is to MINIMIZE false alerts while catching real threats.
+
+Analyze this security log:
 
 Event Type: ${log.eventType}
 Severity: ${log.severity}/5
@@ -206,18 +208,26 @@ Message: ${log.msg}
 ${log.fileHash ? `File Hash: ${log.fileHash}` : ''}
 ${log.action ? `Action: ${log.action}` : ''}
 
-CRITICAL CLASSIFICATION RULES (you MUST follow these):
-1. Severity 5 = ALWAYS "True Positive" with risk_level "Critical". NEVER classify severity 5 as False Positive or Benign.
-2. Severity 4 with attack patterns (brute force, malware, C2, lateral movement) = "True Positive"
-3. Only classify as "False Positive" if there is STRONG evidence the event is benign (e.g., routine health checks, telemetry, expected system updates)
-4. If uncertain, classify as "True Positive" with lower confidence rather than "False Positive"
-5. Never classify events containing keywords like malware, ransomware, C2, exfiltration, credential dump as "False Positive"
+CLASSIFICATION RULES — Accuracy over volume:
+1. Severity 5 = ALWAYS "True Positive" with risk_level "Critical"
+2. Severity 4 with CLEAR attack patterns (brute force, malware, C2, lateral movement, credential theft) = "True Positive"
+3. Severity 4 WITHOUT attack patterns (routine system events, driver errors, service restarts, health checks) = "False Positive" or "Benign"
+4. Severity 3 or below: Default to "Benign" unless there is EXPLICIT evidence of malicious activity
+5. ALWAYS classify as "False Positive" or "Benign" for:
+   - Windows telemetry (Netwtw, BTHUSB, DCOM, WMI routine, Event Log service)
+   - Routine authentication (successful logins, password changes, session renewals)
+   - System maintenance (updates, patches, service restarts, disk checks)
+   - Network management (DHCP, DNS resolution, ARP, NTP sync)
+   - Health checks, heartbeats, monitoring probes
+6. Only classify as "True Positive" when you see CONCRETE threat indicators, not just elevated severity
+7. Confidence should reflect actual certainty: 40-60% = uncertain, 60-80% = likely, 80-100% = confirmed
+8. If uncertain between TP and FP, classify as "Benign" with confidence 45-55% — let the threshold filter decide
 
 Respond with JSON:
 {
   "classification": "True Positive" | "False Positive" | "Benign",
   "confidence": 0-100,
-  "reason": "detailed explanation",
+  "reason": "detailed explanation of WHY this classification",
   "risk_level": "Critical" | "High" | "Medium" | "Low",
   "mitre_techniques": [{ "technique_id": "T1234", "technique_name": "Name", "tactic": "Tactic", "confidence": 80, "evidence": "why" }],
   "recommended_actions": ["action1", "action2"],
@@ -337,39 +347,40 @@ Respond with JSON:
       } else if (log.severity >= 4 && keywordMitre.length > 0) {
         fallbackRisk = 'High';
         fallbackClass = 'True Positive';
-        fallbackConfidence = 70 + Math.floor(Math.random() * 15); // 70-84%
+        fallbackConfidence = 65 + Math.floor(Math.random() * 15); // 65-79%
         fallbackEvidence.push('High severity with MITRE technique match');
         fallbackActions.unshift('Investigate source immediately');
       } else if (highPatterns.test(content)) {
-        fallbackRisk = 'High';
+        fallbackRisk = 'Medium';
         fallbackClass = 'True Positive';
-        fallbackConfidence = 65 + Math.floor(Math.random() * 15); // 65-79%
-        fallbackEvidence.push('High-risk pattern detected in message');
+        fallbackConfidence = 55 + Math.floor(Math.random() * 15); // 55-69%
+        fallbackEvidence.push('Suspicious pattern detected in message');
       } else if (log.severity >= 4) {
-        fallbackRisk = 'High';
-        fallbackClass = 'True Positive';
-        fallbackConfidence = 70 + Math.floor(Math.random() * 10); // 70-79% — severity 4+ is always TP
-        fallbackEvidence.push('Elevated severity requires investigation');
-        fallbackActions.unshift('Investigate source immediately');
+        // Severity 4 WITHOUT attack patterns — likely noise
+        fallbackRisk = 'Medium';
+        fallbackClass = 'Benign';
+        fallbackConfidence = 45 + Math.floor(Math.random() * 15); // 45-59%
+        fallbackEvidence.push('Elevated severity but no attack indicators');
       } else if (benignPatterns.test(content)) {
         fallbackRisk = 'Low';
         fallbackClass = 'False Positive';
-        fallbackConfidence = 75 + Math.floor(Math.random() * 20); // 75-94%
+        fallbackConfidence = 80 + Math.floor(Math.random() * 15); // 80-94%
         fallbackEvidence.push('Common benign activity pattern');
       } else if (log.severity >= 3) {
-        fallbackRisk = 'Medium';
-        fallbackClass = Math.random() > 0.6 ? 'Pending' : 'False Positive';
-        fallbackConfidence = 50 + Math.floor(Math.random() * 25); // 50-74%
+        fallbackRisk = 'Low';
+        fallbackClass = 'Benign';
+        fallbackConfidence = 50 + Math.floor(Math.random() * 20); // 50-69%
+        fallbackEvidence.push('Medium severity, no threat indicators');
       } else if (keywordMitre.length > 0) {
         fallbackRisk = 'Medium';
         fallbackClass = 'Pending';
-        fallbackConfidence = 60 + Math.floor(Math.random() * 15); // 60-74%
+        fallbackConfidence = 55 + Math.floor(Math.random() * 15); // 55-69%
         fallbackEvidence.push('MITRE technique pattern detected');
       } else {
-        // Low severity, no patterns - likely benign
+        // Low severity, no patterns - benign
         fallbackRisk = 'Low';
         fallbackClass = 'False Positive';
-        fallbackConfidence = 60 + Math.floor(Math.random() * 30); // 60-89%
+        fallbackConfidence = 70 + Math.floor(Math.random() * 25); // 70-94%
         fallbackEvidence.push('No threat indicators found');
       }
 
