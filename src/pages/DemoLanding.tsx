@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -35,30 +36,49 @@ import socmindLogo from '@/assets/socmind-logo.png';
 export default function DemoLanding() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
 
-  const handleDemoLogin = async () => {
+  const handleSendOtp = async () => {
     setIsLoading(true);
     try {
-      // Try to sign up first (in case user doesn't exist)
-      await supabase.auth.signUp({
+      const { error } = await supabase.auth.signInWithOtp({
         email: 'demo@socmind.com',
-        password: 'Demo@123456!',
-      });
-      
-      // Then sign in
-      const { error } = await supabase.auth.signInWithPassword({
-        email: 'demo@socmind.com',
-        password: 'Demo@123456!',
       });
       
       if (error) throw error;
       
-      toast.success('Welcome to SOCMind Demo!');
-      navigate('/dashboard');
+      setOtpSent(true);
+      toast.success('تم إرسال كود الدخول! اطلب الكود من مسؤول النظام.');
     } catch (error: any) {
-      toast.error(error.message || 'Failed to start demo');
+      toast.error(error.message || 'Failed to send OTP');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (otpCode.length !== 6) {
+      toast.error('الكود يجب أن يكون 6 أرقام');
+      return;
+    }
+    setVerifying(true);
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email: 'demo@socmind.com',
+        token: otpCode,
+        type: 'email',
+      });
+      
+      if (error) throw error;
+      
+      toast.success('Welcome to SOCMind Demo! 👋');
+      navigate('/dashboard');
+    } catch (error: any) {
+      toast.error('كود غير صحيح أو منتهي الصلاحية');
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -114,10 +134,26 @@ export default function DemoLanding() {
             <Link to="/auth">
               <Button variant="ghost" size="sm">Sign In</Button>
             </Link>
-            <Button onClick={handleDemoLogin} disabled={isLoading} size="sm" className="gap-2">
-              {isLoading ? 'Starting...' : 'Try Demo'}
-              <Play className="h-4 w-4" />
-            </Button>
+            {otpSent ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="text"
+                  placeholder="Enter 6-digit code"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="w-40 text-center font-mono tracking-widest"
+                  maxLength={6}
+                />
+                <Button onClick={handleVerifyOtp} disabled={verifying} size="sm" className="gap-2">
+                  {verifying ? 'Verifying...' : 'Verify'}
+                </Button>
+              </div>
+            ) : (
+              <Button onClick={handleSendOtp} disabled={isLoading} size="sm" className="gap-2">
+                {isLoading ? 'Sending...' : 'Try Demo'}
+                <Play className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -143,15 +179,41 @@ export default function DemoLanding() {
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
-              <Button 
-                onClick={handleDemoLogin} 
-                disabled={isLoading}
-                size="lg" 
-                className="gap-2 text-base px-8 py-6"
-              >
-                <Play className="h-5 w-5" />
-                {isLoading ? 'Starting Demo...' : 'Try Live Demo'}
-              </Button>
+              {otpSent ? (
+                <div className="flex flex-col items-center gap-3">
+                  <p className="text-sm text-muted-foreground">أدخل الكود المكون من 6 أرقام:</p>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="text"
+                      placeholder="000000"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      className="w-40 text-center font-mono text-lg tracking-[0.5em]"
+                      maxLength={6}
+                    />
+                    <Button onClick={handleVerifyOtp} disabled={verifying} size="lg" className="gap-2">
+                      {verifying ? 'Verifying...' : 'Enter Demo'}
+                      <ArrowRight className="h-5 w-5" />
+                    </Button>
+                  </div>
+                  <button 
+                    onClick={() => { setOtpSent(false); setOtpCode(''); }}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    إعادة إرسال الكود
+                  </button>
+                </div>
+              ) : (
+                <Button 
+                  onClick={handleSendOtp} 
+                  disabled={isLoading}
+                  size="lg" 
+                  className="gap-2 text-base px-8 py-6"
+                >
+                  <Play className="h-5 w-5" />
+                  {isLoading ? 'Sending Code...' : 'Try Live Demo'}
+                </Button>
+              )}
               <a href="/SOCMind-Demo-Guide.pdf" target="_blank" rel="noopener noreferrer">
                 <Button variant="outline" size="lg" className="gap-2 text-base px-8 py-6">
                   <FileText className="h-5 w-5" />
@@ -374,15 +436,31 @@ export default function DemoLanding() {
           </p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Button 
-              onClick={handleDemoLogin} 
-              disabled={isLoading}
-              size="lg" 
-              className="gap-2 text-base px-8 py-6"
-            >
-              <Zap className="h-5 w-5" />
-              Launch Demo
-            </Button>
+            {otpSent ? (
+              <div className="flex items-center gap-3">
+                <Input
+                  type="text"
+                  placeholder="000000"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="w-40 text-center font-mono text-lg tracking-[0.5em]"
+                  maxLength={6}
+                />
+                <Button onClick={handleVerifyOtp} disabled={verifying} size="lg" className="gap-2 text-base px-8 py-6">
+                  {verifying ? 'Verifying...' : 'Enter Demo'}
+                </Button>
+              </div>
+            ) : (
+              <Button 
+                onClick={handleSendOtp} 
+                disabled={isLoading}
+                size="lg" 
+                className="gap-2 text-base px-8 py-6"
+              >
+                <Zap className="h-5 w-5" />
+                Launch Demo
+              </Button>
+            )}
             <a href="/SOCMind-Demo-Guide.pdf" target="_blank" rel="noopener noreferrer">
               <Button variant="outline" size="lg" className="gap-2 text-base px-8 py-6">
                 <FileText className="h-5 w-5" />
