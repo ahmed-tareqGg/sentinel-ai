@@ -92,7 +92,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: 'SOCMind Alerts <alerts@socmind.io>',
+          from: 'SOCMind Alerts <onboarding@resend.dev>',
           to: [to],
           subject: `[SOCMind] ${subject}`,
           html: htmlBody,
