@@ -7,7 +7,7 @@ import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { logUserAction } from '@/lib/auditLogger';
-import jsPDF from 'jspdf';
+import { generateProfessionalPDF } from '@/lib/pdfReportGenerator';
 
 interface Report {
   id: string;
@@ -124,39 +124,13 @@ export function AIReportGenerator({ incidentId, incident }: AIReportGeneratorPro
   };
 
   const exportPDF = (report: Report) => {
-    const pdf = new jsPDF();
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    let y = 20;
-
-    pdf.setFontSize(18);
-    pdf.setTextColor(0, 100, 200);
-    pdf.text('SOCMind INVESTIGATION REPORT', pageWidth / 2, y, { align: 'center' });
-    y += 12;
-
-    pdf.setDrawColor(0, 100, 200);
-    pdf.line(20, y, pageWidth - 20, y);
-    y += 10;
-
-    pdf.setFontSize(10);
-    pdf.setTextColor(100, 100, 100);
-    pdf.text(`Generated: ${new Date(report.created_at).toLocaleString()}`, 20, y);
-    pdf.text(`By: ${report.generated_by_email}`, 20, y + 5);
-    y += 15;
-
-    pdf.setFontSize(10);
-    pdf.setTextColor(0, 0, 0);
-    const lines = pdf.splitTextToSize(report.content.replace(/[#*`]/g, ''), pageWidth - 40);
-    
-    for (const line of lines) {
-      if (y > pdf.internal.pageSize.getHeight() - 20) {
-        pdf.addPage();
-        y = 20;
-      }
-      pdf.text(line, 20, y);
-      y += 5;
-    }
-
-    pdf.save(`Investigation_Report_${incident.incident_number}.pdf`);
+    generateProfessionalPDF({
+      incident,
+      content: report.content,
+      generatedBy: report.generated_by_email,
+      generatedByRole: report.generated_by_role,
+      createdAt: report.created_at,
+    });
     toast.success('PDF exported');
   };
 
