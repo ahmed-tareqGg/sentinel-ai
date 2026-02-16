@@ -1,8 +1,10 @@
-import { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
-import { useAuth, AppRole } from '@/hooks/useAuth';
+import { ReactNode, lazy, Suspense } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 import { NAV_ACCESS, SOCRole } from '@/hooks/usePermissions';
 import { Loader2 } from 'lucide-react';
+
+const NotFound = lazy(() => import('@/pages/NotFound'));
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -12,6 +14,7 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
   const { user, role, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -28,7 +31,19 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
     return <Navigate to="/auth" replace />;
   }
 
-  // Check role requirements using the role hierarchy
+  // Check NAV_ACCESS for current path
+  const basePath = '/' + location.pathname.split('/').filter(Boolean)[0];
+  const allowedRoles = NAV_ACCESS[basePath] || NAV_ACCESS[location.pathname];
+  
+  if (allowedRoles && role && !allowedRoles.includes(role as SOCRole)) {
+    return (
+      <Suspense fallback={null}>
+        <NotFound />
+      </Suspense>
+    );
+  }
+
+  // Check role hierarchy requirement
   if (requiredRole && role) {
     const roleHierarchy: Record<SOCRole, number> = {
       admin: 6,
@@ -36,9 +51,9 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
       soc_tier_2: 2,
       soc_tier_3: 3,
       soc_manager: 4,
-      grc_engineer: 3, // GRC is parallel to Tier 3 in hierarchy
+      grc_engineer: 3,
       ciso: 5,
-      demo_user: 0, // Demo users have lowest access level
+      demo_user: 0,
     };
     
     const userLevel = roleHierarchy[role as SOCRole] || 0;
@@ -46,17 +61,9 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
 
     if (userLevel < requiredLevel) {
       return (
-        <div className="min-h-screen bg-background flex items-center justify-center">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-foreground mb-2">Access Denied</h1>
-            <p className="text-muted-foreground">
-              You don't have permission to access this page.
-            </p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Required role: {requiredRole}
-            </p>
-          </div>
-        </div>
+        <Suspense fallback={null}>
+          <NotFound />
+        </Suspense>
       );
     }
   }
