@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { generateDemoGuidePDF } from '@/lib/demoGuideGenerator';
 import { Link, useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -222,12 +223,10 @@ export default function DemoLanding() {
                   {isLoading ? 'Sending Code...' : 'Try Live Demo'}
                 </Button>
               )}
-              <a href="/SOCMind-Demo-Guide.pdf" target="_blank" rel="noopener noreferrer">
-                <Button variant="outline" size="lg" className="gap-2 text-base px-8 py-6">
+            <Button variant="outline" size="lg" className="gap-2 text-base px-8 py-6" onClick={() => generateDemoGuidePDF()}>
                   <FileText className="h-5 w-5" />
                   View Demo Guide (PDF)
                 </Button>
-              </a>
             </div>
 
             <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
@@ -469,12 +468,10 @@ export default function DemoLanding() {
                 Launch Demo
               </Button>
             )}
-            <a href="/SOCMind-Demo-Guide.pdf" target="_blank" rel="noopener noreferrer">
-              <Button variant="outline" size="lg" className="gap-2 text-base px-8 py-6">
+            <Button variant="outline" size="lg" className="gap-2 text-base px-8 py-6" onClick={() => generateDemoGuidePDF()}>
                 <FileText className="h-5 w-5" />
                 Demo Guide (PDF)
               </Button>
-            </a>
           </div>
 
           {/* Judge Mode Hint */}
@@ -520,7 +517,7 @@ export default function DemoLanding() {
             <div>
               <h4 className="font-semibold text-foreground mb-4">Resources</h4>
               <ul className="space-y-2 text-sm">
-                <li><a href="/SOCMind-Demo-Guide.pdf" target="_blank" className="text-muted-foreground hover:text-primary transition-colors">Demo Guide (PDF)</a></li>
+                <li><button onClick={() => generateDemoGuidePDF()} className="text-muted-foreground hover:text-primary transition-colors text-sm">Demo Guide (PDF)</button></li>
               </ul>
             </div>
             <div>

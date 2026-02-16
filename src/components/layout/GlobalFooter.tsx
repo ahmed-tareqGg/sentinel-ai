@@ -97,14 +97,12 @@ export function GlobalFooter() {
               >
                 Privacy Policy
               </Link>
-              <a
-                href="/SOCMind-Demo-Guide.pdf"
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={() => { import('@/lib/demoGuideGenerator').then(m => m.generateDemoGuidePDF()); }}
                 className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-1"
               >
                 📘 Demo Guide
-              </a>
+              </button>
             </nav>
           </div>
 
