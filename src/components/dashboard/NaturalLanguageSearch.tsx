@@ -3,10 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Sparkles, Loader2, X, ArrowRight } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/backend/client';
+import { supabase, backendUrl, publishableKey } from '@/integrations/backend/client';
 import ReactMarkdown from 'react-markdown';
 
-const FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+const FUNCTIONS_URL = `${backendUrl}/functions/v1`;
 
 const SUGGESTIONS = [
   'Show critical incidents from this week',
@@ -35,8 +35,8 @@ export function NaturalLanguageSearch() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          'Authorization': `Bearer ${session?.access_token || publishableKey}`,
+          'apikey': publishableKey,
         },
         body: JSON.stringify({
           messages: [{
