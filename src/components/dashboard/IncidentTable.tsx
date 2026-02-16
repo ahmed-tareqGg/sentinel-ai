@@ -83,6 +83,8 @@ export function IncidentTable({ incidents, limit, selectable, selectedIds, onSel
               )}
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">ID</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Type</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Source IP</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Dest IP</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Severity</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Classification</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Confidence</th>
@@ -114,6 +116,12 @@ export function IncidentTable({ incidents, limit, selectable, selectedIds, onSel
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-sm text-foreground">{incident.event_type}</span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="text-sm font-mono text-foreground/80">{incident.src_ip || '—'}</span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="text-sm font-mono text-foreground/80">{incident.dst_ip || '—'}</span>
                 </td>
                 <td className="px-4 py-3">
                   <Badge variant="outline" className={cn('font-mono', severityColors[incident.severity])}>
