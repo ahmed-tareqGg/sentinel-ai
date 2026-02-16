@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/backend/client';
 import ReactMarkdown from 'react-markdown';
 
+const FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+
 const SUGGESTIONS = [
   'Show critical incidents from this week',
   'How many false positives today?',
@@ -28,38 +30,63 @@ export function NaturalLanguageSearch() {
     setResult(null);
 
     try {
-      const { data, error } = await supabase.functions.invoke('soc-chat', {
-        body: {
+      const session = (await supabase.auth.getSession()).data.session;
+      const resp = await fetch(`${FUNCTIONS_URL}/soc-chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({
           messages: [{
             role: 'user',
             content: `Answer this SOC question concisely (max 100 words, use tables/lists if helpful): ${q}`
           }],
           current_route: '/dashboard',
-        },
+        }),
       });
 
-      if (error) throw error;
-
-      if (typeof data === 'string') {
-        const lines = data.split('\n');
-        let content = '';
-        for (const line of lines) {
-          if (line.startsWith('data: ') && line.slice(6).trim() !== '[DONE]') {
-            try {
-              const parsed = JSON.parse(line.slice(6));
-              content += parsed.choices?.[0]?.delta?.content || '';
-            } catch {}
-          }
-        }
-        setResult(content || 'No results found.');
-      } else if (data?.choices?.[0]?.message?.content) {
-        setResult(data.choices[0].message.content);
-      } else {
-        setResult('Could not process query. Try rephrasing.');
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.error || `Request failed: ${resp.status}`);
       }
-    } catch (e) {
+
+      const reader = resp.body?.getReader();
+      if (!reader) throw new Error('No response body');
+
+      const decoder = new TextDecoder();
+      let content = '';
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let newlineIdx: number;
+        while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
+          let line = buffer.slice(0, newlineIdx);
+          buffer = buffer.slice(newlineIdx + 1);
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          if (!line.startsWith('data: ')) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === '[DONE]') break;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              content += delta;
+              setResult(content);
+            }
+          } catch {}
+        }
+      }
+
+      if (!content) setResult('No results found.');
+    } catch (e: any) {
       console.error('Search error:', e);
-      setResult('⚠️ Search failed. Please try again.');
+      setResult(`⚠️ ${e.message || 'Search failed. Please try again.'}`);
     } finally {
       setLoading(false);
     }
