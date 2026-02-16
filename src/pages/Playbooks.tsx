@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils';
 import { PlaybookTemplates } from '@/components/playbooks/PlaybookTemplates';
 import { SimulationMode } from '@/components/playbooks/SimulationMode';
 import { CorrelationRulesEngine } from '@/components/correlation/CorrelationRulesEngine';
+import { SOARActionsDashboard } from '@/components/playbooks/SOARActionsDashboard';
 import { useIncidents } from '@/hooks/useIncidents';
 
 interface PlaybookConditions {
@@ -590,6 +591,7 @@ export default function Playbooks() {
         <Tabs defaultValue="playbooks" className="space-y-4">
           <TabsList>
             <TabsTrigger value="playbooks">Playbooks</TabsTrigger>
+            <TabsTrigger value="soar-actions">SOAR Actions</TabsTrigger>
             <TabsTrigger value="executions">Execution History</TabsTrigger>
           </TabsList>
 
