@@ -24,7 +24,7 @@ interface RawLog {
   [key: string]: unknown;
 }
 
-const INCIDENT_RISK_THRESHOLD = 50;
+// Combined threshold: severity >= 3 AND confidence >= 60%
 
 async function verifyAuth(
   req: Request,
@@ -132,6 +132,113 @@ function buildCorrelationKey(log: ReturnType<typeof normalizeLog>, analysis: any
   };
 }
 
+// ========== DB CORRELATION RULES ENGINE ==========
+interface DBCorrelationRule {
+  id: string;
+  name: string;
+  match_field: string;
+  match_operator: string;
+  match_value: string | null;
+  event_type_filter: string[] | null;
+  threshold_count: number;
+  time_window_minutes: number;
+  severity_override: number | null;
+  incident_title_template: string | null;
+  is_active: boolean;
+}
+
+function getFieldValue(log: ReturnType<typeof normalizeLog>, analysis: any, field: string): string {
+  switch (field) {
+    case 'src_ip': return log.srcIP || '';
+    case 'dst_ip': return log.dstIP || '';
+    case 'hostname': return (log.rawLog as any)?.hostname || '';
+    case 'event_type': return log.eventType || '';
+    case 'user': return (log.rawLog as any)?.user || (log.rawLog as any)?.username || '';
+    case 'mitre_technique': return analysis?.mitre_technique || '';
+    default: return '';
+  }
+}
+
+function matchesOperator(value: string, operator: string, pattern: string | null): boolean {
+  if (!value) return false;
+  if (operator === 'any') return true;
+  if (!pattern) return false;
+  const v = value.toLowerCase();
+  const p = pattern.toLowerCase();
+  switch (operator) {
+    case 'equals': return v === p;
+    case 'contains': return v.includes(p);
+    case 'starts_with': return v.startsWith(p);
+    case 'regex': try { return new RegExp(pattern, 'i').test(value); } catch { return false; }
+    default: return false;
+  }
+}
+
+async function checkCorrelationRules(
+  supabase: any,
+  log: ReturnType<typeof normalizeLog>,
+  analysis: any,
+): Promise<{ matched: boolean; rule?: DBCorrelationRule; matchKey?: string }> {
+  // Fetch active rules (cached per request batch is fine)
+  const { data: rules, error } = await supabase
+    .from('correlation_rules')
+    .select('*')
+    .eq('is_active', true);
+
+  if (error || !rules || rules.length === 0) return { matched: false };
+
+  for (const rule of rules as DBCorrelationRule[]) {
+    // Check event type filter
+    if (rule.event_type_filter && rule.event_type_filter.length > 0) {
+      if (!rule.event_type_filter.includes(log.eventType.toLowerCase())) continue;
+    }
+
+    // Check field match
+    const fieldVal = getFieldValue(log, analysis, rule.match_field);
+    if (!matchesOperator(fieldVal, rule.match_operator, rule.match_value)) continue;
+
+    // Field matches! Now check threshold in time window
+    const matchKey = `${rule.match_field}:${fieldVal}`;
+    const windowStart = new Date(Date.now() - rule.time_window_minutes * 60 * 1000).toISOString();
+
+    // Count recent raw logs matching this pattern
+    let countQuery = supabase
+      .from('raw_logs')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', windowStart);
+
+    // Filter by the matching field in raw_payload
+    if (rule.match_field === 'src_ip') {
+      countQuery = countQuery.or(`ip_address.eq.${fieldVal}`);
+    }
+
+    const { count, error: countErr } = await countQuery;
+    if (countErr) continue;
+
+    const eventCount = (count || 0) + 1; // +1 for current log
+
+    if (eventCount >= rule.threshold_count) {
+      // Threshold met! Update rule stats
+      supabase.from('correlation_rules').update({
+        hits_count: (rule as any).hits_count ? (rule as any).hits_count + 1 : 1,
+        last_triggered_at: new Date().toISOString(),
+      }).eq('id', rule.id).then(() => {});
+
+      // Record the match
+      supabase.from('correlation_rule_matches').insert({
+        rule_id: rule.id,
+        match_key: matchKey,
+        match_count: eventCount,
+        matched_logs: { field: rule.match_field, value: fieldVal, event_type: log.eventType },
+      }).then(() => {});
+
+      return { matched: true, rule, matchKey };
+    }
+  }
+
+  return { matched: false };
+}
+
 // Check if a similar incident already exists within the correlation window
 async function findExistingIncident(
   supabase: any,
@@ -228,38 +335,47 @@ async function mergeIntoIncident(
 }
 
 function shouldCreateIncident(analysis: any, severity: number): { create: boolean; reason: string } {
-  // High severity always creates incident
-  if (severity >= 4) {
-    return { create: true, reason: 'High severity event' };
-  }
-
-  // Check AI classification
   const classification = (analysis?.classification || '').toLowerCase();
-  if (classification === 'benign' || classification === 'false positive' || classification === 'informational') {
-    return { create: false, reason: `AI classified as ${classification}` };
-  }
-  if (classification === 'true positive' || classification === 'malicious' || classification === 'suspicious') {
-    return { create: true, reason: 'AI classified as True Positive/Malicious' };
-  }
-
-  // Check risk level
-  const riskLevel = (analysis?.risk_level || '').toLowerCase();
-  if (riskLevel === 'critical' || riskLevel === 'high') {
-    return { create: true, reason: `Risk level: ${riskLevel}` };
-  }
-
-  // Check confidence score
   const confidence = analysis?.confidence || 0;
-  if (confidence >= INCIDENT_RISK_THRESHOLD && classification !== 'benign' && classification !== 'false positive') {
-    return { create: true, reason: `Confidence ${confidence}% exceeds threshold` };
+  const riskLevel = (analysis?.risk_level || '').toLowerCase();
+
+  // ── Rule 0: Severity 5 = always create (Critical) ──
+  if (severity >= 5) {
+    return { create: true, reason: 'Critical severity event (5)' };
   }
 
-  // Check for MITRE techniques
-  if (analysis?.mitre_technique || analysis?.mitre_techniques?.length > 0) {
-    return { create: true, reason: 'MITRE technique detected' };
+  // ── Rule 1: Explicit False Positive / Benign with high confidence → skip ──
+  if ((classification === 'benign' || classification === 'false positive' || classification === 'informational') && confidence >= 60) {
+    return { create: false, reason: `AI classified as ${classification} (${confidence}% confidence)` };
   }
 
-  return { create: false, reason: 'Low risk, no incident needed' };
+  // ── Rule 2: Combined threshold — severity >= 3 AND confidence >= 60 ──
+  if (severity >= 3 && confidence >= 60) {
+    if (classification === 'true positive' || classification === 'malicious' || classification === 'suspicious') {
+      return { create: true, reason: `Severity ${severity} + AI: ${classification} (${confidence}%)` };
+    }
+    if (riskLevel === 'critical' || riskLevel === 'high') {
+      return { create: true, reason: `Severity ${severity} + Risk: ${riskLevel} (${confidence}%)` };
+    }
+  }
+
+  // ── Rule 3: Severity 4 needs at least 50% confidence and not FP ──
+  if (severity >= 4 && confidence >= 50 && classification !== 'false positive' && classification !== 'benign') {
+    return { create: true, reason: `High severity ${severity} with ${confidence}% confidence` };
+  }
+
+  // ── Rule 4: Very high confidence TP regardless of severity ──
+  if (confidence >= 85 && (classification === 'true positive' || classification === 'malicious')) {
+    return { create: true, reason: `High confidence ${classification} (${confidence}%)` };
+  }
+
+  // ── Rule 5: MITRE technique with decent confidence ──
+  if ((analysis?.mitre_technique || analysis?.mitre_techniques?.length > 0) && confidence >= 65) {
+    return { create: true, reason: `MITRE technique detected with ${confidence}% confidence` };
+  }
+
+  // ── Default: suppress noise ──
+  return { create: false, reason: `Below threshold: severity=${severity}, confidence=${confidence}%, class=${classification}` };
 }
 
 // ========== MULTI-STAGE ATTACK CHAIN DETECTION ==========
@@ -493,10 +609,26 @@ serve(async (req) => {
               .eq('id', rawLogRowId);
           }
 
-          // Step C: Check if incident needed
+          // Step C: Check if incident needed (Combined threshold: severity >= 3 AND confidence >= 60)
           const decision = shouldCreateIncident(analysis, normalizedLog.severity);
 
-          if (!decision.create) {
+          // Step C2: Check DB correlation rules — may override decision
+          let correlationOverride = false;
+          let matchedRule: DBCorrelationRule | undefined;
+          let matchKey: string | undefined;
+          try {
+            const corrResult = await checkCorrelationRules(supabase, normalizedLog, analysis);
+            if (corrResult.matched && corrResult.rule) {
+              correlationOverride = true;
+              matchedRule = corrResult.rule;
+              matchKey = corrResult.matchKey;
+              console.log(`🔗 Correlation rule "${corrResult.rule.name}" triggered (key: ${matchKey})`);
+            }
+          } catch (e) {
+            console.warn('Correlation rules check failed:', e);
+          }
+
+          if (!decision.create && !correlationOverride) {
             incidentsSkipped++;
             if (rawLogRowId) {
               supabase.from('raw_logs').update({ processing_status: 'ignored' }).eq('id', rawLogRowId).then(() => {});
@@ -520,13 +652,22 @@ serve(async (req) => {
               }).eq('id', rawLogRowId);
             }
             
-            incidentsSkipped++; // Count as "not a new incident"
+            // Link correlation rule match to incident
+            if (matchedRule) {
+              supabase.from('correlation_rule_matches').update({
+                incident_id: existingIncident.id,
+              }).eq('rule_id', matchedRule.id).is('incident_id', null)
+                .order('triggered_at', { ascending: false }).limit(1).then(() => {});
+            }
+
+            incidentsSkipped++;
             return {
               id: existingIncident.id,
               incident_number: existingIncident.incident_number,
               classification: analysis?.classification,
               risk_level: analysis?.risk_level,
               correlated: true,
+              correlation_rule: matchedRule?.name || null,
             };
           }
 
@@ -539,6 +680,21 @@ serve(async (req) => {
           else if (aiRiskLevel === 'medium') finalSeverity = Math.max(finalSeverity, 3);
           else if (aiRiskLevel === 'low') finalSeverity = Math.max(finalSeverity, 2);
 
+          // Apply correlation rule overrides
+          if (matchedRule) {
+            if (matchedRule.severity_override) finalSeverity = matchedRule.severity_override;
+          }
+
+          // Build message — use correlation rule title template if available
+          let incidentMessage = normalizedLog.msg;
+          if (matchedRule?.incident_title_template) {
+            incidentMessage = matchedRule.incident_title_template
+              .replace(/\{\{src_ip\}\}/g, normalizedLog.srcIP)
+              .replace(/\{\{dst_ip\}\}/g, normalizedLog.dstIP)
+              .replace(/\{\{event_type\}\}/g, normalizedLog.eventType)
+              .replace(/\{\{hostname\}\}/g, (normalizedLog.rawLog as any)?.hostname || 'unknown');
+          }
+
           // Create incident
           const { data: incident, error: insertError } = await supabase
             .from('incidents')
@@ -548,7 +704,7 @@ serve(async (req) => {
               dst_ip: normalizedLog.dstIP,
               severity: finalSeverity,
               event_type: normalizedLog.eventType,
-              message: normalizedLog.msg,
+              message: incidentMessage,
               file_hash: normalizedLog.fileHash,
               raw_log: normalizedLog.rawLog,
               classification: normalizeClassification(analysis?.classification),
@@ -557,11 +713,15 @@ serve(async (req) => {
               ai_analysis: {
                 ...(analysis?.ai_analysis || analysis || {}),
                 correlated_events_count: 1,
+                ...(matchedRule ? { correlation_rule: matchedRule.name, correlation_rule_id: matchedRule.id } : {}),
               },
               sandbox_result: analysis?.sandbox_result || null,
               mitre_technique: analysis?.mitre_technique || null,
               mitre_tactic: analysis?.mitre_tactic || null,
-              evidence: analysis?.evidence || [],
+              evidence: [
+                ...(analysis?.evidence || []),
+                ...(matchedRule ? [`Correlation rule "${matchedRule.name}" triggered (${matchKey})`] : []),
+              ],
               recommended_actions: analysis?.recommended_actions || [],
             })
             .select()
@@ -573,6 +733,14 @@ serve(async (req) => {
               supabase.from('raw_logs').update({ processing_status: 'error', error_message: insertError.message }).eq('id', rawLogRowId).then(() => {});
             }
             return null;
+          }
+
+          // Link correlation rule match to new incident
+          if (matchedRule) {
+            supabase.from('correlation_rule_matches').update({
+              incident_id: incident.id,
+            }).eq('rule_id', matchedRule.id).is('incident_id', null)
+              .order('triggered_at', { ascending: false }).limit(1).then(() => {});
           }
 
           incidentsCreated++;
