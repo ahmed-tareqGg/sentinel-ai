@@ -39,6 +39,7 @@ const ThreatHunting = lazy(() => import("./pages/ThreatHunting"));
 const ThreatIntel = lazy(() => import("./pages/ThreatIntel"));
 const TeamChat = lazy(() => import("./pages/TeamChat"));
 const Profile = lazy(() => import("./pages/Profile"));
+const WarRoom = lazy(() => import("./pages/WarRoom"));
 
 const queryClient = new QueryClient();
 
@@ -88,6 +89,7 @@ const App = () => (
               <Route path="/team-chat" element={<ProtectedRoute><TeamChat /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="/profile/:userId" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+              <Route path="/war-room/:id" element={<ProtectedRoute><WarRoom /></ProtectedRoute>} />
               <Route path="/admin/cloud" element={<ProtectedRoute requiredRole="ciso"><CloudAdmin /></ProtectedRoute>} />
               
               {/* Fallback */}
