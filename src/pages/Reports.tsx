@@ -95,40 +95,144 @@ export default function Reports() {
   };
 
   const generatePDF = (data: any, reportName: string) => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    let yPos = 20;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pw = doc.internal.pageSize.getWidth();
+    const ph = doc.internal.pageSize.getHeight();
+    const margin = 18;
+    const contentWidth = pw - margin * 2;
+
+    const C = {
+      primary: [0, 100, 200] as [number, number, number],
+      accent: [0, 180, 120] as [number, number, number],
+      danger: [220, 50, 50] as [number, number, number],
+      warning: [230, 160, 0] as [number, number, number],
+      dark: [30, 30, 40] as [number, number, number],
+      medium: [100, 100, 115] as [number, number, number],
+      light: [200, 205, 215] as [number, number, number],
+      white: [255, 255, 255] as [number, number, number],
+      bgLight: [245, 247, 252] as [number, number, number],
+      bgAccent: [230, 245, 255] as [number, number, number],
+      purple: [139, 92, 246] as [number, number, number],
+    };
+
+    const addFooters = () => {
+      const total = doc.getNumberOfPages();
+      for (let i = 2; i <= total; i++) {
+        doc.setPage(i);
+        doc.setFillColor(...C.bgLight);
+        doc.rect(0, ph - 14, pw, 14, 'F');
+        doc.setDrawColor(...C.light);
+        doc.line(15, ph - 14, pw - 15, ph - 14);
+        doc.setFontSize(7);
+        doc.setTextColor(...C.medium);
+        doc.text('SOCMind Security Platform — CONFIDENTIAL', 15, ph - 7);
+        doc.text(`Page ${i - 1} of ${total - 1}`, pw - 15, ph - 7, { align: 'right' });
+        // Top accent bar
+        doc.setFillColor(...C.primary);
+        doc.rect(0, 0, pw, 3, 'F');
+      }
+    };
+
+    // ============ COVER PAGE ============
+    doc.setFillColor(...C.dark);
+    doc.rect(0, 0, pw, ph, 'F');
+    doc.setFillColor(...C.primary);
+    doc.rect(0, 0, pw, 8, 'F');
+    doc.rect(0, ph - 4, pw, 4, 'F');
+
+    // Logo
+    let y = 50;
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(pw / 2 - 30, y - 8, 60, 20, 4, 4, 'F');
+    doc.setFontSize(20);
+    doc.setTextColor(...C.primary);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SOCMind', pw / 2, y + 6, { align: 'center' });
+
+    // Classification badge
+    y = 90;
+    doc.setFillColor(...C.danger);
+    doc.roundedRect(pw / 2 - 35, y - 5, 70, 14, 3, 3, 'F');
+    doc.setFontSize(10);
+    doc.setTextColor(...C.white);
+    doc.setFont('helvetica', 'bold');
+    doc.text('CONFIDENTIAL', pw / 2, y + 4, { align: 'center' });
 
     // Title
-    doc.setFontSize(24);
-    doc.setTextColor(59, 130, 246); // Primary blue
-    doc.text('SOCMind Security Report', pageWidth / 2, yPos, { align: 'center' });
-    yPos += 15;
+    y = 130;
+    doc.setFontSize(28);
+    doc.setTextColor(...C.white);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SOC SECURITY', pw / 2, y, { align: 'center' });
+    doc.text(`${(reportName || 'EXECUTIVE').toUpperCase()} REPORT`, pw / 2, y + 13, { align: 'center' });
 
-    // Report type and date
-    doc.setFontSize(14);
-    doc.setTextColor(100, 100, 100);
-    doc.text(`${data.metadata?.report_type || reportName} Report`, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 8;
-    doc.setFontSize(10);
-    doc.text(`Generated: ${new Date(data.metadata?.generated_at || Date.now()).toLocaleString()}`, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 5;
-    doc.text(`By: ${data.metadata?.generated_by || 'System'}`, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 15;
+    // Divider
+    y = 158;
+    doc.setDrawColor(...C.primary);
+    doc.setLineWidth(0.8);
+    doc.line(pw / 2 - 40, y, pw / 2 + 40, y);
 
-    // Horizontal line
-    doc.setDrawColor(200, 200, 200);
-    doc.line(20, yPos, pageWidth - 20, yPos);
-    yPos += 15;
-
-    // Executive Summary Section
-    doc.setFontSize(16);
-    doc.setTextColor(30, 30, 30);
-    doc.text('Executive Summary', 20, yPos);
-    yPos += 10;
-
+    // Summary cards on cover
+    y = 175;
     const summary = data.executive_summary || {};
-    const summaryData = [
+    const coverCards = [
+      ['Total Incidents', String(summary.total_incidents || 0)],
+      ['True Positives', String(summary.true_positives || 0)],
+      ['AI Accuracy', summary.ai_accuracy || 'N/A'],
+      ['SLA Compliance', summary.sla_compliance || '100%'],
+    ];
+    const cardW = 38;
+    const startX = (pw - cardW * 4 - 6 * 3) / 2;
+    coverCards.forEach((item, i) => {
+      const cx = startX + i * (cardW + 6);
+      doc.setFillColor(50, 50, 65);
+      doc.roundedRect(cx, y, cardW, 28, 3, 3, 'F');
+      doc.setFontSize(7);
+      doc.setTextColor(...C.light);
+      doc.setFont('helvetica', 'normal');
+      doc.text(item[0], cx + cardW / 2, y + 9, { align: 'center' });
+      doc.setFontSize(12);
+      doc.setTextColor(...C.white);
+      doc.setFont('helvetica', 'bold');
+      doc.text(item[1], cx + cardW / 2, y + 21, { align: 'center' });
+    });
+
+    // Generated info
+    y = 225;
+    doc.setFontSize(9);
+    doc.setTextColor(...C.light);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Generated By', pw / 2, y, { align: 'center' });
+    doc.setFontSize(12);
+    doc.setTextColor(...C.white);
+    doc.setFont('helvetica', 'bold');
+    doc.text(data.metadata?.generated_by || 'SOCMind Platform', pw / 2, y + 8, { align: 'center' });
+    y = 245;
+    doc.setFontSize(9);
+    doc.setTextColor(...C.light);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Date: ${new Date(data.metadata?.generated_at || Date.now()).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, pw / 2, y, { align: 'center' });
+
+    // ============ CONTENT PAGES ============
+    const sectionHeading = (title: string, color: [number, number, number]) => {
+      if (y > ph - 45) { doc.addPage(); y = 18; }
+      doc.setFillColor(...C.bgAccent);
+      doc.roundedRect(margin, y, contentWidth, 9, 2, 2, 'F');
+      doc.setFillColor(...color);
+      doc.rect(margin, y, 3, 9, 'F');
+      doc.setFontSize(11);
+      doc.setTextColor(...color);
+      doc.setFont('helvetica', 'bold');
+      doc.text(title.toUpperCase(), margin + 7, y + 6.5);
+      y += 14;
+    };
+
+    // Page 2: Executive Summary
+    doc.addPage();
+    y = 18;
+    sectionHeading('Executive Summary', C.primary);
+
+    const summaryRows = [
       ['Total Incidents', String(summary.total_incidents || 0)],
       ['True Positives', String(summary.true_positives || 0)],
       ['False Positives', String(summary.false_positives || 0)],
@@ -140,162 +244,137 @@ export default function Reports() {
     ];
 
     autoTable(doc, {
-      startY: yPos,
-      head: [['Metric', 'Value']],
-      body: summaryData,
-      theme: 'striped',
-      headStyles: { fillColor: [59, 130, 246] },
-      margin: { left: 20, right: 20 },
+      startY: y,
+      head: [],
+      body: summaryRows,
+      theme: 'plain',
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 9, cellPadding: 3, textColor: C.dark },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 50, textColor: C.medium },
+        1: { cellWidth: contentWidth - 50 },
+      },
+      alternateRowStyles: { fillColor: C.bgLight },
     });
-
-    yPos = (doc as any).lastAutoTable.finalY + 15;
+    y = (doc as any).lastAutoTable.finalY + 10;
 
     // Severity Breakdown
     if (data.severity_breakdown) {
-      doc.setFontSize(16);
-      doc.setTextColor(30, 30, 30);
-      doc.text('Severity Breakdown', 20, yPos);
-      yPos += 10;
-
-      const severityData = [
+      sectionHeading('Severity Breakdown', C.danger);
+      const sevData = [
         ['Critical', String(data.severity_breakdown.critical || 0)],
         ['High', String(data.severity_breakdown.high || 0)],
         ['Medium', String(data.severity_breakdown.medium || 0)],
         ['Low', String(data.severity_breakdown.low || 0)],
       ];
-
       autoTable(doc, {
-        startY: yPos,
+        startY: y,
         head: [['Severity', 'Count']],
-        body: severityData,
-        theme: 'striped',
-        headStyles: { fillColor: [239, 68, 68] },
-        margin: { left: 20, right: 20 },
+        body: sevData,
+        theme: 'grid',
+        margin: { left: margin, right: margin },
+        headStyles: { fillColor: C.danger, textColor: C.white, fontSize: 9, fontStyle: 'bold' },
+        bodyStyles: { fontSize: 9, textColor: C.dark, cellPadding: 3 },
+        alternateRowStyles: { fillColor: C.bgLight },
+        didParseCell: (d) => {
+          if (d.column.index === 0 && d.section === 'body') {
+            const val = String(d.cell.raw);
+            if (val === 'Critical') d.cell.styles.textColor = [180, 0, 0];
+            else if (val === 'High') d.cell.styles.textColor = C.danger;
+            else if (val === 'Medium') d.cell.styles.textColor = C.warning;
+            else d.cell.styles.textColor = C.accent;
+            d.cell.styles.fontStyle = 'bold';
+          }
+        },
       });
-
-      yPos = (doc as any).lastAutoTable.finalY + 15;
+      y = (doc as any).lastAutoTable.finalY + 10;
     }
 
     // Risk Breakdown
     if (data.risk_breakdown) {
-      doc.setFontSize(16);
-      doc.setTextColor(30, 30, 30);
-      doc.text('Risk Level Breakdown', 20, yPos);
-      yPos += 10;
-
+      sectionHeading('Risk Level Breakdown', C.warning);
       const riskData = [
         ['Critical', String(data.risk_breakdown.critical || 0)],
         ['High', String(data.risk_breakdown.high || 0)],
         ['Medium', String(data.risk_breakdown.medium || 0)],
         ['Low', String(data.risk_breakdown.low || 0)],
       ];
-
       autoTable(doc, {
-        startY: yPos,
+        startY: y,
         head: [['Risk Level', 'Count']],
         body: riskData,
-        theme: 'striped',
-        headStyles: { fillColor: [245, 158, 11] },
-        margin: { left: 20, right: 20 },
+        theme: 'grid',
+        margin: { left: margin, right: margin },
+        headStyles: { fillColor: C.warning, textColor: C.white, fontSize: 9, fontStyle: 'bold' },
+        bodyStyles: { fontSize: 9, textColor: C.dark, cellPadding: 3 },
+        alternateRowStyles: { fillColor: C.bgLight },
       });
-
-      yPos = (doc as any).lastAutoTable.finalY + 15;
-    }
-
-    // Check if we need a new page
-    if (yPos > 250) {
-      doc.addPage();
-      yPos = 20;
+      y = (doc as any).lastAutoTable.finalY + 10;
     }
 
     // Key Findings
-    if (data.key_findings && data.key_findings.length > 0) {
-      doc.setFontSize(16);
-      doc.setTextColor(30, 30, 30);
-      doc.text('Key Findings', 20, yPos);
-      yPos += 10;
-
-      doc.setFontSize(10);
-      doc.setTextColor(60, 60, 60);
+    if (data.key_findings?.length > 0) {
+      sectionHeading('Key Findings', [0, 140, 100]);
+      doc.setFontSize(9);
+      doc.setTextColor(...C.dark);
+      doc.setFont('helvetica', 'normal');
       data.key_findings.forEach((finding: string, idx: number) => {
-        if (yPos > 270) {
-          doc.addPage();
-          yPos = 20;
-        }
-        const lines = doc.splitTextToSize(`${idx + 1}. ${finding}`, pageWidth - 50);
-        doc.text(lines, 25, yPos);
-        yPos += lines.length * 5 + 3;
+        if (y > ph - 30) { doc.addPage(); y = 18; }
+        doc.setFillColor(...C.primary);
+        doc.circle(margin + 2, y - 1, 1, 'F');
+        const lines = doc.splitTextToSize(finding, contentWidth - 8);
+        doc.text(lines, margin + 6, y);
+        y += lines.length * 4.5 + 2;
       });
-      yPos += 10;
+      y += 6;
     }
 
     // Recommendations
-    if (data.recommendations && data.recommendations.length > 0) {
-      if (yPos > 250) {
-        doc.addPage();
-        yPos = 20;
-      }
-
-      doc.setFontSize(16);
-      doc.setTextColor(30, 30, 30);
-      doc.text('Recommendations', 20, yPos);
-      yPos += 10;
-
-      doc.setFontSize(10);
-      doc.setTextColor(60, 60, 60);
+    if (data.recommendations?.length > 0) {
+      sectionHeading('Recommendations', C.purple);
+      doc.setFontSize(9);
+      doc.setTextColor(...C.dark);
+      doc.setFont('helvetica', 'normal');
       data.recommendations.forEach((rec: string, idx: number) => {
-        if (yPos > 270) {
-          doc.addPage();
-          yPos = 20;
-        }
-        const lines = doc.splitTextToSize(`${idx + 1}. ${rec}`, pageWidth - 50);
-        doc.text(lines, 25, yPos);
-        yPos += lines.length * 5 + 3;
+        if (y > ph - 30) { doc.addPage(); y = 18; }
+        doc.setFillColor(...C.warning);
+        doc.circle(margin + 2, y - 1, 1, 'F');
+        const lines = doc.splitTextToSize(rec, contentWidth - 8);
+        doc.text(lines, margin + 6, y);
+        y += lines.length * 4.5 + 2;
       });
-      yPos += 10;
+      y += 6;
     }
 
     // MITRE Coverage
-    if (data.mitre_coverage && data.mitre_coverage.top_techniques?.length > 0) {
-      if (yPos > 220) {
-        doc.addPage();
-        yPos = 20;
-      }
-
-      doc.setFontSize(16);
-      doc.setTextColor(30, 30, 30);
-      doc.text('MITRE ATT&CK Coverage', 20, yPos);
-      yPos += 5;
-      doc.setFontSize(10);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Techniques Detected: ${data.mitre_coverage.techniques_detected}`, 20, yPos + 5);
-      yPos += 15;
+    if (data.mitre_coverage?.top_techniques?.length > 0) {
+      sectionHeading('MITRE ATT&CK Coverage', C.purple);
+      doc.setFontSize(9);
+      doc.setTextColor(...C.medium);
+      doc.text(`Techniques Detected: ${data.mitre_coverage.techniques_detected || 0}`, margin, y);
+      y += 7;
 
       const mitreData = data.mitre_coverage.top_techniques.map((t: any) => [t.technique, String(t.count)]);
-
       autoTable(doc, {
-        startY: yPos,
+        startY: y,
         head: [['Technique', 'Count']],
         body: mitreData,
-        theme: 'striped',
-        headStyles: { fillColor: [139, 92, 246] },
-        margin: { left: 20, right: 20 },
+        theme: 'grid',
+        margin: { left: margin, right: margin },
+        headStyles: { fillColor: C.purple, textColor: C.white, fontSize: 9, fontStyle: 'bold' },
+        bodyStyles: { fontSize: 8, textColor: C.dark, cellPadding: 2.5 },
+        alternateRowStyles: { fillColor: C.bgLight },
       });
-
-      yPos = (doc as any).lastAutoTable.finalY + 15;
+      y = (doc as any).lastAutoTable.finalY + 10;
     }
 
     // Detailed Incidents
-    if (data.detailed_incidents && data.detailed_incidents.length > 0) {
+    if (data.detailed_incidents?.length > 0) {
       doc.addPage();
-      yPos = 20;
+      y = 18;
+      sectionHeading('Detailed Incidents', C.primary);
 
-      doc.setFontSize(16);
-      doc.setTextColor(30, 30, 30);
-      doc.text('Detailed Incidents', 20, yPos);
-      yPos += 10;
-
-      const incidentData = data.detailed_incidents.map((inc: any) => [
+      const incData = data.detailed_incidents.map((inc: any) => [
         inc.id || '-',
         inc.event_type || '-',
         String(inc.severity || '-'),
@@ -303,31 +382,74 @@ export default function Reports() {
         inc.risk_level || '-',
         inc.status || '-',
       ]);
-
       autoTable(doc, {
-        startY: yPos,
+        startY: y,
         head: [['ID', 'Event Type', 'Severity', 'Classification', 'Risk', 'Status']],
-        body: incidentData,
-        theme: 'striped',
-        headStyles: { fillColor: [59, 130, 246] },
-        margin: { left: 10, right: 10 },
-        styles: { fontSize: 8 },
+        body: incData,
+        theme: 'grid',
+        margin: { left: margin, right: margin },
+        headStyles: { fillColor: C.primary, textColor: C.white, fontSize: 8, fontStyle: 'bold' },
+        bodyStyles: { fontSize: 7, textColor: C.dark, cellPadding: 2 },
+        alternateRowStyles: { fillColor: C.bgLight },
       });
+      y = (doc as any).lastAutoTable.finalY + 10;
     }
 
-    // Footer
-    const pageCount = doc.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(150, 150, 150);
-      doc.text(
-        `Page ${i} of ${pageCount} | SOCMind Security Platform | Confidential`,
-        pageWidth / 2,
-        doc.internal.pageSize.getHeight() - 10,
-        { align: 'center' }
-      );
-    }
+    // ============ SIGNATURE SECTION ============
+    if (y > ph - 80) { doc.addPage(); y = 25; } else { y += 8; }
+
+    doc.setDrawColor(...C.light);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, pw - margin, y);
+    y += 10;
+
+    doc.setFillColor(...C.bgLight);
+    doc.roundedRect(margin, y, contentWidth, 60, 4, 4, 'F');
+    doc.setDrawColor(...C.primary);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(margin, y, contentWidth, 60, 4, 4, 'S');
+
+    const sigX = margin + 10;
+    let sigY = y + 10;
+    doc.setFontSize(11);
+    doc.setTextColor(...C.primary);
+    doc.setFont('helvetica', 'bold');
+    doc.text('REPORT SIGN-OFF', sigX, sigY);
+    sigY += 10;
+    doc.setFontSize(9);
+    doc.setTextColor(...C.dark);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Generated By: ${data.metadata?.generated_by || 'SOCMind Platform'}`, sigX, sigY);
+    sigY += 6;
+    doc.text(`Organization: SOCMind`, sigX, sigY);
+    sigY += 6;
+    doc.text(`Date: ${new Date(data.metadata?.generated_at || Date.now()).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, sigX, sigY);
+    sigY += 10;
+    doc.setDrawColor(...C.dark);
+    doc.setLineWidth(0.5);
+    doc.line(sigX, sigY, sigX + 70, sigY);
+    doc.setFontSize(8);
+    doc.setTextColor(...C.medium);
+    doc.text('Authorized Signature', sigX, sigY + 5);
+
+    // Digital stamp
+    const stampX = pw - margin - 45;
+    const stampY = y + 14;
+    doc.setDrawColor(...C.primary);
+    doc.setLineWidth(1.2);
+    doc.circle(stampX + 17, stampY + 17, 17, 'S');
+    doc.circle(stampX + 17, stampY + 17, 14, 'S');
+    doc.setFontSize(7);
+    doc.setTextColor(...C.primary);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SOCMind', stampX + 17, stampY + 12, { align: 'center' });
+    doc.text('VERIFIED', stampX + 17, stampY + 18, { align: 'center' });
+    doc.setFontSize(5);
+    doc.setFont('helvetica', 'normal');
+    doc.text('SECURITY REPORT', stampX + 17, stampY + 23, { align: 'center' });
+
+    // Add footers to all content pages
+    addFooters();
 
     return doc;
   };
