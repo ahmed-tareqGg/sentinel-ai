@@ -109,51 +109,55 @@ export default function Auth() {
     if (!forgotEmail && email) setForgotEmail(email);
   }, [email, forgotEmail]);
 
-  // Demo login handler
+  const [demoOtpSent, setDemoOtpSent] = useState(false);
+  const [demoOtpCode, setDemoOtpCode] = useState('');
+
+  // Demo login handler - OTP flow
   const handleDemoLogin = async () => {
-    setDemoLoading(true);
-    try {
-      // First try to signup (will fail silently if account exists)
-      const { data: signupData, error: signupError } = await supabase.auth.signUp({
-        email: 'demo@socmind.com',
-        password: 'Demo@123456!',
-        options: {
-          emailRedirectTo: `${window.location.origin}/`,
-          data: {
-            full_name: 'Demo User',
-          },
-        },
-      });
-
-      // If signup succeeded and user was created, they're now logged in
-      if (signupData?.user && !signupError) {
-        // Check if this is a new signup or existing user
-        if (signupData.session) {
-          toast.success('Welcome to Demo Mode! 👋');
-          navigate('/dashboard');
-          return;
-        }
-      }
-
-      // Try to login (account might already exist)
-      const { error: loginError } = await supabase.auth.signInWithPassword({
-        email: 'demo@socmind.com',
-        password: 'Demo@123456!',
-      });
-
-      if (loginError) {
-        // Account might need email confirmation or doesn't exist
-        toast.error('Demo account is being set up. Please try again in a moment.');
+    if (demoOtpSent) {
+      // Verify OTP
+      if (demoOtpCode.length !== 6) {
+        toast.error('الكود يجب أن يكون 6 أرقام');
         return;
       }
-
-      toast.success('Welcome to Demo Mode! 👋');
-      navigate('/dashboard');
-    } catch (error) {
-      console.error('Demo login error:', error);
-      toast.error('An unexpected error occurred');
-    } finally {
-      setDemoLoading(false);
+      setDemoLoading(true);
+      try {
+        const { error } = await supabase.auth.verifyOtp({
+          email: 'demo@socmind.com',
+          token: demoOtpCode,
+          type: 'email',
+        });
+        if (error) {
+          toast.error('كود غير صحيح أو منتهي الصلاحية');
+          return;
+        }
+        toast.success('Welcome to Demo Mode! 👋');
+        navigate('/dashboard');
+      } catch (error) {
+        console.error('Demo OTP verify error:', error);
+        toast.error('An unexpected error occurred');
+      } finally {
+        setDemoLoading(false);
+      }
+    } else {
+      // Send OTP
+      setDemoLoading(true);
+      try {
+        const { error } = await supabase.auth.signInWithOtp({
+          email: 'demo@socmind.com',
+        });
+        if (error) {
+          toast.error(error.message);
+          return;
+        }
+        setDemoOtpSent(true);
+        toast.success('تم إرسال كود الدخول! اطلب الكود من مسؤول النظام.');
+      } catch (error) {
+        console.error('Demo OTP send error:', error);
+        toast.error('An unexpected error occurred');
+      } finally {
+        setDemoLoading(false);
+      }
     }
   };
 
