@@ -754,6 +754,10 @@ export default function Playbooks() {
             )}
           </TabsContent>
 
+          <TabsContent value="soar-actions">
+            <SOARActionsDashboard />
+          </TabsContent>
+
           <TabsContent value="executions" className="space-y-4">
             <Card>
               <CardHeader>

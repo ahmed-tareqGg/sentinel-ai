@@ -88,9 +88,10 @@ export default function Approvals() {
 
       if (error) throw error;
 
-      // Step 2: If approved, execute the action
+      // Step 2: If approved, dispatch to agent via execute-playbook AND create soar_action
       if (approved) {
         try {
+          // Execute playbook action (dispatches to agent)
           await supabase.functions.invoke('execute-playbook', {
             body: {
               incident_id: request.incident_id,
@@ -106,7 +107,7 @@ export default function Approvals() {
           await supabase.from('incident_timeline').insert({
             incident_id: request.incident_id,
             stage: `Action Executed: ${request.action_type.replace(/_/g, ' ')}`,
-            details: `Approved and executed. Approval ID: ${request.id.slice(0, 8)}`,
+            details: `Approved and dispatched to agent. Approval ID: ${request.id.slice(0, 8)}`,
           });
         } catch (execErr) {
           console.error('Execution after approval failed:', execErr);
