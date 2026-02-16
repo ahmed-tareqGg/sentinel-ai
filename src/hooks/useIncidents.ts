@@ -49,6 +49,7 @@ export function useIncidents(options?: UseIncidentsOptions) {
         const { data, error } = await supabase
           .from('incidents')
           .select('*')
+          .is('deleted_at', null)
           .order('created_at', { ascending: false })
           .limit(limit);
 
@@ -64,6 +65,7 @@ export function useIncidents(options?: UseIncidentsOptions) {
           const { data, error } = await supabase
             .from('incidents')
             .select('*')
+            .is('deleted_at', null)
             .order('created_at', { ascending: false })
             .range(offset, offset + batchSize - 1);
 
