@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { X, Send, Bot, User, Loader2, Minimize2, Maximize2, Plus, History, ArrowLeft, Trash2, Paperclip, Image as ImageIcon, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -44,6 +45,7 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export function SOCChatWidget() {
+  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -255,7 +257,7 @@ export function SOCChatWidget() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken || publishableKey}`,
         },
-        body: JSON.stringify({ messages: apiMessages }),
+        body: JSON.stringify({ messages: apiMessages, current_route: location.pathname }),
       });
 
       if (!resp.ok || !resp.body) {
