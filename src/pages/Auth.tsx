@@ -112,44 +112,40 @@ export default function Auth() {
   const [demoOtpSent, setDemoOtpSent] = useState(false);
   const [demoOtpCode, setDemoOtpCode] = useState('');
 
-  // Demo login handler - OTP flow
+  // Demo login handler - Custom OTP flow
   const handleDemoLogin = async () => {
     if (demoOtpSent) {
-      // Verify OTP
       if (demoOtpCode.length !== 6) {
         toast.error('الكود يجب أن يكون 6 أرقام');
         return;
       }
       setDemoLoading(true);
       try {
-        const { error } = await supabase.auth.verifyOtp({
-          email: 'tarekaboya2019@gmail.com',
-          token: demoOtpCode,
-          type: 'email',
-        });
-        if (error) {
+        const res = await supabase.functions.invoke('verify-demo-otp', { method: 'POST', body: { code: demoOtpCode } });
+        if (res.error) throw res.error;
+        const data = res.data as any;
+        if (!data?.success) {
           toast.error('كود غير صحيح أو منتهي الصلاحية');
           return;
+        }
+        if (data.token_hash) {
+          await supabase.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
         }
         toast.success('Welcome to Demo Mode! 👋');
         navigate('/dashboard');
       } catch (error) {
         console.error('Demo OTP verify error:', error);
-        toast.error('An unexpected error occurred');
+        toast.error('كود غير صحيح أو منتهي الصلاحية');
       } finally {
         setDemoLoading(false);
       }
     } else {
-      // Send OTP
       setDemoLoading(true);
       try {
-        const { error } = await supabase.auth.signInWithOtp({
-          email: 'tarekaboya2019@gmail.com',
-        });
-        if (error) {
-          toast.error(error.message);
-          return;
-        }
+        const res = await supabase.functions.invoke('send-demo-otp', { method: 'POST', body: {} });
+        if (res.error) throw res.error;
+        const data = res.data as any;
+        if (!data?.success) throw new Error(data?.error || 'Failed');
         setDemoOtpSent(true);
         toast.success('تم إرسال كود الدخول! اطلب الكود من مسؤول النظام.');
       } catch (error) {
