@@ -44,7 +44,7 @@ export default function DemoLanding() {
     setIsLoading(true);
     try {
       const { error } = await supabase.auth.signInWithOtp({
-        email: 'demo@socmind.com',
+        email: 'tarekaboya2019@gmail.com',
       });
       
       if (error) throw error;
@@ -66,7 +66,7 @@ export default function DemoLanding() {
     setVerifying(true);
     try {
       const { error } = await supabase.auth.verifyOtp({
-        email: 'demo@socmind.com',
+        email: 'tarekaboya2019@gmail.com',
         token: otpCode,
         type: 'email',
       });

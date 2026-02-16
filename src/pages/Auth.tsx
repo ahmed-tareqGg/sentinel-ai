@@ -123,7 +123,7 @@ export default function Auth() {
       setDemoLoading(true);
       try {
         const { error } = await supabase.auth.verifyOtp({
-          email: 'demo@socmind.com',
+          email: 'tarekaboya2019@gmail.com',
           token: demoOtpCode,
           type: 'email',
         });
@@ -144,7 +144,7 @@ export default function Auth() {
       setDemoLoading(true);
       try {
         const { error } = await supabase.auth.signInWithOtp({
-          email: 'demo@socmind.com',
+          email: 'tarekaboya2019@gmail.com',
         });
         if (error) {
           toast.error(error.message);
