@@ -422,70 +422,49 @@ serve(async (req) => {
     const ipMatch = msgText.match(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/g);
     const incidentMatch = msgText.match(/INC-\d+/gi);
 
-    // Fetch ALL system data in parallel
+    // Fetch essential data only (reduced to save tokens)
     const queries: Promise<any>[] = [
-      supabase.from('incidents').select('id, incident_number, event_type, severity, risk_level, classification, status, src_ip, dst_ip, mitre_technique, mitre_tactic, confidence, message, file_hash, assigned_to, evidence, recommended_actions, created_at').order('created_at', { ascending: false }).limit(50),
+      supabase.from('incidents').select('id, incident_number, event_type, severity, risk_level, classification, status, src_ip, dst_ip, mitre_technique, confidence, message, created_at').order('created_at', { ascending: false }).limit(20),
       supabase.from('incidents').select('id, incident_number, event_type, risk_level, status, created_at').eq('status', 'Open').order('created_at', { ascending: false }).limit(10),
-      supabase.from('raw_logs').select('id', { count: 'exact', head: true }),
-      supabase.from('compliance_controls').select('id, standard, control_code, title, description, category, control_category, status, owner, applicable, justification, implemented, implementation_description, evidence_reference, risk_reference, comments, last_review').order('control_code', { ascending: true }),
-      supabase.from('compliance_evidence').select('id, control_id, evidence_type, source, title, description, created_at').order('created_at', { ascending: false }).limit(50),
-      supabase.from('playbooks').select('id, name, description, is_active, created_at').limit(30),
-      supabase.from('data_sources').select('id, name, type, status, hostname, ip_address, last_heartbeat, logs_received_today, agent_version').order('last_heartbeat', { ascending: false }).limit(20),
-      supabase.from('correlation_rules').select('id, name, description, is_active, match_field, match_operator, match_value, threshold_count, time_window_minutes, hits_count, last_triggered_at').limit(20),
-      supabase.from('mitre_coverage').select('technique_id, technique_name, tactic, coverage_status, detection_count, has_playbook').limit(50),
-      supabase.from('integrations').select('id, name, display_name, type, is_enabled, is_configured, execution_mode, autonomous_mode_enabled').limit(20),
-      supabase.from('approval_requests').select('id, action_type, status, incident_id, reason, requested_at, sla_deadline').eq('status', 'pending').order('requested_at', { ascending: false }).limit(10),
-      supabase.from('compliance_audit_logs').select('id, action, actor_type, actor_email, resource_type, result, timestamp').order('timestamp', { ascending: false }).limit(20),
-      supabase.from('control_gaps').select('id, control_id, gap_description, gap_severity, gap_status, remediation_plan, target_date').limit(20),
-      supabase.from('risk_register').select('id, risk_id, risk_title, risk_category, likelihood, impact, inherent_risk_score, residual_risk_score, mitigation_status, treatment_option').limit(20),
+      supabase.from('playbooks').select('id, name, is_active').limit(30),
+      supabase.from('data_sources').select('name, type, status, logs_received_today, last_heartbeat').order('last_heartbeat', { ascending: false }).limit(10),
+      supabase.from('mitre_coverage').select('technique_id, technique_name, tactic, coverage_status, has_playbook').limit(30),
+      supabase.from('approval_requests').select('id, action_type, status, reason').eq('status', 'pending').limit(5),
     ];
 
     if (currentUserId) {
       queries.push(
         supabase.from('chat_messages')
-          .select('id, sender_name, sender_email, content, channel, created_at, mentions, priority')
+          .select('id, sender_name, content, channel, created_at')
           .contains('mentions', [currentUserId])
           .order('created_at', { ascending: false })
-          .limit(20)
+          .limit(5)
       );
     }
 
-    if (hashMatch) {
-      for (const hash of hashMatch) {
-        queries.push(supabase.from('incidents').select('id, incident_number, event_type, severity, risk_level, classification, status, src_ip, dst_ip, file_hash, mitre_technique, mitre_tactic, message, created_at').ilike('file_hash', `%${hash}%`));
-      }
-    }
     if (ipMatch) {
-      for (const ip of ipMatch) {
-        queries.push(supabase.from('incidents').select('id, incident_number, event_type, severity, risk_level, classification, status, src_ip, dst_ip, file_hash, mitre_technique, message, created_at').or(`src_ip.eq.${ip},dst_ip.eq.${ip}`));
+      for (const ip of ipMatch.slice(0, 2)) {
+        queries.push(supabase.from('incidents').select('id, incident_number, event_type, severity, risk_level, classification, status, src_ip, dst_ip, mitre_technique, message, created_at').or(`src_ip.eq.${ip},dst_ip.eq.${ip}`));
       }
     }
     if (incidentMatch) {
-      for (const inc of incidentMatch) {
-        queries.push(supabase.from('incidents').select('*').ilike('incident_number', `%${inc}%`));
+      for (const inc of incidentMatch.slice(0, 2)) {
+        queries.push(supabase.from('incidents').select('id, incident_number, event_type, severity, risk_level, classification, status, src_ip, dst_ip, mitre_technique, message, created_at').ilike('incident_number', `%${inc}%`));
       }
     }
 
     const results = await Promise.all(queries);
     
-    const [incidentsRes, openRes, statsRes, controlsRes, evidenceRes, playbooksRes, dataSourcesRes, corrRulesRes, mitreRes, integrationsRes, approvalsRes, compAuditRes, gapsRes, riskRegRes] = results;
+    const [incidentsRes, openRes, playbooksRes, dataSourcesRes, mitreRes, approvalsRes] = results;
     
     const incidents = incidentsRes.data || [];
     const openIncidents = openRes.data || [];
-    const totalLogs = statsRes.count || 0;
-    const controls = controlsRes.data || [];
-    const compEvidence = evidenceRes.data || [];
     const playbooks = playbooksRes.data || [];
     const dataSources = dataSourcesRes.data || [];
-    const corrRules = corrRulesRes.data || [];
     const mitreCov = mitreRes.data || [];
-    const integrations = integrationsRes.data || [];
     const pendingApprovals = approvalsRes.data || [];
-    const compAuditLogs = compAuditRes.data || [];
-    const controlGaps = gapsRes.data || [];
-    const riskRegister = riskRegRes.data || [];
 
-    let extraIdx = 14;
+    let extraIdx = 6;
     let mentionMessages: any[] = [];
     if (currentUserId) {
       mentionMessages = results[extraIdx]?.data || [];
@@ -501,153 +480,51 @@ serve(async (req) => {
     const tpCount = incidents.filter((i: any) => i.classification === 'True Positive').length;
     const fpCount = incidents.filter((i: any) => i.classification === 'False Positive').length;
 
-    // Compliance stats
-    const applicableControls = controls.filter((c: any) => c.applicable === 'yes' || c.applicable === null);
-    const implementedControls = controls.filter((c: any) => c.implemented === true);
-    const coveragePercent = applicableControls.length > 0
-      ? Math.round((implementedControls.filter((c: any) => applicableControls.some((a: any) => a.id === c.id)).length / applicableControls.length) * 100)
-      : 0;
-
-    const standards = [...new Set(controls.map((c: any) => c.standard))];
-    const standardsSummary = standards.map(std => {
-      const stdControls = controls.filter((c: any) => c.standard === std);
-      const stdApplicable = stdControls.filter((c: any) => c.applicable === 'yes' || c.applicable === null);
-      const stdImpl = stdControls.filter((c: any) => c.implemented === true);
-      return `${std}: ${stdImpl.length}/${stdApplicable.length} implemented (${stdApplicable.length > 0 ? Math.round((stdImpl.length / stdApplicable.length) * 100) : 0}%)`;
-    }).join('\n');
-
-    const notImplemented = controls.filter((c: any) => !c.implemented && (c.applicable === 'yes' || c.applicable === null));
-    const notImplSummary = notImplemented.slice(0, 15).map((c: any) => 
-      `• ${c.control_code}: ${c.title} [${c.status || 'N/A'}] ${c.owner ? `Owner: ${c.owner}` : ''}`
-    ).join('\n');
-
-    const gapsSummary = controlGaps.filter((g: any) => g.gap_status !== 'closed').slice(0, 10).map((g: any) => 
-      `• ${g.gap_description?.slice(0, 80) || 'N/A'} [Severity: ${g.gap_severity || 'N/A'}] [Status: ${g.gap_status || 'open'}] ${g.target_date ? `Due: ${g.target_date}` : ''}`
-    ).join('\n');
-
-    // Risk Register summary
-    const riskSummary = riskRegister.slice(0, 10).map((r: any) =>
-      `• ${r.risk_id}: ${r.risk_title} [${r.risk_category || 'N/A'}] | Likelihood: ${r.likelihood || 'N/A'} | Impact: ${r.impact || 'N/A'} | Score: ${r.inherent_risk_score || 'N/A'} → Residual: ${r.residual_risk_score || 'N/A'} | Treatment: ${r.treatment_option || 'N/A'} | Status: ${r.mitigation_status || 'N/A'}`
-    ).join('\n');
-
     let targetedContext = '';
     if (targetedResults.length > 0) {
       const unique = [...new Map(targetedResults.map((i: any) => [i.id, i])).values()];
-      targetedContext = `\n\nSEARCH RESULTS (matching user query):\n${unique.map((i: any) => `• ${i.incident_number}: ${i.event_type} | Severity: ${i.severity} | Risk: ${i.risk_level} | Class: ${i.classification} | Hash: ${i.file_hash || 'N/A'} | Src: ${i.src_ip || 'N/A'} → Dst: ${i.dst_ip || 'N/A'} | MITRE: ${i.mitre_technique || 'N/A'} | Message: ${(i.message || '').slice(0, 200)} | Status: ${i.status}`).join('\n')}`;
+      targetedContext = `\n\nSEARCH RESULTS:\n${unique.map((i: any) => `• ${i.incident_number}: ${i.event_type} | Sev: ${i.severity} | Risk: ${i.risk_level} | Src: ${i.src_ip || 'N/A'} | MITRE: ${i.mitre_technique || 'N/A'} | Msg: ${(i.message || '').slice(0, 150)} | Status: ${i.status}`).join('\n')}`;
     }
 
     let mentionsContext = '';
     if (mentionMessages.length > 0) {
-      const cleanContent = (text: string) => text.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1').replace(/#\[([^\]]+)\]\([^)]+\)/g, '#$1').replace(/\$\[([^\]]+)\]\([^)]+\)/g, '$$$1');
-      mentionsContext = `\n\nTEAM CHAT MENTIONS:\n${mentionMessages.map((m: any) => `• [${m.channel}] ${m.sender_name || m.sender_email} (${new Date(m.created_at).toLocaleString()}): "${cleanContent(m.content)}" ${m.priority !== 'normal' ? `[Priority: ${m.priority}]` : ''}`).join('\n')}`;
+      mentionsContext = `\n\nMENTIONS:\n${mentionMessages.map((m: any) => `• [${m.channel}] ${m.sender_name}: ${m.content.slice(0, 100)}`).join('\n')}`;
     }
 
     const roleLabels: Record<string, string> = {
-      soc_tier_1: 'SOC Tier 1 Analyst',
-      soc_tier_2: 'SOC Tier 2 Analyst',
-      soc_tier_3: 'SOC Tier 3 Senior Analyst',
-      soc_manager: 'SOC Manager',
-      admin: 'Administrator',
-      ciso: 'CISO',
-      grc_engineer: 'GRC Engineer',
+      soc_tier_1: 'Tier 1', soc_tier_2: 'Tier 2', soc_tier_3: 'Tier 3',
+      soc_manager: 'Manager', admin: 'Admin', ciso: 'CISO', grc_engineer: 'GRC',
     };
 
-    const systemPrompt = `You are **SOCMind AI** — an expert Security Operations Center assistant embedded in a real SOC platform called SOCMind. You have COMPLETE knowledge of every feature, page, and capability in the system. You are the smartest AI assistant any SOC analyst could have.
+    const systemPrompt = `You are SOCMind AI — expert SOC assistant. Be concise, use markdown, reference real data.
 
-===== CURRENT PAGE CONTEXT =====
-${pageContext}
+PAGE: ${current_route || '/dashboard'}
+${pageContext.slice(0, 500)}
 
-===== CURRENT USER =====
-${currentUserId ? `Email: ${currentUserEmail || 'Unknown'}\nRole: ${roleLabels[currentUserRole || ''] || currentUserRole || 'Unknown'} (${currentUserRole})\nUser ID: ${currentUserId}` : 'Not authenticated'}
+USER: ${currentUserEmail || 'Unknown'} (${roleLabels[currentUserRole || ''] || currentUserRole || 'Unknown'})
 
-===== LIVE SOC STATUS =====
-- Total Incidents (recent 50): ${incidents.length}
-- Open Incidents: ${openIncidents.length}
-- Critical Alerts: ${criticalCount}
-- True Positives: ${tpCount} | False Positives: ${fpCount}
-- Total Raw Logs Ingested: ${totalLogs}
-- Active Data Sources: ${dataSources.filter((d: any) => d.status === 'active').length}/${dataSources.length}
-- Active Playbooks: ${playbooks.filter((p: any) => p.is_active).length}/${playbooks.length}
-- Pending Approvals: ${pendingApprovals.length}
-- MITRE Techniques Covered: ${mitreCov.filter((m: any) => m.coverage_status === 'detected').length}/${mitreCov.length}
+SOC STATUS: ${incidents.length} incidents | ${openIncidents.length} open | ${criticalCount} critical | TP:${tpCount} FP:${fpCount}
+Active sources: ${dataSources.filter((d: any) => d.status === 'active').length} | Active playbooks: ${playbooks.filter((p: any) => p.is_active).length} | Pending approvals: ${pendingApprovals.length}
+MITRE covered: ${mitreCov.filter((m: any) => m.coverage_status === 'detected').length}/${mitreCov.length}
 
 OPEN INCIDENTS:
-${openIncidents.map((i: any) => `• ${i.incident_number} — ${i.event_type} [${i.risk_level}] — ${i.status} — ${new Date(i.created_at).toLocaleString()}`).join('\n') || 'None'}
+${openIncidents.map((i: any) => `• ${i.incident_number} — ${i.event_type} [${i.risk_level}] ${i.status}`).join('\n') || 'None'}
 
-RECENT INCIDENTS (top 20):
-${incidents.slice(0, 20).map((i: any) => `• ${i.incident_number}: ${i.event_type} | Sev: ${i.severity} | Risk: ${i.risk_level} | Class: ${i.classification} (${i.confidence}%) | MITRE: ${i.mitre_technique || 'N/A'} (${i.mitre_tactic || 'N/A'}) | Src: ${i.src_ip || 'N/A'} → Dst: ${i.dst_ip || 'N/A'} | Status: ${i.status}`).join('\n')}
+RECENT (top 10):
+${incidents.slice(0, 10).map((i: any) => `• ${i.incident_number}: ${i.event_type} Sev:${i.severity} ${i.risk_level} ${i.classification}(${i.confidence}%) MITRE:${i.mitre_technique || '-'} Src:${i.src_ip || '-'} ${i.status}`).join('\n')}
 
-===== COMPLIANCE & GRC =====
-Total Controls: ${controls.length} | Applicable: ${applicableControls.length} | Implemented: ${implementedControls.length} | Coverage: ${coveragePercent}%
+SOURCES: ${dataSources.map((d: any) => `${d.name}[${d.type}]:${d.status} logs:${d.logs_received_today || 0}`).join(' | ') || 'None'}
 
-BY STANDARD:
-${standardsSummary}
-
-NOT-IMPLEMENTED (top 15):
-${notImplSummary || 'All applicable controls implemented ✅'}
-
-OPEN GAPS:
-${gapsSummary || 'No open gaps ✅'}
-
-RISK REGISTER:
-${riskSummary || 'No risks registered'}
-
-RECENT EVIDENCE:
-${compEvidence.slice(0, 10).map((e: any) => `• ${e.title} [${e.evidence_type}] ${e.source ? `Source: ${e.source}` : ''}`).join('\n')}
-
-RECENT AUDIT TRAIL:
-${compAuditLogs.slice(0, 10).map((l: any) => `• ${l.action} by ${l.actor_email || l.actor_type} → ${l.result} (${new Date(l.timestamp).toLocaleString()})`).join('\n')}
-
-===== PLAYBOOKS =====
-${playbooks.map((p: any) => `• ${p.name}: ${p.description || 'N/A'} | Active: ${p.is_active}`).join('\n') || 'None configured'}
-
-===== DATA SOURCES =====
-${dataSources.map((d: any) => `• ${d.name} [${d.type}] — ${d.status} | Host: ${d.hostname || 'N/A'} | IP: ${d.ip_address || 'N/A'} | Logs today: ${d.logs_received_today || 0} | Last heartbeat: ${d.last_heartbeat ? new Date(d.last_heartbeat).toLocaleString() : 'Never'}`).join('\n') || 'None'}
-
-===== CORRELATION RULES =====
-${corrRules.map((r: any) => `• ${r.name}: ${r.description || 'N/A'} | Active: ${r.is_active} | Hits: ${r.hits_count || 0}`).join('\n') || 'None configured'}
-
-===== MITRE ATT&CK =====
-${mitreCov.slice(0, 20).map((m: any) => `• ${m.technique_id} ${m.technique_name} [${m.tactic}] — ${m.coverage_status} | Detections: ${m.detection_count || 0} | Playbook: ${m.has_playbook ? '✅' : '❌'}`).join('\n') || 'No coverage data'}
-
-===== INTEGRATIONS =====
-${integrations.map((i: any) => `• ${i.display_name} [${i.type}] — Enabled: ${i.is_enabled} | Mode: ${i.execution_mode || 'manual'}`).join('\n') || 'None'}
-
-===== PENDING APPROVALS =====
-${pendingApprovals.length > 0 ? pendingApprovals.map((a: any) => `• ${a.action_type} — ${a.reason || 'No reason'} | ${a.sla_deadline ? `SLA: ${new Date(a.sla_deadline).toLocaleString()}` : ''}`).join('\n') : 'None ✅'}
+MITRE: ${mitreCov.slice(0, 10).map((m: any) => `${m.technique_id}(${m.coverage_status}${m.has_playbook ? '✅' : ''})`).join(' ')}
 ${targetedContext}${mentionsContext}
 
-===== PLATFORM ARCHITECTURE =====
-SOCMind is a full AI-driven SOC platform with:
-1. **Log Ingestion**: Agents deployed on endpoints (Windows/Linux) collect logs and send via REST API → ingest-log function → raw_logs table
-2. **AI Analysis**: analyze-log function uses Gemini AI to classify each log → creates incidents with severity, MITRE mapping, recommendations
-3. **Incident Management**: Full lifecycle from Open → In Progress → Escalated → Resolved → Closed, with assignment, SLA tracking, and ownership enforcement
-4. **Investigation Workspace**: Per-incident workspace with IOCs, evidence upload, correlated logs, AI reports, root cause analysis, analyst notes
-5. **SOAR**: Playbooks with automated response actions executed by agents (block IP, kill process, lock user, etc.)
-6. **Compliance/GRC**: Controls mapped to standards (NCA-ECC, ISO 27001, NIST), gap analysis, risk register, auto-evidence collection
-7. **Threat Intelligence**: IOC feeds, enrichment lookups, threat scoring
-8. **Correlation Engine**: Pattern detection across logs (e.g., same IP hitting multiple times = brute force)
-9. **MITRE ATT&CK**: Full framework coverage tracking with technique-to-playbook mapping
-10. **Team Chat**: Real-time collaboration with @mentions, incident references, private channels
-11. **Reports**: Executive and Performance PDF reports with professional formatting
-12. **Approvals**: Action approval queue with SLA deadlines and escalation
-13. **Role-Based Access**: soc_tier_1 → soc_tier_2 → soc_tier_3 → soc_manager → ciso → admin, each with specific permissions
+RULES: Answer in user's language. Be specific with data. Use ## headers, bullets, tables. Provide actionable steps. Reference MITRE techniques. Be proactive about issues.`;
 
-===== RESPONSE RULES =====
-1. **Be context-aware**: You KNOW which page the user is on. Tailor your answers to that page. If they ask "how does this work?", explain the CURRENT page.
-2. **Be specific**: Always reference real data — incident numbers, control codes, metric values. Never give vague answers.
-3. **Use structured formatting**: Use headers (##), bullet points, tables, bold, and code blocks for clarity.
-4. **Provide actionable guidance**: Don't just explain — tell the user exactly what to do, step by step.
-5. **Use MITRE ATT&CK terminology** when discussing threats and techniques.
-6. **Answer in the user's language**: If they write in Arabic, respond in Arabic. If English, respond in English.
-7. **Be proactive**: If you notice issues in the data (high false positive rate, SLA violations, uncovered MITRE techniques), mention them even if not asked.
-8. **Reference the current page**: Start answers about the current page with context like "On this page, you can see..." or "Here in the Compliance tab..."
-9. **Never say you don't have data** — you have LIVE data from every table in the system.
-10. **Be the expert**: You are the most knowledgeable entity about this SOC platform. Give confident, authoritative answers.`;
+
 
     // Build provider fallback chain: Lovable AI → Google Gemini → OpenAI ChatGPT
     const providers: { name: string; url: string; key: string; model: string }[] = [];
-    if (LOVABLE_API_KEY) providers.push({ name: 'Lovable AI', url: 'https://ai.gateway.lovable.dev/v1/chat/completions', key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash' });
+    if (LOVABLE_API_KEY) providers.push({ name: 'Lovable AI', url: 'https://ai.gateway.lovable.dev/v1/chat/completions', key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash-lite' });
     if (GEMINI_API_KEY) providers.push({ name: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: GEMINI_API_KEY, model: 'gemini-2.5-flash' });
     if (OPENAI_API_KEY) providers.push({ name: 'OpenAI ChatGPT', url: 'https://api.openai.com/v1/chat/completions', key: OPENAI_API_KEY, model: 'gpt-4o-mini' });
 

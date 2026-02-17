@@ -251,6 +251,14 @@ export function SOCChatWidget() {
         return { role: m.role, content: m.content };
       });
 
+      // Rate limit: 1 request per 5 seconds
+      const now = Date.now();
+      const lastReqTime = (window as any).__socChatLastReq || 0;
+      if (now - lastReqTime < 5000) {
+        throw new Error('Please wait a few seconds before sending another message.');
+      }
+      (window as any).__socChatLastReq = now;
+
       const resp = await fetch(CHAT_URL, {
         method: 'POST',
         headers: {
@@ -262,6 +270,9 @@ export function SOCChatWidget() {
 
       if (!resp.ok || !resp.body) {
         const errData = await resp.json().catch(() => ({}));
+        if (resp.status === 429) throw new Error('AI is busy. Please wait 30 seconds and try again.');
+        if (resp.status === 402) throw new Error('AI credits exhausted. Contact admin to add credits.');
+        if (resp.status === 503) throw new Error('All AI providers are temporarily unavailable. Try again in a minute.');
         throw new Error(errData.error || 'Failed to connect');
       }
 
