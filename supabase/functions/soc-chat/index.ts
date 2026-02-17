@@ -647,7 +647,7 @@ SOCMind is a full AI-driven SOC platform with:
     // Determine AI endpoint - prefer Lovable AI (no rate limits), fallback to Gemini
     const useLovable = Boolean(LOVABLE_API_KEY);
     const aiUrl = useLovable
-      ? 'https://ai-gateway.lovable.dev/v1/chat/completions'
+      ? 'https://ai.gateway.lovable.dev/v1/chat/completions'
       : 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
     const aiKey = useLovable ? LOVABLE_API_KEY! : GEMINI_API_KEY!;
     const aiModel = useLovable ? 'google/gemini-2.5-flash' : 'gemini-2.5-flash';
