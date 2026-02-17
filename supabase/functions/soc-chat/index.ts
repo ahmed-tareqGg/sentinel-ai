@@ -522,18 +522,54 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
 
 
 
-    // Primary: Lovable AI gateway — cheapest models first to conserve credits
+    // ═══════════════════════════════════════════════════════════════
+    // LAYER 1: RULE-BASED ENGINE — Works 100% without any AI provider
+    // Handles common SOC questions directly from the database
+    // ═══════════════════════════════════════════════════════════════
+    const ruleBasedResponse = await tryRuleBasedEngine(msgText, incidents, openIncidents, dataSources, mitreCov, pendingApprovals, playbooks);
+    if (ruleBasedResponse) {
+      console.log('[soc-chat] ✅ Rule-Based Engine answered');
+      return streamTextResponse(ruleBasedResponse, corsHeaders);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // LAYER 2: OFFLINE CACHE — Serve cached AI response if available
+    // ═══════════════════════════════════════════════════════════════
+    const cacheKey = await hashQuery(msgText.toLowerCase().trim().slice(0, 200));
+    const { data: cachedEntry } = await supabase
+      .from('ai_response_cache')
+      .select('id, response_text, hit_count')
+      .eq('query_hash', cacheKey)
+      .single();
+
+    if (cachedEntry) {
+      console.log(`[soc-chat] ✅ Cache hit (${cachedEntry.hit_count + 1} times)`);
+      // Update hit count async
+      supabase.from('ai_response_cache').update({ hit_count: cachedEntry.hit_count + 1, last_used_at: new Date().toISOString() }).eq('id', cachedEntry.id).then(() => {});
+      return streamTextResponse(cachedEntry.response_text + '\n\n*🗄️ Cached response — AI providers unavailable*', corsHeaders);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // LAYER 3: AI PROVIDERS — Try all available providers
+    // Priority: Lovable Gateway → Ollama (self-hosted) → Direct APIs
+    // ═══════════════════════════════════════════════════════════════
+    const OLLAMA_ENDPOINT = Deno.env.get('OLLAMA_ENDPOINT'); // e.g. http://your-server:11434
+    const OLLAMA_MODEL = Deno.env.get('OLLAMA_MODEL') || 'llama3';
+
     const GATEWAY_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
-    const providers: { name: string; url: string; key: string; model: string }[] = [];
+    const providers: { name: string; url: string; key: string; model: string; isOllama?: boolean }[] = [];
     if (LOVABLE_API_KEY) {
-      // Cheapest/fastest first to maximize usage
       providers.push({ name: 'Gemini Flash Lite', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash-lite' });
       providers.push({ name: 'Gemini 3 Flash', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-3-flash-preview' });
       providers.push({ name: 'Gemini Flash', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash' });
       providers.push({ name: 'GPT-5 Nano', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'openai/gpt-5-nano' });
       providers.push({ name: 'GPT-5 Mini', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'openai/gpt-5-mini' });
     }
-    // Direct API fallbacks when gateway credits are exhausted
+    // Self-Hosted Ollama (runs locally, no credits needed)
+    if (OLLAMA_ENDPOINT) {
+      providers.push({ name: `Ollama (${OLLAMA_MODEL})`, url: `${OLLAMA_ENDPOINT}/v1/chat/completions`, key: 'ollama', model: OLLAMA_MODEL, isOllama: true });
+    }
+    // Direct API fallbacks
     if (GEMINI_API_KEY) {
       providers.push({ name: 'Gemini Direct', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: GEMINI_API_KEY, model: 'gemini-2.0-flash-lite' });
     }
@@ -546,59 +582,59 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
 
     for (const provider of providers) {
       console.log(`[soc-chat] Trying ${provider.name}...`);
-      let succeeded = false;
 
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
           const delay = Math.min(1000 * Math.pow(2, attempt), 6000);
-          console.log(`[soc-chat] ${provider.name} retry ${attempt}/${MAX_RETRIES} after ${delay}ms...`);
           await new Promise(r => setTimeout(r, delay));
         }
 
         try {
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (!provider.isOllama) headers['Authorization'] = `Bearer ${provider.key}`;
+
           const response = await fetch(provider.url, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${provider.key}`, 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ model: provider.model, messages: aiMessages, stream: true }),
           });
 
           if (response.ok) {
             console.log(`[soc-chat] ✅ ${provider.name} succeeded`);
+            // Cache the response in background for future offline use
+            cacheAIResponse(supabase, cacheKey, msgText, response.clone(), current_route).catch(() => {});
             return new Response(response.body, {
               headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
             });
           }
 
           if (response.status === 429) {
-            console.warn(`[soc-chat] ${provider.name} 429 rate limited (attempt ${attempt + 1})`);
             await response.text();
             if (attempt < MAX_RETRIES) continue;
-            // Exhausted retries for this provider, fall through to next
-            console.warn(`[soc-chat] ${provider.name} exhausted retries, trying next provider...`);
+            console.warn(`[soc-chat] ${provider.name} rate limited, trying next...`);
+            break;
+          }
+          if (response.status === 402) {
+            console.warn(`[soc-chat] ${provider.name} credits exhausted, trying next...`);
+            await response.text();
             break;
           }
 
-          if (response.status === 402) {
-            console.warn(`[soc-chat] ${provider.name} 402 credits exhausted, trying next provider...`);
-            await response.text();
-            break; // Move to next provider
-          }
-
-          // Other error
           const errText = await response.text();
           console.error(`[soc-chat] ${provider.name} error ${response.status}:`, errText);
-          break; // Move to next provider
+          break;
         } catch (fetchErr) {
           console.error(`[soc-chat] ${provider.name} fetch error:`, fetchErr);
-          break; // Move to next provider
+          break;
         }
       }
     }
 
-    // All providers failed
-    return new Response(JSON.stringify({ error: 'All AI providers are currently unavailable. Please try again shortly.' }), {
-      status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    // ═══════════════════════════════════════════════════════════════
+    // ALL LAYERS EXHAUSTED — Generate smart offline summary
+    // ═══════════════════════════════════════════════════════════════
+    const offlineFallback = generateOfflineSummary(incidents, openIncidents, dataSources, mitreCov, pendingApprovals);
+    return streamTextResponse(offlineFallback, corsHeaders);
 
   } catch (error) {
     console.error('soc-chat error:', error);
@@ -607,3 +643,278 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
     });
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// HELPER: Stream plain text as SSE (for rule-based + offline fallback)
+// ═══════════════════════════════════════════════════════════════════════
+function streamTextResponse(text: string, corsHeaders: Record<string, string>): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      // Split into ~80 char chunks to simulate streaming
+      const words = text.split(' ');
+      let chunk = '';
+      for (const word of words) {
+        chunk += (chunk ? ' ' : '') + word;
+        if (chunk.length >= 80) {
+          const data = JSON.stringify({ choices: [{ delta: { content: chunk + ' ' } }] });
+          controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+          chunk = '';
+        }
+      }
+      if (chunk) {
+        const data = JSON.stringify({ choices: [{ delta: { content: chunk } }] });
+        controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+      }
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// HELPER: Simple hash for cache key
+// ═══════════════════════════════════════════════════════════════════════
+async function hashQuery(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// HELPER: Cache AI response in background (reads stream then saves)
+// ═══════════════════════════════════════════════════════════════════════
+async function cacheAIResponse(supabase: any, cacheKey: string, queryText: string, response: Response, route: string) {
+  try {
+    const reader = response.body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let content = '';
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nlIdx: number;
+      while ((nlIdx = buffer.indexOf('\n')) !== -1) {
+        let line = buffer.slice(0, nlIdx);
+        buffer = buffer.slice(nlIdx + 1);
+        if (!line.startsWith('data: ')) continue;
+        const json = line.slice(6).trim();
+        if (json === '[DONE]') break;
+        try {
+          const p = JSON.parse(json);
+          const delta = p.choices?.[0]?.delta?.content;
+          if (delta) content += delta;
+        } catch {}
+      }
+    }
+    if (content.length > 50) {
+      await supabase.from('ai_response_cache').upsert({
+        query_hash: cacheKey,
+        query_text: queryText.slice(0, 500),
+        response_text: content.slice(0, 8000),
+        context_route: route || '/dashboard',
+        hit_count: 0,
+        last_used_at: new Date().toISOString(),
+      }, { onConflict: 'query_hash' });
+    }
+  } catch (e) {
+    // Non-critical — silently fail
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// RULE-BASED ENGINE: Answer common SOC questions from DB data directly
+// ═══════════════════════════════════════════════════════════════════════
+async function tryRuleBasedEngine(
+  msg: string,
+  incidents: any[],
+  openIncidents: any[],
+  dataSources: any[],
+  mitreCov: any[],
+  pendingApprovals: any[],
+  playbooks: any[]
+): Promise<string | null> {
+  const q = msg.toLowerCase();
+
+  // ── Incident counts & stats ──
+  if (/how many|عدد|كم|count/.test(q) && /incident|حادث/.test(q)) {
+    const critical = incidents.filter(i => i.risk_level === 'Critical').length;
+    const high = incidents.filter(i => i.risk_level === 'High').length;
+    const open = openIncidents.length;
+    const tp = incidents.filter(i => i.classification === 'True Positive').length;
+    const fp = incidents.filter(i => i.classification === 'False Positive').length;
+    return `## 📊 Incident Statistics
+
+| Metric | Count |
+|--------|-------|
+| **Total (last 20)** | ${incidents.length} |
+| **Open** | ${open} |
+| **Critical** | ${critical} |
+| **High** | ${high} |
+| **True Positives** | ${tp} |
+| **False Positives** | ${fp} |
+
+> *Data from local database — AI providers unavailable* 🗄️`;
+  }
+
+  // ── Critical incidents ──
+  if (/critical|حرج|خطير/.test(q) && /incident|حادث|alert/.test(q)) {
+    const crits = incidents.filter(i => i.risk_level === 'Critical');
+    if (crits.length === 0) return '## ✅ No Critical Incidents\n\nلا توجد حوادث حرجة حالياً.\n\n> *Rule-Based Engine* 🤖';
+    const rows = crits.map(i => `| ${i.incident_number} | ${i.event_type} | ${i.status} | ${i.src_ip || 'N/A'} | ${i.mitre_technique || '-'} |`).join('\n');
+    return `## 🚨 Critical Incidents (${crits.length})
+
+| ID | Event Type | Status | Source IP | MITRE |
+|----|-----------|--------|-----------|-------|
+${rows}
+
+> *Rule-Based Engine — direct DB query* 🤖`;
+  }
+
+  // ── False positives ──
+  if (/false positive|إيجابي كاذب|fp/.test(q)) {
+    const fps = incidents.filter(i => i.classification === 'False Positive');
+    const today = incidents.filter(i => {
+      const d = new Date(i.created_at);
+      return i.classification === 'False Positive' && d.toDateString() === new Date().toDateString();
+    });
+    return `## 🔍 False Positives Analysis
+
+- **Total (last 20 incidents):** ${fps.length}
+- **Today:** ${today.length}
+- **FP Rate:** ${incidents.length > 0 ? Math.round(fps.length / incidents.length * 100) : 0}%
+
+${fps.length > 0 ? '**Recent FP incidents:**\n' + fps.slice(0, 5).map(i => `- ${i.incident_number}: ${i.event_type} (${new Date(i.created_at).toLocaleDateString()})`).join('\n') : 'No false positives in recent data.'}
+
+> *Rule-Based Engine* 🤖`;
+  }
+
+  // ── Top IPs ──
+  if (/top.*ip|ip.*most|أكثر.*ip|ip.*alert/.test(q)) {
+    const ipCounts: Record<string, number> = {};
+    incidents.forEach(i => { if (i.src_ip) ipCounts[i.src_ip] = (ipCounts[i.src_ip] || 0) + 1; });
+    const sorted = Object.entries(ipCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    if (sorted.length === 0) return '## ℹ️ No IP Data\n\nلا توجد بيانات IP كافية.\n\n> *Rule-Based Engine* 🤖';
+    const rows = sorted.map(([ip, count]) => `| ${ip} | ${count} |`).join('\n');
+    return `## 🌐 Top Source IPs
+
+| IP Address | Alert Count |
+|-----------|-------------|
+${rows}
+
+> *Rule-Based Engine — direct DB query* 🤖`;
+  }
+
+  // ── MITRE techniques ──
+  if (/mitre|technique|tactic|تقنية|تكتيك/.test(q)) {
+    const detected = mitreCov.filter(m => m.coverage_status === 'detected');
+    const withPlaybook = mitreCov.filter(m => m.has_playbook);
+    const topTechniques = incidents
+      .filter(i => i.mitre_technique)
+      .reduce((acc: Record<string, number>, i) => { acc[i.mitre_technique] = (acc[i.mitre_technique] || 0) + 1; return acc; }, {});
+    const sortedTech = Object.entries(topTechniques).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    return `## 🎯 MITRE ATT&CK Coverage
+
+- **Techniques Covered:** ${detected.length}/${mitreCov.length}
+- **With Playbooks:** ${withPlaybook.length}
+
+**Most Detected Techniques:**
+${sortedTech.map(([t, c]) => `- \`${t}\` — ${c} detections`).join('\n') || '- No technique data yet'}
+
+> *Rule-Based Engine* 🤖`;
+  }
+
+  // ── Open incidents list ──
+  if (/open|مفتوح|pending|قائم/.test(q) && /incident|حادث/.test(q)) {
+    if (openIncidents.length === 0) return '## ✅ No Open Incidents\n\nلا توجد حوادث مفتوحة حالياً.\n\n> *Rule-Based Engine* 🤖';
+    const rows = openIncidents.slice(0, 10).map(i => `| ${i.incident_number} | ${i.event_type} | ${i.risk_level} | ${new Date(i.created_at).toLocaleDateString()} |`).join('\n');
+    return `## 📂 Open Incidents (${openIncidents.length})
+
+| ID | Event Type | Risk | Date |
+|----|-----------|------|------|
+${rows}
+
+> *Rule-Based Engine* 🤖`;
+  }
+
+  // ── Data sources / agents ──
+  if (/agent|data source|source|مصدر|وكيل/.test(q) && /status|حالة|active|نشط/.test(q)) {
+    const active = dataSources.filter(d => d.status === 'active');
+    const inactive = dataSources.filter(d => d.status !== 'active');
+    return `## 🖥️ Data Sources Status
+
+| Name | Type | Status | Logs Today |
+|------|------|--------|-----------|
+${dataSources.map(d => `| ${d.name} | ${d.type} | ${d.status === 'active' ? '✅' : '❌'} ${d.status} | ${d.logs_received_today || 0} |`).join('\n') || '| No data sources | - | - | - |'}
+
+**Summary:** ${active.length} active, ${inactive.length} inactive
+
+> *Rule-Based Engine* 🤖`;
+  }
+
+  // ── Pending approvals ──
+  if (/approval|موافقة|pending|انتظار/.test(q)) {
+    if (pendingApprovals.length === 0) return '## ✅ No Pending Approvals\n\nلا توجد موافقات معلقة.\n\n> *Rule-Based Engine* 🤖';
+    return `## ⏳ Pending Approvals (${pendingApprovals.length})
+
+${pendingApprovals.map(a => `- **${a.action_type}** — ${a.reason || 'No reason'}`).join('\n')}
+
+> *Rule-Based Engine* 🤖`;
+  }
+
+  // ── SOC summary / dashboard ──
+  if (/summary|ملخص|overview|نظرة عامة|dashboard|status/.test(q)) {
+    const critical = incidents.filter(i => i.risk_level === 'Critical').length;
+    const activeSources = dataSources.filter(d => d.status === 'active').length;
+    const activePlaybooks = playbooks.filter(p => p.is_active).length;
+    return `## 📊 SOC Status Summary
+
+| Category | Value |
+|----------|-------|
+| **Open Incidents** | ${openIncidents.length} |
+| **Critical Alerts** | ${critical} |
+| **Active Data Sources** | ${activeSources}/${dataSources.length} |
+| **Active Playbooks** | ${activePlaybooks}/${playbooks.length} |
+| **Pending Approvals** | ${pendingApprovals.length} |
+| **MITRE Coverage** | ${mitreCov.filter(m => m.coverage_status === 'detected').length}/${mitreCov.length} |
+
+${critical > 0 ? `⚠️ **${critical} critical incident(s) require immediate attention!**` : '✅ No critical incidents.'}
+
+> *Rule-Based Engine — AI providers unavailable* 🤖`;
+  }
+
+  // No rule matched — let AI handle it
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// OFFLINE FALLBACK: Smart summary when absolutely everything fails
+// ═══════════════════════════════════════════════════════════════════════
+function generateOfflineSummary(incidents: any[], openIncidents: any[], dataSources: any[], mitreCov: any[], pendingApprovals: any[]): string {
+  const critical = incidents.filter(i => i.risk_level === 'Critical').length;
+  const activeSources = dataSources.filter(d => d.status === 'active').length;
+  return `## ⚠️ SOC Assistant — Offline Mode
+
+All AI providers are currently unavailable. Here is your live SOC status from the database:
+
+## 📊 Current Status
+
+| Metric | Value |
+|--------|-------|
+| Open Incidents | **${openIncidents.length}** |
+| Critical Alerts | **${critical}** |
+| Active Sources | **${activeSources}/${dataSources.length}** |
+| Pending Approvals | **${pendingApprovals.length}** |
+| MITRE Coverage | **${mitreCov.filter(m => m.coverage_status === 'detected').length}/${mitreCov.length}** |
+
+${openIncidents.length > 0 ? `## 🔴 Open Incidents\n${openIncidents.slice(0, 5).map(i => `- **${i.incident_number}** — ${i.event_type} [${i.risk_level}]`).join('\n')}` : '## ✅ No Open Incidents'}
+
+---
+*🤖 Rule-Based Engine Active — AI providers offline. Try asking about specific incidents, IPs, or MITRE techniques for instant answers.*`;
+}

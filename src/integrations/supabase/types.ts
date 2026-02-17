@@ -214,6 +214,45 @@ export type Database = {
           },
         ]
       }
+      ai_response_cache: {
+        Row: {
+          context_route: string | null
+          created_at: string
+          hit_count: number
+          id: string
+          is_pinned: boolean
+          last_used_at: string
+          query_hash: string
+          query_text: string
+          response_text: string
+          tags: string[] | null
+        }
+        Insert: {
+          context_route?: string | null
+          created_at?: string
+          hit_count?: number
+          id?: string
+          is_pinned?: boolean
+          last_used_at?: string
+          query_hash: string
+          query_text: string
+          response_text: string
+          tags?: string[] | null
+        }
+        Update: {
+          context_route?: string | null
+          created_at?: string
+          hit_count?: number
+          id?: string
+          is_pinned?: boolean
+          last_used_at?: string
+          query_hash?: string
+          query_text?: string
+          response_text?: string
+          tags?: string[] | null
+        }
+        Relationships: []
+      }
       analyst_notes: {
         Row: {
           author_email: string | null
