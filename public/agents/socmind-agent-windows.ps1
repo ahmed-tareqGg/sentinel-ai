@@ -94,14 +94,22 @@ function Invoke-LicenseValidation {
 # ========== Log Collection ==========
 $script:LastSecurityTime = $null
 $script:LastSystemTime = $null
+$script:LastFirewallTime = $null
 $script:TotalLogsSent = 0
 $script:CycleCount = 0
+
+# Port Scan Detection State
+$script:ConnectionTracker = @{}  # IP -> @{ ports = @(); firstSeen = datetime; lastSeen = datetime }
+$script:PortScanThreshold = 10   # Unique ports from same IP = scan
+$script:PortScanWindow = 60      # Seconds
 
 function Get-SecurityLogs {
     param([int]$MaxEvents = 100)
     $logs = @()
+    
+    # === Security Event Logs ===
     try {
-        $filter = @{ LogName = 'Security'; Id = @(4624, 4625, 4648, 4672, 4688, 4689, 4697, 4698, 4720, 4722, 4724, 4728, 4732) }
+        $filter = @{ LogName = 'Security'; Id = @(4624, 4625, 4648, 4672, 4688, 4689, 4697, 4698, 4720, 4722, 4724, 4728, 4732, 5156, 5157, 5152, 5153) }
         if ($script:LastSecurityTime) { $filter['StartTime'] = $script:LastSecurityTime.AddSeconds(1) }
         $securityLogs = @()
         try {
@@ -114,13 +122,40 @@ function Get-SecurityLogs {
             foreach ($evt in $securityLogs) {
                 $msg = "Event $($evt.Id)"
                 try { if ($evt.Message) { $msg = $evt.Message.Substring(0, [Math]::Min(500, $evt.Message.Length)) } } catch {}
-                $logs += @{
+                
+                # Extract source IP from WFP events (5156/5157) for port scan detection
+                $srcIP = $null
+                $dstPort = $null
+                if ($evt.Id -in @(5156, 5157, 5152, 5153)) {
+                    try {
+                        $xml = [xml]$evt.ToXml()
+                        $srcIP = ($xml.Event.EventData.Data | Where-Object { $_.Name -eq 'SourceAddress' }).'#text'
+                        $dstPort = ($xml.Event.EventData.Data | Where-Object { $_.Name -eq 'DestPort' }).'#text'
+                        $direction = ($xml.Event.EventData.Data | Where-Object { $_.Name -eq 'Direction' }).'#text'
+                        # Only track inbound connections for scan detection
+                        if ($direction -eq '%%14592' -and $srcIP) {  # Inbound
+                            Update-PortScanTracker -SourceIP $srcIP -Port $dstPort
+                        }
+                    } catch {}
+                }
+
+                $sev = switch ($evt.Id) {
+                    { $_ -in @(4625, 4648) } { 4 }
+                    { $_ -in @(4672, 4697) } { 3 }
+                    { $_ -in @(5157, 5152, 5153) } { 3 }  # Blocked connections
+                    { $_ -eq 5156 } { 2 }                   # Allowed connection
+                    default { 2 }
+                }
+
+                $logEntry = @{
                     log_type = "security"; timestamp = $evt.TimeCreated.ToUniversalTime().ToString("o")
-                    message = $msg
-                    severity = if ($evt.Id -in @(4625, 4648)) { 4 } elseif ($evt.Id -in @(4672, 4697)) { 3 } else { 2 }
+                    message = $msg; severity = $sev
                     event_id = $evt.Id.ToString(); source_ip = $env:COMPUTERNAME
                     raw_log = @{ Id = $evt.Id; Provider = $evt.ProviderName }
                 }
+                if ($srcIP) { $logEntry['src_ip'] = $srcIP; $logEntry.raw_log['src_ip'] = $srcIP }
+                if ($dstPort) { $logEntry.raw_log['dst_port'] = $dstPort }
+                $logs += $logEntry
             }
         }
     } catch {
@@ -128,6 +163,8 @@ function Get-SecurityLogs {
             Write-Host "[WARN] Security log: $_" -ForegroundColor Yellow
         }
     }
+    
+    # === System Event Logs ===
     try {
         $sysFilter = @{ LogName = 'System'; Level = @(1, 2, 3) }
         if ($script:LastSystemTime) { $sysFilter['StartTime'] = $script:LastSystemTime.AddSeconds(1) }
@@ -156,7 +193,143 @@ function Get-SecurityLogs {
             Write-Host "[WARN] System log: $_" -ForegroundColor Yellow
         }
     }
+
+    # === Microsoft-Windows-Firewall Logs (Backup scan detection) ===
+    try {
+        $fwFilter = @{ LogName = 'Microsoft-Windows-Windows Firewall With Advanced Security/Firewall'; Id = @(2004, 2005, 2006, 2033) }
+        if ($script:LastFirewallTime) { $fwFilter['StartTime'] = $script:LastFirewallTime.AddSeconds(1) }
+        $fwLogs = @()
+        try {
+            $fwLogs = @(Get-WinEvent -FilterHashtable $fwFilter -MaxEvents 50 -ErrorAction Stop)
+        } catch {
+            if ($_.Exception.Message -notlike "*No events were found*") { throw }
+        }
+        if ($fwLogs.Count -gt 0) {
+            $script:LastFirewallTime = ($fwLogs | Sort-Object TimeCreated -Descending | Select-Object -First 1).TimeCreated
+            foreach ($evt in $fwLogs) {
+                $msg = "Firewall Event $($evt.Id)"
+                try { if ($evt.Message) { $msg = $evt.Message.Substring(0, [Math]::Min(500, $evt.Message.Length)) } } catch {}
+                $logs += @{
+                    log_type = "firewall"; timestamp = $evt.TimeCreated.ToUniversalTime().ToString("o")
+                    message = $msg; severity = 3
+                    event_id = $evt.Id.ToString(); source_ip = $env:COMPUTERNAME
+                    raw_log = @{ Id = $evt.Id; Provider = $evt.ProviderName }
+                }
+            }
+        }
+    } catch {}
+
     return $logs
+}
+
+# ========== Port Scan Detection ==========
+function Update-PortScanTracker {
+    param([string]$SourceIP, [string]$Port)
+    if (-not $SourceIP -or $SourceIP -eq '127.0.0.1' -or $SourceIP -eq '::1') { return }
+    
+    $now = Get-Date
+    if (-not $script:ConnectionTracker.ContainsKey($SourceIP)) {
+        $script:ConnectionTracker[$SourceIP] = @{ ports = [System.Collections.ArrayList]::new(); firstSeen = $now; lastSeen = $now }
+    }
+    $tracker = $script:ConnectionTracker[$SourceIP]
+    $tracker.lastSeen = $now
+    if ($Port -and -not $tracker.ports.Contains($Port)) {
+        $tracker.ports.Add($Port) | Out-Null
+    }
+}
+
+function Get-PortScanAlerts {
+    $alerts = @()
+    $now = Get-Date
+    $expiredIPs = @()
+    
+    foreach ($ip in $script:ConnectionTracker.Keys) {
+        $tracker = $script:ConnectionTracker[$ip]
+        $elapsed = ($now - $tracker.firstSeen).TotalSeconds
+        
+        # Expire old entries
+        if ($elapsed -gt ($script:PortScanWindow * 2)) {
+            $expiredIPs += $ip
+            continue
+        }
+        
+        # Check threshold
+        if ($tracker.ports.Count -ge $script:PortScanThreshold -and $elapsed -le $script:PortScanWindow) {
+            $portList = ($tracker.ports | Sort-Object { [int]$_ } | Select-Object -First 20) -join ', '
+            $alerts += @{
+                log_type = "security"; source_ip = $env:COMPUTERNAME
+                src_ip = $ip; dst_ip = $env:COMPUTERNAME
+                timestamp = (Get-Date).ToUniversalTime().ToString("o")
+                message = "PORT SCAN DETECTED: $ip scanned $($tracker.ports.Count) unique ports in ${elapsed}s. Ports: $portList"
+                severity = 5; event_type = "port_scan"
+                event_id = "SOCM-PORTSCAN"
+                mitre_tactic = "Discovery"; mitre_technique = "T1046"
+                raw_log = @{ 
+                    src_ip = $ip; dst_ip = $env:COMPUTERNAME
+                    unique_ports = $tracker.ports.Count; scan_duration_seconds = [int]$elapsed
+                    ports = @($tracker.ports | Select-Object -First 50)
+                    scanner = "detected_nmap_pattern"
+                }
+            }
+            Write-Host "[ALERT] Port scan from $ip - $($tracker.ports.Count) ports in ${elapsed}s!" -ForegroundColor Red
+            # Reset after alerting
+            $expiredIPs += $ip
+        }
+    }
+    
+    # Cleanup
+    foreach ($ip in $expiredIPs) {
+        $script:ConnectionTracker.Remove($ip)
+    }
+    
+    return $alerts
+}
+
+# ========== Active Network Scan Detection (netstat-based) ==========
+$script:LastConnectionSnapshot = @{}
+
+function Get-NetworkScanIndicators {
+    $alerts = @()
+    try {
+        # Get current TCP connections (ESTABLISHED + SYN_RECEIVED = someone connecting to us)
+        $connections = Get-NetTCPConnection -State Established, SynReceived, SynSent -ErrorAction SilentlyContinue |
+            Where-Object { $_.RemoteAddress -notin @('127.0.0.1', '::1', '0.0.0.0') -and $_.LocalAddress -notin @('127.0.0.1', '::1') }
+        
+        # Group by remote IP to detect scan patterns
+        $byIP = $connections | Group-Object RemoteAddress
+        foreach ($group in $byIP) {
+            $ip = $group.Name
+            $uniquePorts = ($group.Group | Select-Object -ExpandProperty LocalPort -Unique).Count
+            
+            if ($uniquePorts -ge 5) {
+                # Check if this is a new pattern (not seen before)
+                $prevCount = $script:LastConnectionSnapshot[$ip]
+                if (-not $prevCount -or $uniquePorts -gt ($prevCount + 3)) {
+                    $portList = ($group.Group | Select-Object -ExpandProperty LocalPort -Unique | Sort-Object | Select-Object -First 15) -join ', '
+                    $alerts += @{
+                        log_type = "security"; source_ip = $env:COMPUTERNAME
+                        src_ip = $ip; dst_ip = $env:COMPUTERNAME
+                        timestamp = (Get-Date).ToUniversalTime().ToString("o")
+                        message = "NETWORK SCAN INDICATOR: $ip has active connections to $uniquePorts unique local ports. Ports: $portList"
+                        severity = 4; event_type = "port_scan"
+                        event_id = "SOCM-NETSCAN"
+                        mitre_tactic = "Discovery"; mitre_technique = "T1046"
+                        raw_log = @{
+                            src_ip = $ip; dst_ip = $env:COMPUTERNAME
+                            unique_ports = $uniquePorts
+                            ports = @($group.Group | Select-Object -ExpandProperty LocalPort -Unique | Sort-Object | Select-Object -First 50)
+                            detection_method = "netstat_analysis"
+                        }
+                    }
+                    Write-Host "[SCAN] Network scan indicator from $ip ($uniquePorts ports)" -ForegroundColor Yellow
+                }
+                $script:LastConnectionSnapshot[$ip] = $uniquePorts
+            }
+        }
+    } catch {
+        # Silently fail - not critical
+    }
+    return $alerts
 }
 
 function Send-Logs {
@@ -616,10 +789,21 @@ function Invoke-Run {
         Write-Host "[FATAL] License validation failed." -ForegroundColor Red; return
     }
 
+    # Enable Windows Filtering Platform auditing for port scan detection
+    Write-Host "[INFO] Enabling WFP audit policy for scan detection..." -ForegroundColor Cyan
+    try {
+        auditpol /set /subcategory:"Filtering Platform Connection" /success:enable /failure:enable 2>&1 | Out-Null
+        auditpol /set /subcategory:"Filtering Platform Packet Drop" /success:enable /failure:enable 2>&1 | Out-Null
+        Write-Host "[OK] WFP auditing enabled (Events 5156/5157 will be captured)" -ForegroundColor Green
+    } catch {
+        Write-Host "[WARN] Could not enable WFP auditing. Run as Administrator for full scan detection." -ForegroundColor Yellow
+        Write-Host "[INFO] Falling back to netstat-based scan detection" -ForegroundColor Yellow
+    }
+
     Write-Host "[INFO] Starting agent (Ctrl+C to stop)..." -ForegroundColor Cyan
 
     # Timing: collect logs every 30s, poll actions every 10s, heartbeat every 60s
-    $logInterval = 30
+    $logInterval = 15        # Collect every 15s for faster scan detection
     $actionPollInterval = 10
     $heartbeatInterval = 60
     $licenseCheckInterval = 3600
@@ -648,6 +832,21 @@ function Invoke-Run {
             # Collect and send logs every 30s
             if (($now - $lastLogCollection).TotalSeconds -ge $logInterval) {
                 $logs = Get-SecurityLogs -MaxEvents 100
+                
+                # Add port scan alerts from WFP event tracking
+                $scanAlerts = Get-PortScanAlerts
+                if ($scanAlerts.Count -gt 0) {
+                    $logs += $scanAlerts
+                    Write-Host "[DETECT] $($scanAlerts.Count) port scan alert(s) generated!" -ForegroundColor Red
+                }
+                
+                # Add network scan indicators (netstat-based)
+                $netAlerts = Get-NetworkScanIndicators
+                if ($netAlerts.Count -gt 0) {
+                    $logs += $netAlerts
+                    Write-Host "[DETECT] $($netAlerts.Count) network scan indicator(s)!" -ForegroundColor Yellow
+                }
+                
                 Send-Logs -ApiEndpoint $apiEndpoint -ApiKey $apiKey -Logs $logs | Out-Null
                 $lastLogCollection = $now
             }

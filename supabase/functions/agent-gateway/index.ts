@@ -1052,33 +1052,54 @@ serve(async (req) => {
         });
       }
 
-      // ==================== POLL ACTIONS (Agent Auth) ====================
+    // ==================== POLL ACTIONS (Agent Auth) ====================
       if (action === 'poll-actions') {
-        // Agent polls for pending actions to execute
+        // Agent polls for actions to execute
+        // CRITICAL: Only return actions that have been MANUALLY approved by a human
         const { data: pendingActions, error: pollErr } = await supabase
           .from('soar_actions')
           .select('*')
           .eq('data_source_id', auth.dataSourceId)
-          .in('status', ['approved', 'dispatched'])
+          .eq('status', 'approved')
           .order('created_at', { ascending: true })
           .limit(10);
 
         if (pollErr) throw pollErr;
 
-        // Mark as dispatched
-        if (pendingActions && pendingActions.length > 0) {
-          const ids = pendingActions.map((a: any) => a.id);
+        // SECURITY: High-risk actions MUST have approved_by set (human approved)
+        // This prevents auto-created actions from being executed without oversight
+        const highRiskActions = ['block_ip', 'disable_user', 'isolate_host', 'kill_process', 
+          'quarantine_file', 'delete_file', 'lock_account', 'reset_password', 'stop_service'];
+        
+        const safeActions = (pendingActions || []).filter((a: any) => {
+          if (highRiskActions.includes(a.action_type)) {
+            if (!a.approved_by) {
+              console.log(`🚫 Blocked auto-execution of ${a.action_type} (${a.action_id}) - requires manual approval`);
+              return false;
+            }
+          }
+          return true;
+        });
+
+        // Mark approved actions as dispatched (so they aren't polled again)
+        if (safeActions.length > 0) {
+          const ids = safeActions.map((a: any) => a.id);
           await supabase
             .from('soar_actions')
             .update({ status: 'dispatched', dispatched_at: new Date().toISOString() })
-            .in('id', ids)
-            .eq('status', 'approved');
+            .in('id', ids);
         }
 
-        console.log(`📋 Agent ${auth.dataSourceName} polled: ${pendingActions?.length || 0} actions`);
+        // Log blocked actions count
+        const blockedCount = (pendingActions?.length || 0) - safeActions.length;
+        if (blockedCount > 0) {
+          console.log(`⚠️ ${blockedCount} high-risk action(s) blocked - awaiting manual approval`);
+        }
+
+        console.log(`📋 Agent ${auth.dataSourceName} polled: ${safeActions.length} safe actions (${blockedCount} blocked)`);
 
         return new Response(JSON.stringify({
-          actions: (pendingActions || []).map((a: any) => ({
+          actions: safeActions.map((a: any) => ({
             id: a.id,
             action_id: a.action_id,
             action_type: a.action_type,
