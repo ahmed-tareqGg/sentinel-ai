@@ -404,42 +404,88 @@ function Invoke-SOARAction {
                 if ($isDry) {
                     $result = @{ success = $true; details = "DRY-RUN: Would isolate host (block all non-SOCMind traffic)" }
                 } else {
+                    # STEP 0: Remove any previous isolation rules first
+                    Get-NetFirewallRule -DisplayName "SOCMind-Isolate-*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+
                     # Resolve API IPs for whitelist
                     $apiIPs = Get-ApiIPs -ApiEndpoint $ApiEndpoint
+                    if ($apiIPs.Count -eq 0) {
+                        Write-Host "[WARN] Could not resolve API IPs - aborting isolation to prevent lockout" -ForegroundColor Yellow
+                        $result = @{ success = $false; details = "SAFETY: Cannot resolve API endpoint IPs. Aborting isolation to prevent agent lockout." }
+                    } else {
+                        # Get default gateway
+                        $defaultGW = $null
+                        try { $defaultGW = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object -First 1).NextHop } catch {}
 
-                    # Get default gateway
-                    $defaultGW = $null
-                    try { $defaultGW = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object -First 1).NextHop } catch {}
+                        # Get custom gateway from params
+                        $gwHost = Get-ActionParam -Action $Action -ParamName "gateway_host"
 
-                    # Get custom gateway from params
-                    $gwHost = Get-ActionParam -Action $Action -ParamName "gateway_host"
+                        # CRITICAL: Create ALLOW rules FIRST before blocking
+                        # Windows Firewall: Allow rules with higher priority must exist before Block-All
 
-                    # 1. Block all outbound
-                    New-NetFirewallRule -DisplayName "SOCMind-Isolate-BlockAll" -Direction Outbound -Action Block -ErrorAction SilentlyContinue | Out-Null
+                        # 1. Allow loopback
+                        New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowLoopback" -Direction Outbound -RemoteAddress 127.0.0.1 -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
 
-                    # 2. Allow SOCMind API (CRITICAL)
-                    foreach ($ip in $apiIPs) {
-                        New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowAPI-$ip" -Direction Outbound -RemoteAddress $ip -RemotePort 443 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
+                        # 2. Allow DNS (needed to resolve API endpoint)
+                        New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowDNS-UDP" -Direction Outbound -RemotePort 53 -Protocol UDP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                        New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowDNS-TCP" -Direction Outbound -RemotePort 53 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+
+                        # 3. Allow default gateway (needed for routing)
+                        if ($defaultGW) {
+                            New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowGW" -Direction Outbound -RemoteAddress $defaultGW -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                        }
+
+                        # 4. Allow custom gateway
+                        if ($gwHost) {
+                            New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowCustomGW" -Direction Outbound -RemoteAddress $gwHost -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                        }
+
+                        # 5. Allow SOCMind API (CRITICAL - management channel)
+                        foreach ($ip in $apiIPs) {
+                            New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowAPI-$ip" -Direction Outbound -RemoteAddress $ip -RemotePort 443 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                        }
+
+                        # 6. Verify management channel is reachable BEFORE blocking
+                        $canReach = $false
+                        try {
+                            $testUrl = "$ApiEndpoint/agent-gateway/heartbeat"
+                            Invoke-RestMethod -Uri $testUrl -Method Post -Headers @{ "X-Agent-Key" = "test"; "Content-Type" = "application/json" } -Body "{}" -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
+                            $canReach = $true
+                        } catch {
+                            # Even a 401/403 means connectivity works
+                            if ($_.Exception.Response) { $canReach = $true }
+                        }
+
+                        if (-not $canReach) {
+                            Write-Host "[WARN] Cannot verify management channel - aborting isolation" -ForegroundColor Yellow
+                            Get-NetFirewallRule -DisplayName "SOCMind-Isolate-*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+                            $result = @{ success = $false; details = "SAFETY: Management channel unreachable before isolation. Aborted to prevent lockout." }
+                        } else {
+                            # 7. NOW block all other outbound (Block rules have lower priority than existing Allow rules)
+                            # Use -Group to ensure Block-All has lower precedence
+                            New-NetFirewallRule -DisplayName "SOCMind-Isolate-BlockAll-Out" -Direction Outbound -Action Block -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                            New-NetFirewallRule -DisplayName "SOCMind-Isolate-BlockAll-In" -Direction Inbound -Action Block -Profile Any -ErrorAction SilentlyContinue | Out-Null
+
+                            # 8. Verify connectivity AFTER isolation
+                            Start-Sleep -Seconds 2
+                            $postCheck = $false
+                            try {
+                                Invoke-RestMethod -Uri "$ApiEndpoint/agent-gateway/heartbeat" -Method Post -Headers @{ "X-Agent-Key" = "test"; "Content-Type" = "application/json" } -Body "{}" -TimeoutSec 10 -ErrorAction SilentlyContinue | Out-Null
+                                $postCheck = $true
+                            } catch {
+                                if ($_.Exception.Response) { $postCheck = $true }
+                            }
+
+                            if (-not $postCheck) {
+                                Write-Host "[EMERGENCY] Lost connectivity after isolation - rolling back!" -ForegroundColor Red
+                                Get-NetFirewallRule -DisplayName "SOCMind-Isolate-*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+                                $result = @{ success = $false; details = "EMERGENCY ROLLBACK: Lost management connectivity after isolation. All rules removed." }
+                            } else {
+                                Write-Host "[OK] Host isolated - management channel verified" -ForegroundColor Green
+                                $result = @{ success = $true; details = "Host isolated. Management channel verified. Whitelisted $($apiIPs.Count) API IPs + DNS + GW."; rollback_available = $true }
+                            }
+                        }
                     }
-
-                    # 3. Allow DNS
-                    New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowDNS-UDP" -Direction Outbound -RemotePort 53 -Protocol UDP -Action Allow -ErrorAction SilentlyContinue | Out-Null
-                    New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowDNS-TCP" -Direction Outbound -RemotePort 53 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
-
-                    # 4. Allow default gateway
-                    if ($defaultGW) {
-                        New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowGW" -Direction Outbound -RemoteAddress $defaultGW -Action Allow -ErrorAction SilentlyContinue | Out-Null
-                    }
-
-                    # 5. Allow custom gateway
-                    if ($gwHost) {
-                        New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowCustomGW" -Direction Outbound -RemoteAddress $gwHost -Action Allow -ErrorAction SilentlyContinue | Out-Null
-                    }
-
-                    # 6. Allow loopback
-                    New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowLoopback" -Direction Outbound -RemoteAddress 127.0.0.1 -Action Allow -ErrorAction SilentlyContinue | Out-Null
-
-                    $result = @{ success = $true; details = "Host isolated. Management channel (API + DNS) preserved. Whitelisted $($apiIPs.Count) API IPs."; rollback_available = $true }
                 }
             }
             "unisolate_host" {
@@ -472,20 +518,33 @@ function Invoke-SOARAction {
 
 function Send-ActionResult {
     param($ApiEndpoint, $ApiKey, $ActionDbId, $Result)
-    try {
-        $url = "$ApiEndpoint/agent-gateway/report-action"
-        $body = @{
-            action_id = $ActionDbId
-            status = if ($Result.success) { "success" } else { "failed" }
-            result = $Result
-            error_message = if (-not $Result.success) { $Result.details } else { $null }
-            rollback_available = [bool]$Result.rollback_available
-        } | ConvertTo-Json -Depth 5
-        $headers = @{ "Content-Type" = "application/json"; "X-Agent-Key" = $ApiKey }
-        Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body -TimeoutSec 30 | Out-Null
-        Write-Host "[OK] Action result reported" -ForegroundColor Green
-    } catch {
-        Write-Host "[WARN] Could not report action result: $_" -ForegroundColor Yellow
+    $maxRetries = 3
+    $retryDelay = 5
+    for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+        try {
+            $url = "$ApiEndpoint/agent-gateway/report-action"
+            $body = @{
+                action_id = $ActionDbId
+                status = if ($Result.success) { "success" } else { "failed" }
+                result = $Result
+                error_message = if (-not $Result.success) { $Result.details } else { $null }
+                rollback_available = [bool]$Result.rollback_available
+            } | ConvertTo-Json -Depth 5
+            $headers = @{ "Content-Type" = "application/json"; "X-Agent-Key" = $ApiKey }
+            Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body -TimeoutSec 30 | Out-Null
+            Write-Host "[OK] Action result reported (attempt $attempt)" -ForegroundColor Green
+            return
+        } catch {
+            if ($attempt -lt $maxRetries) {
+                Write-Host "[WARN] Report failed (attempt $attempt/$maxRetries), retrying in ${retryDelay}s..." -ForegroundColor Yellow
+                Start-Sleep -Seconds $retryDelay
+                $retryDelay *= 2
+            } else {
+                Write-Host "[ERR] Could not report action result after $maxRetries attempts: $_" -ForegroundColor Red
+                # Save to local log for later sync
+                Write-ActionLog -ActionId $ActionDbId -ActionType "report_failed" -Target "" -Status "pending_sync" -Details "Result: $($Result.details)"
+            }
+        }
     }
 }
 
