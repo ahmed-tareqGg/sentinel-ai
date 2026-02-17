@@ -522,11 +522,14 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
 
 
 
-    // Build provider fallback chain: Lovable AI → Google Gemini → OpenAI ChatGPT
+    // All models go through Lovable AI gateway so they appear in Cloud AI usage
+    const GATEWAY_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
     const providers: { name: string; url: string; key: string; model: string }[] = [];
-    if (LOVABLE_API_KEY) providers.push({ name: 'Lovable AI', url: 'https://ai.gateway.lovable.dev/v1/chat/completions', key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash-lite' });
-    if (GEMINI_API_KEY) providers.push({ name: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: GEMINI_API_KEY, model: 'gemini-2.5-flash' });
-    if (OPENAI_API_KEY) providers.push({ name: 'OpenAI ChatGPT', url: 'https://api.openai.com/v1/chat/completions', key: OPENAI_API_KEY, model: 'gpt-4o-mini' });
+    if (LOVABLE_API_KEY) {
+      providers.push({ name: 'Gemini Flash', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash' });
+      providers.push({ name: 'GPT-5 Nano', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'openai/gpt-5-nano' });
+      providers.push({ name: 'Gemini Flash Lite', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash-lite' });
+    }
 
     const aiMessages = [{ role: 'system', content: systemPrompt }, ...messages];
     const MAX_RETRIES = 2;
