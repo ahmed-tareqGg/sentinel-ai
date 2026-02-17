@@ -95,8 +95,11 @@ function Invoke-LicenseValidation {
 $script:LastSecurityTime = $null
 $script:LastSystemTime = $null
 $script:LastFirewallTime = $null
+$script:LastAppTime = $null
+$script:LastPSTime = $null
 $script:TotalLogsSent = 0
 $script:CycleCount = 0
+$script:SendFailCount = 0
 
 # Port Scan Detection State
 $script:ConnectionTracker = @{}  # IP -> @{ ports = @(); firstSeen = datetime; lastSeen = datetime }
@@ -214,6 +217,59 @@ function Get-SecurityLogs {
                 try { if ($evt.Message) { $msg = $evt.Message.Substring(0, [Math]::Min(500, $evt.Message.Length)) } } catch {}
                 $logs += @{
                     log_type = "firewall"; timestamp = $evt.TimeCreated.ToUniversalTime().ToString("o")
+                    message = $msg; severity = 3
+                    event_id = $evt.Id.ToString(); source_ip = $env:COMPUTERNAME
+                    raw_log = @{ Id = $evt.Id; Provider = $evt.ProviderName }
+                }
+            }
+        }
+    } catch {}
+
+    # === Application Event Logs (errors/warnings) ===
+    try {
+        $appFilter = @{ LogName = 'Application'; Level = @(1, 2, 3) }
+        if ($script:LastAppTime) { $appFilter['StartTime'] = $script:LastAppTime.AddSeconds(1) }
+        $appLogs = @()
+        try {
+            $appLogs = @(Get-WinEvent -FilterHashtable $appFilter -MaxEvents 30 -ErrorAction Stop)
+        } catch {
+            if ($_.Exception.Message -notlike "*No events were found*") { throw }
+        }
+        if ($appLogs.Count -gt 0) {
+            Write-Host "  [LOG] Application: $($appLogs.Count) new events" -ForegroundColor DarkCyan
+            $script:LastAppTime = ($appLogs | Sort-Object TimeCreated -Descending | Select-Object -First 1).TimeCreated
+            foreach ($evt in $appLogs) {
+                $msg = "Event $($evt.Id)"
+                try { if ($evt.Message) { $msg = $evt.Message.Substring(0, [Math]::Min(500, $evt.Message.Length)) } } catch {}
+                $logs += @{
+                    log_type = "application"; timestamp = $evt.TimeCreated.ToUniversalTime().ToString("o")
+                    message = $msg
+                    severity = if ($evt.Level -eq 1) { 5 } elseif ($evt.Level -eq 2) { 4 } else { 3 }
+                    event_id = $evt.Id.ToString(); source_ip = $env:COMPUTERNAME
+                    raw_log = @{ Id = $evt.Id; Provider = $evt.ProviderName; Level = $evt.Level }
+                }
+            }
+        }
+    } catch {}
+
+    # === PowerShell / Script Block Logging ===
+    try {
+        $psFilter = @{ LogName = 'Microsoft-Windows-PowerShell/Operational'; Id = @(4103, 4104) }
+        if ($script:LastPSTime) { $psFilter['StartTime'] = $script:LastPSTime.AddSeconds(1) }
+        $psLogs = @()
+        try {
+            $psLogs = @(Get-WinEvent -FilterHashtable $psFilter -MaxEvents 30 -ErrorAction Stop)
+        } catch {
+            if ($_.Exception.Message -notlike "*No events were found*") { throw }
+        }
+        if ($psLogs.Count -gt 0) {
+            Write-Host "  [LOG] PowerShell: $($psLogs.Count) new events" -ForegroundColor DarkCyan
+            $script:LastPSTime = ($psLogs | Sort-Object TimeCreated -Descending | Select-Object -First 1).TimeCreated
+            foreach ($evt in $psLogs) {
+                $msg = "PowerShell Event $($evt.Id)"
+                try { if ($evt.Message) { $msg = $evt.Message.Substring(0, [Math]::Min(500, $evt.Message.Length)) } } catch {}
+                $logs += @{
+                    log_type = "powershell"; timestamp = $evt.TimeCreated.ToUniversalTime().ToString("o")
                     message = $msg; severity = 3
                     event_id = $evt.Id.ToString(); source_ip = $env:COMPUTERNAME
                     raw_log = @{ Id = $evt.Id; Provider = $evt.ProviderName }
@@ -824,9 +880,11 @@ function Invoke-Run {
     }
 
     Write-Host "[INFO] Starting agent (Ctrl+C to stop)..." -ForegroundColor Cyan
+    Write-Host "[INFO] Log sources: Security, System, Application, PowerShell, Firewall, Network" -ForegroundColor Cyan
+    Write-Host ""
 
-    # Timing: collect logs every 30s, poll actions every 10s, heartbeat every 60s
-    $logInterval = 15        # Collect every 15s for faster scan detection
+    # Timing
+    $logInterval = 15        # Collect every 15s
     $actionPollInterval = 10
     $heartbeatInterval = 60
     $licenseCheckInterval = 3600
@@ -835,9 +893,8 @@ function Invoke-Run {
     $lastActionPoll = [DateTime]::MinValue
     $lastHeartbeat = [DateTime]::MinValue
     $lastValidation = Get-Date
-
-    # Tick every 5 seconds for responsive action polling
     $tickInterval = 5
+    $emptyRounds = 0
 
     while ($true) {
         try {
@@ -852,26 +909,60 @@ function Invoke-Run {
                 $lastValidation = $now
             }
 
-            # Collect and send logs every 30s
+            # Collect and send logs
             if (($now - $lastLogCollection).TotalSeconds -ge $logInterval) {
-                $logs = Get-SecurityLogs -MaxEvents 100
+                Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Collecting logs..." -ForegroundColor DarkGray -NoNewline
+                $logs = @()
+                $logs += @(Get-SecurityLogs -MaxEvents 100)
                 
                 # Add port scan alerts from WFP event tracking
-                $scanAlerts = Get-PortScanAlerts
+                $scanAlerts = @(Get-PortScanAlerts)
                 if ($scanAlerts.Count -gt 0) {
                     $logs += $scanAlerts
-                    Write-Host "[DETECT] $($scanAlerts.Count) port scan alert(s) generated!" -ForegroundColor Red
+                    Write-Host "`n[DETECT] $($scanAlerts.Count) port scan alert(s) generated!" -ForegroundColor Red
                 }
                 
                 # Add network scan indicators (netstat-based)
-                $netAlerts = Get-NetworkScanIndicators
+                $netAlerts = @(Get-NetworkScanIndicators)
                 if ($netAlerts.Count -gt 0) {
                     $logs += $netAlerts
-                    Write-Host "[DETECT] $($netAlerts.Count) network scan indicator(s)!" -ForegroundColor Yellow
+                    Write-Host "`n[DETECT] $($netAlerts.Count) network scan indicator(s)!" -ForegroundColor Yellow
+                }
+
+                if ($logs.Count -eq 0) {
+                    $emptyRounds++
+                    Write-Host " no new events (round $emptyRounds)" -ForegroundColor DarkGray
+                    
+                    # Every 5 empty rounds (~75s), reset time filters to re-scan recent events
+                    # This ensures we don't miss events from log sources that buffer/delay writes
+                    if ($emptyRounds -ge 5) {
+                        Write-Host "[INFO] Resetting log position trackers to catch delayed events..." -ForegroundColor Yellow
+                        $script:LastSecurityTime = (Get-Date).AddMinutes(-2)
+                        $script:LastSystemTime = (Get-Date).AddMinutes(-2)
+                        $script:LastAppTime = (Get-Date).AddMinutes(-2)
+                        $script:LastPSTime = (Get-Date).AddMinutes(-2)
+                        $script:LastFirewallTime = (Get-Date).AddMinutes(-2)
+                        $emptyRounds = 0
+                    }
+                } else {
+                    $emptyRounds = 0
+                    Write-Host " found $($logs.Count) events" -ForegroundColor Cyan
                 }
                 
-                Send-Logs -ApiEndpoint $apiEndpoint -ApiKey $apiKey -Logs $logs | Out-Null
-                $lastLogCollection = $now
+                $sendOk = Send-Logs -ApiEndpoint $apiEndpoint -ApiKey $apiKey -Logs $logs
+                if ($sendOk) {
+                    $lastLogCollection = $now
+                    $script:SendFailCount = 0
+                } else {
+                    $script:SendFailCount++
+                    # Don't update lastLogCollection so we retry these logs
+                    Write-Host "[WARN] Send failed ($($script:SendFailCount) consecutive failures)" -ForegroundColor Yellow
+                    if ($script:SendFailCount -ge 3) {
+                        Write-Host "[INFO] Resetting collection state after repeated failures..." -ForegroundColor Yellow
+                        $lastLogCollection = $now  # Skip to avoid infinite retry loop
+                        $script:SendFailCount = 0
+                    }
+                }
             }
 
             # Poll for SOAR actions every 10s
