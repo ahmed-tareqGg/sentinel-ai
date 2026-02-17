@@ -92,40 +92,64 @@ function Invoke-LicenseValidation {
 }
 
 # ========== Log Collection ==========
+$script:LastSecurityTime = $null
+$script:LastSystemTime = $null
+
 function Get-SecurityLogs {
     param([int]$MaxEvents = 100)
     $logs = @()
     try {
-        $securityLogs = Get-WinEvent -LogName Security -MaxEvents $MaxEvents -ErrorAction SilentlyContinue |
-            Where-Object { $_.Id -in @(4624, 4625, 4648, 4672, 4688, 4689, 4697, 4698, 4720, 4722, 4724, 4728, 4732) }
+        $filter = @{ LogName = 'Security'; Id = @(4624, 4625, 4648, 4672, 4688, 4689, 4697, 4698, 4720, 4722, 4724, 4728, 4732) }
+        if ($script:LastSecurityTime) { $filter['StartTime'] = $script:LastSecurityTime.AddMilliseconds(1) }
+        $securityLogs = Get-WinEvent -FilterHashtable $filter -MaxEvents $MaxEvents -ErrorAction SilentlyContinue
+        if ($securityLogs -and $securityLogs.Count -gt 0) {
+            $script:LastSecurityTime = ($securityLogs | Sort-Object TimeCreated -Descending | Select-Object -First 1).TimeCreated
+        }
         foreach ($evt in $securityLogs) {
+            $msgLen = if ($evt.Message) { [Math]::Min(500, $evt.Message.Length) } else { 0 }
+            $msg = if ($evt.Message -and $msgLen -gt 0) { $evt.Message.Substring(0, $msgLen) } else { "Event $($evt.Id)" }
             $logs += @{
                 log_type = "security"; timestamp = $evt.TimeCreated.ToUniversalTime().ToString("o")
-                message = $evt.Message.Substring(0, [Math]::Min(500, $evt.Message.Length))
+                message = $msg
                 severity = if ($evt.Id -in @(4625, 4648)) { 4 } elseif ($evt.Id -in @(4672, 4697)) { 3 } else { 2 }
                 event_id = $evt.Id.ToString(); source_ip = $env:COMPUTERNAME
                 raw_log = @{ Id = $evt.Id; Provider = $evt.ProviderName }
             }
         }
-    } catch { Write-Host "[WARN] Could not read Security log: $_" -ForegroundColor Yellow }
+    } catch {
+        if ($_.Exception.Message -notlike "*No events were found*") {
+            Write-Host "[WARN] Could not read Security log: $_" -ForegroundColor Yellow
+        }
+    }
     try {
-        $systemLogs = Get-WinEvent -LogName System -MaxEvents 50 -ErrorAction SilentlyContinue | Where-Object { $_.Level -le 3 }
+        $sysFilter = @{ LogName = 'System'; Level = @(1, 2, 3) }
+        if ($script:LastSystemTime) { $sysFilter['StartTime'] = $script:LastSystemTime.AddMilliseconds(1) }
+        $systemLogs = Get-WinEvent -FilterHashtable $sysFilter -MaxEvents 50 -ErrorAction SilentlyContinue
+        if ($systemLogs -and $systemLogs.Count -gt 0) {
+            $script:LastSystemTime = ($systemLogs | Sort-Object TimeCreated -Descending | Select-Object -First 1).TimeCreated
+        }
         foreach ($evt in $systemLogs) {
+            $msgLen = if ($evt.Message) { [Math]::Min(500, $evt.Message.Length) } else { 0 }
+            $msg = if ($evt.Message -and $msgLen -gt 0) { $evt.Message.Substring(0, $msgLen) } else { "Event $($evt.Id)" }
             $logs += @{
                 log_type = "system"; timestamp = $evt.TimeCreated.ToUniversalTime().ToString("o")
-                message = $evt.Message.Substring(0, [Math]::Min(500, $evt.Message.Length))
+                message = $msg
                 severity = if ($evt.Level -eq 1) { 5 } elseif ($evt.Level -eq 2) { 4 } else { 3 }
                 event_id = $evt.Id.ToString(); source_ip = $env:COMPUTERNAME
                 raw_log = @{ Id = $evt.Id; Provider = $evt.ProviderName; Level = $evt.Level }
             }
         }
-    } catch { Write-Host "[WARN] Could not read System log: $_" -ForegroundColor Yellow }
+    } catch {
+        if ($_.Exception.Message -notlike "*No events were found*") {
+            Write-Host "[WARN] Could not read System log: $_" -ForegroundColor Yellow
+        }
+    }
     return $logs
 }
 
 function Send-Logs {
     param($ApiEndpoint, $ApiKey, $Logs)
-    if ($Logs.Count -eq 0) { Write-Host "[INFO] No new logs to send" -ForegroundColor Gray; return $true }
+    if ($Logs.Count -eq 0) { Write-Host "[INFO] No new logs (waiting for new events...)" -ForegroundColor Gray; return $true }
     $url = "$ApiEndpoint/agent-gateway/ingest"
     $body = @{ logs = $Logs } | ConvertTo-Json -Depth 10 -Compress
     try {
