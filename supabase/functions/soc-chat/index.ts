@@ -379,8 +379,9 @@ serve(async (req) => {
   }
 
   try {
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     const GEMINI_API_KEY = Deno.env.get('GOOGLE_GEMINI_API_KEY');
-    if (!GEMINI_API_KEY) throw new Error('GOOGLE_GEMINI_API_KEY not configured');
+    if (!LOVABLE_API_KEY && !GEMINI_API_KEY) throw new Error('No AI API key configured');
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -643,25 +644,35 @@ SOCMind is a full AI-driven SOC platform with:
 9. **Never say you don't have data** — you have LIVE data from every table in the system.
 10. **Be the expert**: You are the most knowledgeable entity about this SOC platform. Give confident, authoritative answers.`;
 
+    // Determine AI endpoint - prefer Lovable AI (no rate limits), fallback to Gemini
+    const useLovable = Boolean(LOVABLE_API_KEY);
+    const aiUrl = useLovable
+      ? 'https://ai-gateway.lovable.dev/v1/chat/completions'
+      : 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+    const aiKey = useLovable ? LOVABLE_API_KEY! : GEMINI_API_KEY!;
+    const aiModel = useLovable ? 'google/gemini-2.5-flash' : 'gemini-2.5-flash';
+
+    console.log(`[soc-chat] Using ${useLovable ? 'Lovable AI' : 'Google Gemini'} gateway`);
+
     // Retry with exponential backoff for rate limits
     const MAX_RETRIES = 3;
     let lastError = '';
     
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (attempt > 0) {
-        const delay = Math.min(1000 * Math.pow(2, attempt), 8000); // 2s, 4s, 8s
+        const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
         console.log(`[soc-chat] Retry ${attempt}/${MAX_RETRIES} after ${delay}ms...`);
         await new Promise(r => setTimeout(r, delay));
       }
 
-      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+      const response = await fetch(aiUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${GEMINI_API_KEY}`,
+          'Authorization': `Bearer ${aiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gemini-2.5-flash',
+          model: aiModel,
           messages: [
             { role: 'system', content: systemPrompt },
             ...messages,
@@ -679,8 +690,8 @@ SOCMind is a full AI-driven SOC platform with:
       if (response.status === 429) {
         lastError = 'Rate limit exceeded';
         console.warn(`[soc-chat] 429 rate limited (attempt ${attempt + 1})`);
-        await response.text(); // consume body
-        if (attempt < MAX_RETRIES) continue; // retry
+        await response.text();
+        if (attempt < MAX_RETRIES) continue;
         return new Response(JSON.stringify({ error: 'Rate limit exceeded. Please wait a moment and try again.' }), {
           status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
