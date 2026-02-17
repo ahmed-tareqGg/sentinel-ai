@@ -240,7 +240,11 @@ serve(async (req) => {
         .order('timestamp', { ascending: true });
 
       const pdfContent = generatePDFContent(null, incident as Incident);
-      const pdfBase64 = btoa(pdfContent);
+      const encoder = new TextEncoder();
+      const bytes = encoder.encode(pdfContent);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const pdfBase64 = btoa(binary);
 
       return new Response(JSON.stringify({
         success: true,
@@ -460,7 +464,11 @@ serve(async (req) => {
     };
 
     const pdfContent = generatePDFContent(report);
-    const pdfBase64 = btoa(pdfContent);
+    const encoder2 = new TextEncoder();
+    const bytes2 = encoder2.encode(pdfContent);
+    let binary2 = '';
+    for (let i = 0; i < bytes2.length; i++) binary2 += String.fromCharCode(bytes2[i]);
+    const pdfBase64 = btoa(binary2);
 
     return new Response(JSON.stringify({
       ...report,

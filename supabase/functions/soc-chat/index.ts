@@ -427,7 +427,7 @@ serve(async (req) => {
       supabase.from('raw_logs').select('id', { count: 'exact', head: true }),
       supabase.from('compliance_controls').select('id, standard, control_code, title, description, category, control_category, status, owner, applicable, justification, implemented, implementation_description, evidence_reference, risk_reference, comments, last_review').order('control_code', { ascending: true }),
       supabase.from('compliance_evidence').select('id, control_id, evidence_type, source, title, description, created_at').order('created_at', { ascending: false }).limit(50),
-      supabase.from('playbooks').select('id, name, description, trigger_type, severity_filter, is_active, created_at').limit(30),
+      supabase.from('playbooks').select('id, name, description, is_active, created_at').limit(30),
       supabase.from('data_sources').select('id, name, type, status, hostname, ip_address, last_heartbeat, logs_received_today, agent_version').order('last_heartbeat', { ascending: false }).limit(20),
       supabase.from('correlation_rules').select('id, name, description, is_active, match_field, match_operator, match_value, threshold_count, time_window_minutes, hits_count, last_triggered_at').limit(20),
       supabase.from('mitre_coverage').select('technique_id, technique_name, tactic, coverage_status, detection_count, has_playbook').limit(50),
@@ -597,7 +597,7 @@ RECENT AUDIT TRAIL:
 ${compAuditLogs.slice(0, 10).map((l: any) => `• ${l.action} by ${l.actor_email || l.actor_type} → ${l.result} (${new Date(l.timestamp).toLocaleString()})`).join('\n')}
 
 ===== PLAYBOOKS =====
-${playbooks.map((p: any) => `• ${p.name}: ${p.description || 'N/A'} | Trigger: ${p.trigger_type} | Active: ${p.is_active}`).join('\n') || 'None configured'}
+${playbooks.map((p: any) => `• ${p.name}: ${p.description || 'N/A'} | Active: ${p.is_active}`).join('\n') || 'None configured'}
 
 ===== DATA SOURCES =====
 ${dataSources.map((d: any) => `• ${d.name} [${d.type}] — ${d.status} | Host: ${d.hostname || 'N/A'} | IP: ${d.ip_address || 'N/A'} | Logs today: ${d.logs_received_today || 0} | Last heartbeat: ${d.last_heartbeat ? new Date(d.last_heartbeat).toLocaleString() : 'Never'}`).join('\n') || 'None'}
