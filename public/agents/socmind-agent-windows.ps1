@@ -1,4 +1,4 @@
-# SOCMind Windows Agent v3.0.0 - Universal Executor
+# SOCMind Windows Agent v3.1.0 - Universal Executor
 # Copyright (c) 2025 SOCMind. All rights reserved.
 # Contact: security@socmind.ai
 # Capabilities: Log Collector + Action Executor + IOC Enforcer + Playbook Runner
@@ -8,7 +8,7 @@ param([Parameter(Position=0)][string]$Command="help")
 # Force TLS 1.2 (required by SOCMind API endpoints)
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$script:AgentVersion = "3.0.0"
+$script:AgentVersion = "3.1.0"
 $script:ConfigPath = Join-Path $PSScriptRoot "agent.conf"
 $script:CachePath = Join-Path $PSScriptRoot ".socm_license_cache"
 $script:IOCPath = Join-Path $PSScriptRoot ".socm_active_iocs"
@@ -94,54 +94,66 @@ function Invoke-LicenseValidation {
 # ========== Log Collection ==========
 $script:LastSecurityTime = $null
 $script:LastSystemTime = $null
+$script:TotalLogsSent = 0
+$script:CycleCount = 0
 
 function Get-SecurityLogs {
     param([int]$MaxEvents = 100)
     $logs = @()
     try {
         $filter = @{ LogName = 'Security'; Id = @(4624, 4625, 4648, 4672, 4688, 4689, 4697, 4698, 4720, 4722, 4724, 4728, 4732) }
-        if ($script:LastSecurityTime) { $filter['StartTime'] = $script:LastSecurityTime.AddMilliseconds(1) }
-        $securityLogs = Get-WinEvent -FilterHashtable $filter -MaxEvents $MaxEvents -ErrorAction SilentlyContinue
-        if ($securityLogs -and $securityLogs.Count -gt 0) {
-            $script:LastSecurityTime = ($securityLogs | Sort-Object TimeCreated -Descending | Select-Object -First 1).TimeCreated
+        if ($script:LastSecurityTime) { $filter['StartTime'] = $script:LastSecurityTime.AddSeconds(1) }
+        $securityLogs = @()
+        try {
+            $securityLogs = @(Get-WinEvent -FilterHashtable $filter -MaxEvents $MaxEvents -ErrorAction Stop)
+        } catch {
+            if ($_.Exception.Message -notlike "*No events were found*") { throw }
         }
-        foreach ($evt in $securityLogs) {
-            $msgLen = if ($evt.Message) { [Math]::Min(500, $evt.Message.Length) } else { 0 }
-            $msg = if ($evt.Message -and $msgLen -gt 0) { $evt.Message.Substring(0, $msgLen) } else { "Event $($evt.Id)" }
-            $logs += @{
-                log_type = "security"; timestamp = $evt.TimeCreated.ToUniversalTime().ToString("o")
-                message = $msg
-                severity = if ($evt.Id -in @(4625, 4648)) { 4 } elseif ($evt.Id -in @(4672, 4697)) { 3 } else { 2 }
-                event_id = $evt.Id.ToString(); source_ip = $env:COMPUTERNAME
-                raw_log = @{ Id = $evt.Id; Provider = $evt.ProviderName }
+        if ($securityLogs.Count -gt 0) {
+            $script:LastSecurityTime = ($securityLogs | Sort-Object TimeCreated -Descending | Select-Object -First 1).TimeCreated
+            foreach ($evt in $securityLogs) {
+                $msg = "Event $($evt.Id)"
+                try { if ($evt.Message) { $msg = $evt.Message.Substring(0, [Math]::Min(500, $evt.Message.Length)) } } catch {}
+                $logs += @{
+                    log_type = "security"; timestamp = $evt.TimeCreated.ToUniversalTime().ToString("o")
+                    message = $msg
+                    severity = if ($evt.Id -in @(4625, 4648)) { 4 } elseif ($evt.Id -in @(4672, 4697)) { 3 } else { 2 }
+                    event_id = $evt.Id.ToString(); source_ip = $env:COMPUTERNAME
+                    raw_log = @{ Id = $evt.Id; Provider = $evt.ProviderName }
+                }
             }
         }
     } catch {
         if ($_.Exception.Message -notlike "*No events were found*") {
-            Write-Host "[WARN] Could not read Security log: $_" -ForegroundColor Yellow
+            Write-Host "[WARN] Security log: $_" -ForegroundColor Yellow
         }
     }
     try {
         $sysFilter = @{ LogName = 'System'; Level = @(1, 2, 3) }
-        if ($script:LastSystemTime) { $sysFilter['StartTime'] = $script:LastSystemTime.AddMilliseconds(1) }
-        $systemLogs = Get-WinEvent -FilterHashtable $sysFilter -MaxEvents 50 -ErrorAction SilentlyContinue
-        if ($systemLogs -and $systemLogs.Count -gt 0) {
-            $script:LastSystemTime = ($systemLogs | Sort-Object TimeCreated -Descending | Select-Object -First 1).TimeCreated
+        if ($script:LastSystemTime) { $sysFilter['StartTime'] = $script:LastSystemTime.AddSeconds(1) }
+        $systemLogs = @()
+        try {
+            $systemLogs = @(Get-WinEvent -FilterHashtable $sysFilter -MaxEvents 50 -ErrorAction Stop)
+        } catch {
+            if ($_.Exception.Message -notlike "*No events were found*") { throw }
         }
-        foreach ($evt in $systemLogs) {
-            $msgLen = if ($evt.Message) { [Math]::Min(500, $evt.Message.Length) } else { 0 }
-            $msg = if ($evt.Message -and $msgLen -gt 0) { $evt.Message.Substring(0, $msgLen) } else { "Event $($evt.Id)" }
-            $logs += @{
-                log_type = "system"; timestamp = $evt.TimeCreated.ToUniversalTime().ToString("o")
-                message = $msg
-                severity = if ($evt.Level -eq 1) { 5 } elseif ($evt.Level -eq 2) { 4 } else { 3 }
-                event_id = $evt.Id.ToString(); source_ip = $env:COMPUTERNAME
-                raw_log = @{ Id = $evt.Id; Provider = $evt.ProviderName; Level = $evt.Level }
+        if ($systemLogs.Count -gt 0) {
+            $script:LastSystemTime = ($systemLogs | Sort-Object TimeCreated -Descending | Select-Object -First 1).TimeCreated
+            foreach ($evt in $systemLogs) {
+                $msg = "Event $($evt.Id)"
+                try { if ($evt.Message) { $msg = $evt.Message.Substring(0, [Math]::Min(500, $evt.Message.Length)) } } catch {}
+                $logs += @{
+                    log_type = "system"; timestamp = $evt.TimeCreated.ToUniversalTime().ToString("o")
+                    message = $msg
+                    severity = if ($evt.Level -eq 1) { 5 } elseif ($evt.Level -eq 2) { 4 } else { 3 }
+                    event_id = $evt.Id.ToString(); source_ip = $env:COMPUTERNAME
+                    raw_log = @{ Id = $evt.Id; Provider = $evt.ProviderName; Level = $evt.Level }
+                }
             }
         }
     } catch {
         if ($_.Exception.Message -notlike "*No events were found*") {
-            Write-Host "[WARN] Could not read System log: $_" -ForegroundColor Yellow
+            Write-Host "[WARN] System log: $_" -ForegroundColor Yellow
         }
     }
     return $logs
@@ -149,18 +161,71 @@ function Get-SecurityLogs {
 
 function Send-Logs {
     param($ApiEndpoint, $ApiKey, $Logs)
-    if ($Logs.Count -eq 0) { Write-Host "[INFO] No new logs (waiting for new events...)" -ForegroundColor Gray; return $true }
+    if ($Logs.Count -eq 0) {
+        Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Waiting for new events... (total sent: $($script:TotalLogsSent))" -ForegroundColor Gray
+        return $true
+    }
     $url = "$ApiEndpoint/agent-gateway/ingest"
     $body = @{ logs = $Logs } | ConvertTo-Json -Depth 10 -Compress
     try {
         $headers = @{ "Content-Type" = "application/json"; "X-Agent-Key" = $ApiKey; "User-Agent" = "SOCMind-Agent-Windows/$($script:AgentVersion)" }
         $resp = Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body -TimeoutSec 60
-        Write-Host "[OK] Sent $($Logs.Count) logs -> $($resp.processed) processed, $($resp.incidents_created) incidents" -ForegroundColor Green
+        $script:TotalLogsSent += $Logs.Count
+        Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Sent $($Logs.Count) logs -> $($resp.processed) processed, $($resp.incidents_created) incidents (total: $($script:TotalLogsSent))" -ForegroundColor Green
         return $true
     } catch {
         Write-Host "[ERR] Failed to send logs: $_" -ForegroundColor Red
         return $false
     }
+}
+
+# ========== Safe Parameter Access ==========
+function Get-ActionParam {
+    param($Action, [string]$ParamName, $Default = $null)
+    try {
+        if ($null -eq $Action) { return $Default }
+        if (-not $Action.PSObject.Properties['parameters']) { return $Default }
+        $params = $Action.parameters
+        if ($null -eq $params) { return $Default }
+        if ($params -is [hashtable]) {
+            if ($params.ContainsKey($ParamName)) { return $params[$ParamName] }
+            return $Default
+        }
+        if ($params.PSObject.Properties[$ParamName]) { return $params.$ParamName }
+        return $Default
+    } catch { return $Default }
+}
+
+# ========== Resolve API IPs ==========
+function Get-ApiIPs {
+    param([string]$ApiEndpoint)
+    $ips = @()
+    try {
+        $uri = [System.Uri]$ApiEndpoint
+        $ips = @([System.Net.Dns]::GetHostAddresses($uri.Host) | ForEach-Object { $_.IPAddressToString })
+    } catch {}
+    return $ips
+}
+
+# ========== Self-Protection ==========
+function Test-IsSafeToBlock {
+    param([string]$TargetIP, [string]$ApiEndpoint)
+    # Never block localhost
+    if ($TargetIP -in @("127.0.0.1", "::1", "0.0.0.0", "localhost")) { return $false }
+    # Never block local network ranges used by the machine
+    try {
+        $localIPs = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { $_.IPAddress })
+        if ($TargetIP -in $localIPs) { return $false }
+    } catch {}
+    # Never block the default gateway
+    try {
+        $gw = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object -First 1).NextHop
+        if ($TargetIP -eq $gw) { return $false }
+    } catch {}
+    # Never block the SOCMind API endpoint
+    $apiIPs = Get-ApiIPs -ApiEndpoint $ApiEndpoint
+    if ($TargetIP -in $apiIPs) { return $false }
+    return $true
 }
 
 # ========== ACTION EXECUTION ENGINE ==========
@@ -174,22 +239,29 @@ function Write-ActionLog {
     }
     $existing = @()
     if (Test-Path $script:ActionLogPath) {
-        try { $existing = Get-Content $script:ActionLogPath | ConvertFrom-Json } catch { $existing = @() }
+        try { $existing = @(Get-Content $script:ActionLogPath -Raw | ConvertFrom-Json) } catch { $existing = @() }
     }
     $existing += $entry
+    # Keep only last 500 entries
+    if ($existing.Count -gt 500) { $existing = $existing[-500..-1] }
     $existing | ConvertTo-Json -Depth 5 | Set-Content $script:ActionLogPath -Encoding UTF8
 }
 
 function Invoke-SOARAction {
-    param($Action, $DryRun = $false)
+    param($Action, [switch]$DryRun, [string]$ApiEndpoint)
 
-    $actionType = $Action.action_type
-    $target = $Action.target
-    $mode = $Action.execution_mode
-    $duration = $Action.duration_seconds
-    $actionId = $Action.action_id
+    $actionType = $null; $target = $null; $mode = $null; $duration = $null; $actionId = $null
+    try { $actionType = $Action.action_type } catch {}
+    try { $target = $Action.target } catch {}
+    try { $mode = $Action.execution_mode } catch {}
+    try { $duration = $Action.duration_seconds } catch {}
+    try { $actionId = $Action.action_id } catch {}
 
-    $isDry = $DryRun -or ($mode -eq "dry_run") -or ($mode -eq "simulation")
+    if (-not $actionType) {
+        return @{ success = $false; details = "Missing action_type" }
+    }
+
+    $isDry = $DryRun.IsPresent -or ($mode -eq "dry_run") -or ($mode -eq "simulation")
 
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Magenta
@@ -204,14 +276,19 @@ function Invoke-SOARAction {
         switch ($actionType) {
             "block_ip" {
                 if ($isDry) {
-                    Write-Host "[DRY-RUN] Would block IP: $target" -ForegroundColor Yellow
                     $result = @{ success = $true; details = "DRY-RUN: Would create firewall rule to block $target" }
                 } else {
-                    $ruleName = "SOCMind-Block-$target-$(Get-Date -Format 'yyyyMMddHHmmss')"
-                    New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -RemoteAddress $target -Action Block -ErrorAction Stop | Out-Null
-                    New-NetFirewallRule -DisplayName "$ruleName-Out" -Direction Outbound -RemoteAddress $target -Action Block -ErrorAction Stop | Out-Null
-                    Write-Host "[OK] Blocked IP: $target (Rule: $ruleName)" -ForegroundColor Green
-                    $result = @{ success = $true; details = "Firewall rules created: $ruleName"; rollback_cmd = "Remove-NetFirewallRule -DisplayName '$ruleName'; Remove-NetFirewallRule -DisplayName '$ruleName-Out'" }
+                    # SELF-PROTECTION: Check if safe to block
+                    if (-not (Test-IsSafeToBlock -TargetIP $target -ApiEndpoint $ApiEndpoint)) {
+                        Write-Host "[BLOCKED] Refusing to block protected IP: $target" -ForegroundColor Yellow
+                        $result = @{ success = $false; details = "SELF-PROTECTION: IP $target is protected (localhost, gateway, or management endpoint). Blocking it would disconnect the agent." }
+                    } else {
+                        $ruleName = "SOCMind-Block-$target-$(Get-Date -Format 'yyyyMMddHHmmss')"
+                        New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -RemoteAddress $target -Action Block -ErrorAction Stop | Out-Null
+                        New-NetFirewallRule -DisplayName "$ruleName-Out" -Direction Outbound -RemoteAddress $target -Action Block -ErrorAction Stop | Out-Null
+                        Write-Host "[OK] Blocked IP: $target (Rule: $ruleName)" -ForegroundColor Green
+                        $result = @{ success = $true; details = "Firewall rules created: $ruleName"; rollback_available = $true; rollback_cmd = "Remove-NetFirewallRule -DisplayName '$ruleName'; Remove-NetFirewallRule -DisplayName '$ruleName-Out'" }
+                    }
                 }
             }
             "unblock_ip" {
@@ -244,9 +321,7 @@ function Invoke-SOARAction {
                     if ($duration -and $duration -gt 0) {
                         Write-Host "[INFO] User will be re-enabled after $duration seconds" -ForegroundColor Cyan
                         Start-Job -ScriptBlock {
-                            param($u, $d)
-                            Start-Sleep -Seconds $d
-                            net user $u /active:yes
+                            param($u, $d); Start-Sleep -Seconds $d; net user $u /active:yes
                         } -ArgumentList $target, $duration | Out-Null
                     }
                 }
@@ -329,54 +404,42 @@ function Invoke-SOARAction {
                 if ($isDry) {
                     $result = @{ success = $true; details = "DRY-RUN: Would isolate host (block all non-SOCMind traffic)" }
                 } else {
-                    # Extract gateway host from action parameters safely
-                    $gwHost = $null
-                    try {
-                        if ($Action.PSObject.Properties['parameters'] -and $Action.parameters) {
-                            $params = $Action.parameters
-                            if ($params.PSObject.Properties['gateway_host']) { $gwHost = $params.gateway_host }
-                        }
-                    } catch { }
-                    
-                    # Parse API endpoint to get gateway IP/host for whitelisting
-                    $apiHost = $null
-                    try {
-                        $uri = [System.Uri]$apiEndpoint
-                        $apiHost = $uri.Host
-                        # Resolve to IP
-                        $apiIPs = [System.Net.Dns]::GetHostAddresses($apiHost) | ForEach-Object { $_.IPAddressToString }
-                    } catch { $apiIPs = @() }
-                    
+                    # Resolve API IPs for whitelist
+                    $apiIPs = Get-ApiIPs -ApiEndpoint $ApiEndpoint
+
                     # Get default gateway
                     $defaultGW = $null
-                    try { $defaultGW = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object -First 1).NextHop } catch { }
-                    
-                    # Block all outbound first
+                    try { $defaultGW = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object -First 1).NextHop } catch {}
+
+                    # Get custom gateway from params
+                    $gwHost = Get-ActionParam -Action $Action -ParamName "gateway_host"
+
+                    # 1. Block all outbound
                     New-NetFirewallRule -DisplayName "SOCMind-Isolate-BlockAll" -Direction Outbound -Action Block -ErrorAction SilentlyContinue | Out-Null
-                    
-                    # Allow SOCMind API endpoint (CRITICAL - keeps agent connected)
+
+                    # 2. Allow SOCMind API (CRITICAL)
                     foreach ($ip in $apiIPs) {
                         New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowAPI-$ip" -Direction Outbound -RemoteAddress $ip -RemotePort 443 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
                     }
-                    
-                    # Allow DNS (needed to resolve API endpoint)
-                    New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowDNS" -Direction Outbound -RemotePort 53 -Protocol UDP -Action Allow -ErrorAction SilentlyContinue | Out-Null
+
+                    # 3. Allow DNS
+                    New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowDNS-UDP" -Direction Outbound -RemotePort 53 -Protocol UDP -Action Allow -ErrorAction SilentlyContinue | Out-Null
                     New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowDNS-TCP" -Direction Outbound -RemotePort 53 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
-                    
-                    # Allow default gateway (for routing)
+
+                    # 4. Allow default gateway
                     if ($defaultGW) {
                         New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowGW" -Direction Outbound -RemoteAddress $defaultGW -Action Allow -ErrorAction SilentlyContinue | Out-Null
                     }
-                    
-                    # Allow custom gateway if specified
+
+                    # 5. Allow custom gateway
                     if ($gwHost) {
                         New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowCustomGW" -Direction Outbound -RemoteAddress $gwHost -Action Allow -ErrorAction SilentlyContinue | Out-Null
                     }
-                    
-                    # Allow localhost
+
+                    # 6. Allow loopback
                     New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowLoopback" -Direction Outbound -RemoteAddress 127.0.0.1 -Action Allow -ErrorAction SilentlyContinue | Out-Null
-                    
-                    $result = @{ success = $true; details = "Host isolated. Management channel (API + DNS) preserved."; rollback_available = $true }
+
+                    $result = @{ success = $true; details = "Host isolated. Management channel (API + DNS) preserved. Whitelisted $($apiIPs.Count) API IPs."; rollback_available = $true }
                 }
             }
             "unisolate_host" {
@@ -388,12 +451,7 @@ function Invoke-SOARAction {
                 }
             }
             "show_warning" {
-                $msg = "SOCMind Security Alert: Suspicious activity detected on this workstation."
-                try {
-                    if ($Action.PSObject.Properties['parameters'] -and $Action.parameters -and $Action.parameters.PSObject.Properties['message']) {
-                        $msg = $Action.parameters.message
-                    }
-                } catch { }
+                $msg = Get-ActionParam -Action $Action -ParamName "message" -Default "SOCMind Security Alert: Suspicious activity detected on this workstation."
                 if (-not $isDry) {
                     msg * "$msg" 2>&1 | Out-Null
                 }
@@ -425,7 +483,7 @@ function Send-ActionResult {
         } | ConvertTo-Json -Depth 5
         $headers = @{ "Content-Type" = "application/json"; "X-Agent-Key" = $ApiKey }
         Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body -TimeoutSec 30 | Out-Null
-        Write-Host "[OK] Action result reported to platform" -ForegroundColor Green
+        Write-Host "[OK] Action result reported" -ForegroundColor Green
     } catch {
         Write-Host "[WARN] Could not report action result: $_" -ForegroundColor Yellow
     }
@@ -437,7 +495,8 @@ function Poll-Actions {
         $url = "$ApiEndpoint/agent-gateway/poll-actions"
         $headers = @{ "Content-Type" = "application/json"; "X-Agent-Key" = $ApiKey }
         $resp = Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body "{}" -TimeoutSec 15
-        return $resp.actions
+        if ($resp.actions) { return @($resp.actions) }
+        return @()
     } catch {
         return @()
     }
@@ -447,7 +506,6 @@ function Poll-Actions {
 function Enforce-IOCs {
     param($ApiEndpoint, $ApiKey)
     # IOC enforcement is handled via SOAR actions (block_ip, etc.)
-    # This polls for IOC-specific actions dispatched by the platform
 }
 
 # ========== Commands ==========
@@ -500,51 +558,77 @@ function Invoke-Run {
     }
 
     Write-Host "[INFO] Starting agent (Ctrl+C to stop)..." -ForegroundColor Cyan
-    $interval = 60; $actionPollInterval = 10; $lastActionPoll = [DateTime]::MinValue
-    $lastValidation = Get-Date; $validationInterval = 3600
+
+    # Timing: collect logs every 30s, poll actions every 10s, heartbeat every 60s
+    $logInterval = 30
+    $actionPollInterval = 10
+    $heartbeatInterval = 60
+    $licenseCheckInterval = 3600
+
+    $lastLogCollection = [DateTime]::MinValue
+    $lastActionPoll = [DateTime]::MinValue
+    $lastHeartbeat = [DateTime]::MinValue
+    $lastValidation = Get-Date
+
+    # Tick every 5 seconds for responsive action polling
+    $tickInterval = 5
 
     while ($true) {
         try {
+            $now = Get-Date
+            $script:CycleCount++
+
             # Re-validate license hourly
-            if (((Get-Date) - $lastValidation).TotalSeconds -ge $validationInterval) {
+            if (($now - $lastValidation).TotalSeconds -ge $licenseCheckInterval) {
                 if (-not (Invoke-LicenseValidation -ApiEndpoint $apiEndpoint -ApiKey $apiKey -LicenseKey $licenseKey)) {
                     Write-Host "[FATAL] License expired." -ForegroundColor Red; break
                 }
-                $lastValidation = Get-Date
+                $lastValidation = $now
             }
 
-            # Collect and send logs
-            $logs = Get-SecurityLogs -MaxEvents 50
-            Send-Logs -ApiEndpoint $apiEndpoint -ApiKey $apiKey -Logs $logs | Out-Null
+            # Collect and send logs every 30s
+            if (($now - $lastLogCollection).TotalSeconds -ge $logInterval) {
+                $logs = Get-SecurityLogs -MaxEvents 100
+                Send-Logs -ApiEndpoint $apiEndpoint -ApiKey $apiKey -Logs $logs | Out-Null
+                $lastLogCollection = $now
+            }
 
-            # Poll for SOAR actions (every 10 seconds)
-            if (((Get-Date) - $lastActionPoll).TotalSeconds -ge $actionPollInterval) {
+            # Poll for SOAR actions every 10s
+            if (($now - $lastActionPoll).TotalSeconds -ge $actionPollInterval) {
                 $actions = Poll-Actions -ApiEndpoint $apiEndpoint -ApiKey $apiKey
-                if ($actions -and $actions.Count -gt 0) {
-                    Write-Host "[ACTION] Received $($actions.Count) action(s) from platform" -ForegroundColor Magenta
+                if ($actions.Count -gt 0) {
+                    Write-Host "[ACTION] Received $($actions.Count) action(s)" -ForegroundColor Magenta
                     foreach ($act in $actions) {
-                        $result = Invoke-SOARAction -Action $act -DryRun:$DryRun
-                        Send-ActionResult -ApiEndpoint $apiEndpoint -ApiKey $apiKey -ActionDbId $act.id -Result $result
+                        $result = Invoke-SOARAction -Action $act -DryRun:$DryRun -ApiEndpoint $apiEndpoint
+                        try {
+                            $actId = $act.id
+                            if ($actId) { Send-ActionResult -ApiEndpoint $apiEndpoint -ApiKey $apiKey -ActionDbId $actId -Result $result }
+                        } catch {}
                     }
                 }
-                $lastActionPoll = Get-Date
+                $lastActionPoll = $now
             }
 
-            # Heartbeat
-            try {
-                $heartbeatUrl = "$apiEndpoint/agent-gateway/heartbeat"
-                $heartbeatBody = @{
-                    hostname = $env:COMPUTERNAME; status = "active"; logs_sent = $logs.Count
-                    ip_address = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" } | Select-Object -First 1).IPAddress
-                    agent_version = $script:AgentVersion; capabilities = @("collector", "executor", "ioc_enforcer")
-                } | ConvertTo-Json
-                Invoke-RestMethod -Uri $heartbeatUrl -Method Post -Headers @{ "X-Agent-Key" = $apiKey; "Content-Type" = "application/json" } -Body $heartbeatBody -TimeoutSec 10 | Out-Null
-            } catch { }
+            # Heartbeat every 60s
+            if (($now - $lastHeartbeat).TotalSeconds -ge $heartbeatInterval) {
+                try {
+                    $heartbeatUrl = "$apiEndpoint/agent-gateway/heartbeat"
+                    $localIP = $null
+                    try { $localIP = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" } | Select-Object -First 1).IPAddress } catch {}
+                    $heartbeatBody = @{
+                        hostname = $env:COMPUTERNAME; status = "active"; logs_sent = $script:TotalLogsSent
+                        ip_address = $localIP
+                        agent_version = $script:AgentVersion; capabilities = @("collector", "executor", "ioc_enforcer")
+                    } | ConvertTo-Json
+                    Invoke-RestMethod -Uri $heartbeatUrl -Method Post -Headers @{ "X-Agent-Key" = $apiKey; "Content-Type" = "application/json" } -Body $heartbeatBody -TimeoutSec 10 | Out-Null
+                } catch {}
+                $lastHeartbeat = $now
+            }
 
-            Start-Sleep -Seconds $interval
+            Start-Sleep -Seconds $tickInterval
         } catch {
-            Write-Host "[ERR] Error: $_" -ForegroundColor Red
-            Start-Sleep -Seconds 10
+            Write-Host "[ERR] Loop error: $_" -ForegroundColor Red
+            Start-Sleep -Seconds 5
         }
     }
 }
@@ -566,7 +650,7 @@ function Show-Status {
     }
     if (Test-Path $script:ActionLogPath) {
         try {
-            $actionLog = Get-Content $script:ActionLogPath | ConvertFrom-Json
+            $actionLog = Get-Content $script:ActionLogPath -Raw | ConvertFrom-Json
             Write-Host "`nRecent Actions: $($actionLog.Count)" -ForegroundColor Cyan
             $actionLog | Select-Object -Last 5 | ForEach-Object {
                 Write-Host "  [$($_.timestamp)] $($_.action_type) -> $($_.target) = $($_.status)" -ForegroundColor Gray
