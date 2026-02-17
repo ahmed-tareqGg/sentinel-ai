@@ -591,7 +591,12 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
 
         try {
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (!provider.isOllama) headers['Authorization'] = `Bearer ${provider.key}`;
+          if (!provider.isOllama) {
+            headers['Authorization'] = `Bearer ${provider.key}`;
+          } else {
+            // ngrok free plan requires this header to skip the browser warning page
+            headers['ngrok-skip-browser-warning'] = 'true';
+          }
 
           const response = await fetch(provider.url, {
             method: 'POST',
