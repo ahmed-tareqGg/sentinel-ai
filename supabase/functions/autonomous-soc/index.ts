@@ -120,14 +120,15 @@ async function executeAutonomousContainment(
       if (action === 'kill_process') params.process = 'suspicious';
       if (action === 'notify_user') params.message = `Security alert: ${incident.message}`;
 
+      // All actions require human approval — no auto_approved
       await supabase.from('approval_requests').insert({
         action_type: action,
         incident_id: incident.id,
-        reason: `[AUTONOMOUS] ${threatType} detected. Confidence: ${incident.confidence}%. Auto-executing ${action}.`,
-        status: 'auto_approved',
-        approved_at: new Date().toISOString(),
-        approved_by: 'autonomous-soc',
+        reason: `[AUTONOMOUS SOC] ${threatType} detected (confidence: ${incident.confidence}%). Recommended action: ${action}. Awaiting analyst approval.`,
+        status: 'pending',
+        requested_by: null,
         action_params: params,
+        sla_deadline: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
       });
 
       await supabase.from('compliance_audit_logs').insert({
@@ -143,8 +144,8 @@ async function executeAutonomousContainment(
 
       await supabase.from('incident_timeline').insert({
         incident_id: incident.id,
-        stage: `Autonomous Action: ${action}`,
-        details: `Auto-executed "${action}" for ${threatType} (confidence: ${incident.confidence}%)`,
+        stage: `Approval Requested: ${action}`,
+        details: `Autonomous SOC recommended "${action}" for ${threatType} (confidence: ${incident.confidence}%). Pending analyst approval.`,
       });
 
       containmentResults.push({ action, status: 'executed', params });
