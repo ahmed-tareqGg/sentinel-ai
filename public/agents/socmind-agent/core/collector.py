@@ -21,6 +21,8 @@ class LogCollector:
         self.config = config
         self.audit = audit_logger
         self.playbook_engine = playbook_engine
+        self.threat_detector = None    # Injected by agent.py
+        self.recovery_manager = None   # Injected by agent.py
         self.api_endpoint = config.get("api", {}).get("endpoint", "")
         self.api_key = config.get("api", {}).get("key", "")
         self.interval = config.get("collector", {}).get("interval_seconds", 60)
@@ -35,10 +37,25 @@ class LogCollector:
             try:
                 logs = self._collect_all()
                 if logs:
-                    self._send_logs(logs)
-                    print(f"[COLLECTOR] Sent {len(logs)} log entries")
+                    # Real-time threat detection on each log
+                    if self.threat_detector:
+                        for log_entry in logs:
+                            self.threat_detector.analyze_log(log_entry)
 
-                    # Feed events to the local playbook engine for pattern matching
+                    # Send to platform (or queue if offline)
+                    try:
+                        self._send_logs(logs)
+                        print(f"[COLLECTOR] Sent {len(logs)} log entries")
+                        if self.recovery_manager:
+                            self.recovery_manager.report_connection_success()
+                    except Exception as send_err:
+                        print(f"[COLLECTOR:WARN] Send failed, queueing: {send_err}")
+                        if self.recovery_manager:
+                            self.recovery_manager.report_connection_failure()
+                            for log in logs:
+                                self.recovery_manager.queue_event(log)
+
+                    # Feed events to playbook engine
                     if self.playbook_engine:
                         for log_entry in logs:
                             event = self._classify_event(log_entry)
