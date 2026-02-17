@@ -182,7 +182,9 @@ async function dispatchToAgent(
       action_type: actionType,
       target,
       target_type: actionType.includes('ip') ? 'ip' : actionType.includes('user') ? 'user' : 'host',
-      status: 'approved',  // Ready for agent to pick up
+      status: 'approved',
+      approved_by: 'playbook-engine',
+      approved_at: new Date().toISOString(),
       execution_mode: executionMode,
       reason,
       duration_seconds: durationSeconds || null,
