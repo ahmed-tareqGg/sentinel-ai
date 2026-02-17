@@ -242,33 +242,50 @@ Respond with JSON:
     try {
       if (GEMINI_API_KEY) {
         console.log('🤖 Analyzing with Google Gemini...');
-        const aiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${GEMINI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gemini-2.5-flash',
-            messages: [
-              { role: 'system', content: 'You are a SOC analyst expert in MITRE ATT&CK. Return only valid JSON. Always include mitre_techniques array.' },
-              { role: 'user', content: aiPrompt }
-            ],
-            temperature: 0.2,
-          }),
-        });
+        
+        // Retry with backoff for rate limits
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt > 0) {
+            const delay = Math.min(1000 * Math.pow(2, attempt), 6000);
+            console.log(`[analyze-log] Retry ${attempt}/2 after ${delay}ms...`);
+            await new Promise(r => setTimeout(r, delay));
+          }
 
-        if (aiResponse.ok) {
-          const aiData = await aiResponse.json();
-          const aiContent = aiData.choices?.[0]?.message?.content;
-          console.log('✅ Gemini Response received');
+          const aiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${GEMINI_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'gemini-2.5-flash',
+              messages: [
+                { role: 'system', content: 'You are a SOC analyst expert in MITRE ATT&CK. Return only valid JSON. Always include mitre_techniques array.' },
+                { role: 'user', content: aiPrompt }
+              ],
+              temperature: 0.2,
+            }),
+          });
 
-          const jsonMatch = aiContent.match(/```json\s*([\s\S]*?)\s*```/) ||
-            aiContent.match(/```\s*([\s\S]*?)\s*```/) ||
-            [null, aiContent];
-          aiAnalysis = JSON.parse(jsonMatch[1] || aiContent);
-        } else {
-          console.warn(`Gemini failed: ${aiResponse.status} ${aiResponse.statusText}`);
+          if (aiResponse.ok) {
+            const aiData = await aiResponse.json();
+            const aiContent = aiData.choices?.[0]?.message?.content;
+            console.log('✅ Gemini Response received');
+
+            const jsonMatch = aiContent.match(/```json\s*([\s\S]*?)\s*```/) ||
+              aiContent.match(/```\s*([\s\S]*?)\s*```/) ||
+              [null, aiContent];
+            aiAnalysis = JSON.parse(jsonMatch[1] || aiContent);
+            break; // Success, exit retry loop
+          } else if (aiResponse.status === 429 && attempt < 2) {
+            console.warn(`[analyze-log] 429 rate limited (attempt ${attempt + 1}), retrying...`);
+            await aiResponse.text(); // consume body
+            continue;
+          } else {
+            console.warn(`Gemini failed: ${aiResponse.status} ${aiResponse.statusText}`);
+            await aiResponse.text();
+            break;
+          }
         }
       }
     } catch (e) {

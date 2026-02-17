@@ -643,41 +643,61 @@ SOCMind is a full AI-driven SOC platform with:
 9. **Never say you don't have data** — you have LIVE data from every table in the system.
 10. **Be the expert**: You are the most knowledgeable entity about this SOC platform. Give confident, authoritative answers.`;
 
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GEMINI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...messages,
-        ],
-        stream: true,
-      }),
-    });
+    // Retry with exponential backoff for rate limits
+    const MAX_RETRIES = 3;
+    let lastError = '';
+    
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        const delay = Math.min(1000 * Math.pow(2, attempt), 8000); // 2s, 4s, 8s
+        console.log(`[soc-chat] Retry ${attempt}/${MAX_RETRIES} after ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+      }
 
-    if (!response.ok) {
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GEMINI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gemini-2.5-flash',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...messages,
+          ],
+          stream: true,
+        }),
+      });
+
+      if (response.ok) {
+        return new Response(response.body, {
+          headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
+        });
+      }
+
       if (response.status === 429) {
-        return new Response(JSON.stringify({ error: 'Rate limit exceeded. Try again shortly.' }), {
+        lastError = 'Rate limit exceeded';
+        console.warn(`[soc-chat] 429 rate limited (attempt ${attempt + 1})`);
+        await response.text(); // consume body
+        if (attempt < MAX_RETRIES) continue; // retry
+        return new Response(JSON.stringify({ error: 'Rate limit exceeded. Please wait a moment and try again.' }), {
           status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
       if (response.status === 402) {
         return new Response(JSON.stringify({ error: 'AI credits exhausted.' }), {
           status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
       const errText = await response.text();
       console.error('AI gateway error:', response.status, errText);
       throw new Error(`AI gateway error: ${response.status}`);
     }
 
-    return new Response(response.body, {
-      headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
-    });
+    throw new Error(`All ${MAX_RETRIES} retries failed: ${lastError}`);
 
   } catch (error) {
     console.error('soc-chat error:', error);
