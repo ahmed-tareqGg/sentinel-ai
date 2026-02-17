@@ -29,6 +29,7 @@ import {
   MessageSquare,
   Sun,
   Moon,
+  Bot,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -62,6 +63,7 @@ const navGroups = [
       { icon: AlertTriangle, label: 'Incidents', path: '/incidents' },
       { icon: ScrollText, label: 'Live Logs', path: '/live-logs' },
       { icon: Server, label: 'Data Sources', path: '/data-sources' },
+      { icon: Bot, label: 'Agent Platform', path: '/agent-platform' },
     ],
   },
   {
