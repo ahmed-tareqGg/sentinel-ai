@@ -236,20 +236,20 @@ Respond with JSON:
 }`;
 
     let aiAnalysis: any = null;
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    const GEMINI_API_KEY = Deno.env.get('GOOGLE_GEMINI_API_KEY');
 
-    // 1. Try Primary Model (Lovable AI Gateway)
+    // 1. Try Primary Model (Google Gemini Direct)
     try {
-      if (LOVABLE_API_KEY) {
-        console.log('🤖 Analyzing with Primary Model (Lovable)...');
-        const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      if (GEMINI_API_KEY) {
+        console.log('🤖 Analyzing with Google Gemini...');
+        const aiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+            'Authorization': `Bearer ${GEMINI_API_KEY}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'google/gemini-2.5-flash',
+            model: 'gemini-2.5-flash',
             messages: [
               { role: 'system', content: 'You are a SOC analyst expert in MITRE ATT&CK. Return only valid JSON. Always include mitre_techniques array.' },
               { role: 'user', content: aiPrompt }
@@ -261,18 +261,18 @@ Respond with JSON:
         if (aiResponse.ok) {
           const aiData = await aiResponse.json();
           const aiContent = aiData.choices?.[0]?.message?.content;
-          console.log('✅ Primary Model Response received');
+          console.log('✅ Gemini Response received');
 
           const jsonMatch = aiContent.match(/```json\s*([\s\S]*?)\s*```/) ||
             aiContent.match(/```\s*([\s\S]*?)\s*```/) ||
             [null, aiContent];
           aiAnalysis = JSON.parse(jsonMatch[1] || aiContent);
         } else {
-          console.warn(`Primary model failed: ${aiResponse.status} ${aiResponse.statusText}`);
+          console.warn(`Gemini failed: ${aiResponse.status} ${aiResponse.statusText}`);
         }
       }
     } catch (e) {
-      console.warn('Primary model error:', e);
+      console.warn('Gemini error:', e);
     }
 
     // 2. Try Secondary Model (Direct OpenAI Fallback)

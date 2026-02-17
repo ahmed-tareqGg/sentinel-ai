@@ -10,8 +10,8 @@ serve(async (req) => {
 
   try {
     const { incident, iocs, evidence, notes, timeline, investigator } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GOOGLE_GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GOOGLE_GEMINI_API_KEY is not configured");
 
     const iocList = (iocs || []).map((i: any) => `- [${i.ioc_type}] ${i.value} (Confidence: ${i.confidence}, Source: ${i.source})`).join("\n") || "None collected";
     const evidenceList = (evidence || []).map((e: any) => `- [${e.evidence_type}] ${e.title}: ${e.description || 'No description'}`).join("\n") || "None attached";
@@ -72,14 +72,14 @@ The report MUST include ALL of the following sections in Markdown:
 **Tone**: Professional, SOC-grade, suitable for CISO / Management review.
 **Format**: Clean Markdown with headers, tables, and bullet points.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${GEMINI_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "gemini-2.5-flash",
         messages: [
           { role: "system", content: "You are a senior cybersecurity analyst generating professional investigation reports. Output clean Markdown only." },
           { role: "user", content: prompt },
