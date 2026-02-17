@@ -381,7 +381,8 @@ serve(async (req) => {
   try {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     const GEMINI_API_KEY = Deno.env.get('GOOGLE_GEMINI_API_KEY');
-    if (!LOVABLE_API_KEY && !GEMINI_API_KEY) throw new Error('No AI API key configured');
+    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+    if (!LOVABLE_API_KEY && !GEMINI_API_KEY && !OPENAI_API_KEY) throw new Error('No AI API key configured');
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -644,71 +645,70 @@ SOCMind is a full AI-driven SOC platform with:
 9. **Never say you don't have data** — you have LIVE data from every table in the system.
 10. **Be the expert**: You are the most knowledgeable entity about this SOC platform. Give confident, authoritative answers.`;
 
-    // Determine AI endpoint - prefer Lovable AI (no rate limits), fallback to Gemini
-    const useLovable = Boolean(LOVABLE_API_KEY);
-    const aiUrl = useLovable
-      ? 'https://ai.gateway.lovable.dev/v1/chat/completions'
-      : 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-    const aiKey = useLovable ? LOVABLE_API_KEY! : GEMINI_API_KEY!;
-    const aiModel = useLovable ? 'google/gemini-2.5-flash' : 'gemini-2.5-flash';
+    // Build provider fallback chain: Lovable AI → Google Gemini → OpenAI ChatGPT
+    const providers: { name: string; url: string; key: string; model: string }[] = [];
+    if (LOVABLE_API_KEY) providers.push({ name: 'Lovable AI', url: 'https://ai.gateway.lovable.dev/v1/chat/completions', key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash' });
+    if (GEMINI_API_KEY) providers.push({ name: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: GEMINI_API_KEY, model: 'gemini-2.5-flash' });
+    if (OPENAI_API_KEY) providers.push({ name: 'OpenAI ChatGPT', url: 'https://api.openai.com/v1/chat/completions', key: OPENAI_API_KEY, model: 'gpt-4o-mini' });
 
-    console.log(`[soc-chat] Using ${useLovable ? 'Lovable AI' : 'Google Gemini'} gateway`);
+    const aiMessages = [{ role: 'system', content: systemPrompt }, ...messages];
+    const MAX_RETRIES = 2;
 
-    // Retry with exponential backoff for rate limits
-    const MAX_RETRIES = 3;
-    let lastError = '';
-    
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      if (attempt > 0) {
-        const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
-        console.log(`[soc-chat] Retry ${attempt}/${MAX_RETRIES} after ${delay}ms...`);
-        await new Promise(r => setTimeout(r, delay));
+    for (const provider of providers) {
+      console.log(`[soc-chat] Trying ${provider.name}...`);
+      let succeeded = false;
+
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 6000);
+          console.log(`[soc-chat] ${provider.name} retry ${attempt}/${MAX_RETRIES} after ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+        }
+
+        try {
+          const response = await fetch(provider.url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${provider.key}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: provider.model, messages: aiMessages, stream: true }),
+          });
+
+          if (response.ok) {
+            console.log(`[soc-chat] ✅ ${provider.name} succeeded`);
+            return new Response(response.body, {
+              headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
+            });
+          }
+
+          if (response.status === 429) {
+            console.warn(`[soc-chat] ${provider.name} 429 rate limited (attempt ${attempt + 1})`);
+            await response.text();
+            if (attempt < MAX_RETRIES) continue;
+            // Exhausted retries for this provider, fall through to next
+            console.warn(`[soc-chat] ${provider.name} exhausted retries, trying next provider...`);
+            break;
+          }
+
+          if (response.status === 402) {
+            console.warn(`[soc-chat] ${provider.name} 402 credits exhausted, trying next provider...`);
+            await response.text();
+            break; // Move to next provider
+          }
+
+          // Other error
+          const errText = await response.text();
+          console.error(`[soc-chat] ${provider.name} error ${response.status}:`, errText);
+          break; // Move to next provider
+        } catch (fetchErr) {
+          console.error(`[soc-chat] ${provider.name} fetch error:`, fetchErr);
+          break; // Move to next provider
+        }
       }
-
-      const response = await fetch(aiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${aiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: aiModel,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...messages,
-          ],
-          stream: true,
-        }),
-      });
-
-      if (response.ok) {
-        return new Response(response.body, {
-          headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
-        });
-      }
-
-      if (response.status === 429) {
-        lastError = 'Rate limit exceeded';
-        console.warn(`[soc-chat] 429 rate limited (attempt ${attempt + 1})`);
-        await response.text();
-        if (attempt < MAX_RETRIES) continue;
-        return new Response(JSON.stringify({ error: 'Rate limit exceeded. Please wait a moment and try again.' }), {
-          status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: 'AI credits exhausted.' }), {
-          status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      const errText = await response.text();
-      console.error('AI gateway error:', response.status, errText);
-      throw new Error(`AI gateway error: ${response.status}`);
     }
 
-    throw new Error(`All ${MAX_RETRIES} retries failed: ${lastError}`);
+    // All providers failed
+    return new Response(JSON.stringify({ error: 'All AI providers are currently unavailable. Please try again shortly.' }), {
+      status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
 
   } catch (error) {
     console.error('soc-chat error:', error);
