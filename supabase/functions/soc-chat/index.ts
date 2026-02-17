@@ -522,13 +522,21 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
 
 
 
-    // All models go through Lovable AI gateway so they appear in Cloud AI usage
+    // Primary: Lovable AI gateway (appears in Cloud AI usage)
+    // Fallback: Direct OpenAI/Gemini APIs (uses user's own API keys)
     const GATEWAY_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
     const providers: { name: string; url: string; key: string; model: string }[] = [];
     if (LOVABLE_API_KEY) {
       providers.push({ name: 'Gemini Flash', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash' });
       providers.push({ name: 'GPT-5 Nano', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'openai/gpt-5-nano' });
       providers.push({ name: 'Gemini Flash Lite', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash-lite' });
+    }
+    // Direct API fallbacks when gateway credits are exhausted
+    if (OPENAI_API_KEY) {
+      providers.push({ name: 'OpenAI Direct', url: 'https://api.openai.com/v1/chat/completions', key: OPENAI_API_KEY, model: 'gpt-4o-mini' });
+    }
+    if (GEMINI_API_KEY) {
+      providers.push({ name: 'Gemini Direct', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: GEMINI_API_KEY, model: 'gemini-2.5-flash' });
     }
 
     const aiMessages = [{ role: 'system', content: systemPrompt }, ...messages];
