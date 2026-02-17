@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import {
+  Bot,
   LayoutDashboard,
   AlertTriangle,
   BarChart3,
@@ -38,6 +39,7 @@ const navGroups = [
       { icon: AlertTriangle, label: 'Incidents', path: '/incidents' },
       { icon: ScrollText, label: 'Live Logs', path: '/live-logs' },
       { icon: Server, label: 'Data Sources', path: '/data-sources' },
+      { icon: Bot, label: 'Agent Platform', path: '/agent-platform' },
     ],
   },
   {

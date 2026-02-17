@@ -116,6 +116,7 @@ export const NAV_ACCESS: Record<string, SOCRole[]> = {
   '/dashboard': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso', 'demo_user'],
   '/incidents': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso', 'demo_user'],
   '/data-sources': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'demo_user'],
+  '/agent-platform': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'demo_user'],
   '/live-logs': ['admin', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'demo_user'],
   '/analytics': ['admin', 'soc_manager', 'ciso', 'demo_user'],
   '/reports': ['admin', 'soc_manager', 'grc_engineer', 'ciso', 'demo_user'],
