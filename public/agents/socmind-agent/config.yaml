@@ -1,8 +1,8 @@
-# SOCMind Universal Agent – Configuration Template
+# SOCMind Universal Agent v4.0.0 – Configuration Template
 # Copy this file and fill in your credentials
 
 agent:
-  version: "3.0.0"
+  version: "4.0.0"
   mode: executor          # executor | collector
   log_level: INFO
 
@@ -42,6 +42,50 @@ heartbeat:
 playbooks:
   enabled: true
   directory: ./playbooks
+
+# ── Real-Time Threat Detection ──
+threat_detection:
+  enabled: true
+  brute_force_threshold: 5          # Failed logins before alert
+  brute_force_window_seconds: 300   # 5 minutes
+  port_scan_threshold: 15           # Unique ports before alert
+  port_scan_window_seconds: 60      # 1 minute
+
+# ── Network Traffic Monitor ──
+network_monitor:
+  enabled: true
+  scan_interval_seconds: 30
+  beacon_threshold: 10              # Connections before C2 alert
+  beacon_window_seconds: 300        # 5 minutes
+  suspicious_ports:
+    - 4444    # Meterpreter
+    - 5555    # Common reverse shell
+    - 6666    # Backdoor
+    - 7777    # Backdoor
+    - 8888    # Alternate HTTP
+    - 9999    # Backdoor
+    - 1337    # Elite/leet
+    - 31337   # Classic backdoor
+    - 12345   # Netbus
+    - 6667    # IRC C2
+    - 6697    # IRC SSL C2
+    - 4443    # Alt HTTPS C2
+    - 8443    # Alt HTTPS C2
+
+# ── File Integrity Monitor (FIM) ──
+fim:
+  enabled: true
+  scan_interval_seconds: 300        # 5 minutes
+  hash_algorithm: sha256
+  # monitored_paths: auto-detected per OS (Linux: /etc/passwd, /etc/shadow, etc.)
+  # monitored_directories: auto-detected per OS (/etc/cron.d, /etc/sudoers.d, etc.)
+
+# ── Auto-Recovery & Offline Mode ──
+recovery:
+  enabled: true
+  max_queue_size: 10000             # Max offline events to queue
+  retry_interval_seconds: 60       # Retry sending queued events
+  auto_rollback: true              # Auto-rollback failed actions
 
 audit:
   local_log_path: ./audit.log
