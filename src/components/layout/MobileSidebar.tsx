@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, User, LogOut, Activity } from 'lucide-react';
+import { Menu, X, User, LogOut, Activity, Bot } from 'lucide-react';
 import {
   LayoutDashboard,
   AlertTriangle,
@@ -29,6 +29,7 @@ const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
   { icon: AlertTriangle, label: 'Incidents', path: '/incidents' },
   { icon: Server, label: 'Data Sources', path: '/data-sources' },
+  { icon: Bot, label: 'Agent Platform', path: '/agent-platform' },
   { icon: ScrollText, label: 'Live Logs', path: '/live-logs' },
   { icon: BarChart3, label: 'Analytics', path: '/analytics' },
   { icon: FileText, label: 'Reports', path: '/reports' },

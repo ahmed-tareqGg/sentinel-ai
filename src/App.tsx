@@ -42,6 +42,7 @@ const Profile = lazy(() => import("./pages/Profile"));
 const WarRoom = lazy(() => import("./pages/WarRoom"));
 const AttackSimulator = lazy(() => import("./pages/AttackSimulator"));
 const ExecutiveDashboard = lazy(() => import("./pages/ExecutiveDashboard"));
+const AgentPlatform = lazy(() => import("./pages/AgentPlatform"));
 
 const queryClient = new QueryClient();
 
@@ -94,6 +95,7 @@ const App = () => (
               <Route path="/war-room/:id" element={<ProtectedRoute><WarRoom /></ProtectedRoute>} />
               <Route path="/attack-simulator" element={<ProtectedRoute><AttackSimulator /></ProtectedRoute>} />
               <Route path="/executive" element={<ProtectedRoute><ExecutiveDashboard /></ProtectedRoute>} />
+              <Route path="/agent-platform" element={<ProtectedRoute><AgentPlatform /></ProtectedRoute>} />
               <Route path="/admin/cloud" element={<ProtectedRoute requiredRole="ciso"><CloudAdmin /></ProtectedRoute>} />
               
               {/* Fallback */}
