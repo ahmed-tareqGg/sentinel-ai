@@ -390,7 +390,7 @@ async function checkCorrelationRules(
             src_ip: extractFieldValue(refLog, 'src_ip'),
             dst_ip: extractFieldValue(refLog, 'dst_ip'),
             message: incidentTitle,
-            classification: 'Correlated Alert',
+            classification: 'Pending',
             confidence: 85,
             risk_level: rule.severity_override && rule.severity_override >= 4 ? 'High' : 'Medium',
             mitre_tactic: 'Collection',

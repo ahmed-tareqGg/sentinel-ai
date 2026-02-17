@@ -118,6 +118,7 @@ function Get-SecurityLogs {
             if ($_.Exception.Message -notlike "*No events were found*") { throw }
         }
         if ($securityLogs.Count -gt 0) {
+            Write-Host "  [LOG] Security: $($securityLogs.Count) new events" -ForegroundColor DarkCyan
             $script:LastSecurityTime = ($securityLogs | Sort-Object TimeCreated -Descending | Select-Object -First 1).TimeCreated
             foreach ($evt in $securityLogs) {
                 $msg = "Event $($evt.Id)"
@@ -175,6 +176,7 @@ function Get-SecurityLogs {
             if ($_.Exception.Message -notlike "*No events were found*") { throw }
         }
         if ($systemLogs.Count -gt 0) {
+            Write-Host "  [LOG] System: $($systemLogs.Count) new events" -ForegroundColor DarkCyan
             $script:LastSystemTime = ($systemLogs | Sort-Object TimeCreated -Descending | Select-Object -First 1).TimeCreated
             foreach ($evt in $systemLogs) {
                 $msg = "Event $($evt.Id)"
@@ -205,6 +207,7 @@ function Get-SecurityLogs {
             if ($_.Exception.Message -notlike "*No events were found*") { throw }
         }
         if ($fwLogs.Count -gt 0) {
+            Write-Host "  [LOG] Firewall: $($fwLogs.Count) new events" -ForegroundColor DarkCyan
             $script:LastFirewallTime = ($fwLogs | Sort-Object TimeCreated -Descending | Select-Object -First 1).TimeCreated
             foreach ($evt in $fwLogs) {
                 $msg = "Firewall Event $($evt.Id)"
@@ -214,6 +217,25 @@ function Get-SecurityLogs {
                     message = $msg; severity = 3
                     event_id = $evt.Id.ToString(); source_ip = $env:COMPUTERNAME
                     raw_log = @{ Id = $evt.Id; Provider = $evt.ProviderName }
+                }
+            }
+        }
+    } catch {}
+
+    # === Active Connection Scan Detection (catches nmap SYN scans) ===
+    try {
+        $tcpConns = Get-NetTCPConnection -ErrorAction SilentlyContinue | 
+            Where-Object { $_.State -in @('SynReceived', 'Established', 'TimeWait', 'CloseWait') -and 
+                           $_.RemoteAddress -notin @('127.0.0.1', '::1', '0.0.0.0', '') -and 
+                           $_.LocalAddress -notin @('127.0.0.1', '::1') }
+        if ($tcpConns) {
+            $byRemoteIP = $tcpConns | Group-Object RemoteAddress
+            foreach ($group in $byRemoteIP) {
+                $ip = $group.Name
+                $uniquePorts = @($group.Group | Select-Object -ExpandProperty LocalPort -Unique)
+                # Feed into port scan tracker
+                foreach ($port in $uniquePorts) {
+                    Update-PortScanTracker -SourceIP $ip -Port $port.ToString()
                 }
             }
         }
@@ -335,7 +357,7 @@ function Get-NetworkScanIndicators {
 function Send-Logs {
     param($ApiEndpoint, $ApiKey, $Logs)
     if ($Logs.Count -eq 0) {
-        Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Waiting for new events... (total sent: $($script:TotalLogsSent))" -ForegroundColor Gray
+        Write-Host "[$(Get-Date -Format 'HH:mm:ss')] No new events (total sent: $($script:TotalLogsSent)) - monitoring..." -ForegroundColor DarkGray
         return $true
     }
     $url = "$ApiEndpoint/agent-gateway/ingest"
@@ -347,7 +369,8 @@ function Send-Logs {
         Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Sent $($Logs.Count) logs -> $($resp.processed) processed, $($resp.incidents_created) incidents (total: $($script:TotalLogsSent))" -ForegroundColor Green
         return $true
     } catch {
-        Write-Host "[ERR] Failed to send logs: $_" -ForegroundColor Red
+        Write-Host "[ERR] Failed to send $($Logs.Count) logs: $_" -ForegroundColor Red
+        Write-Host "[INFO] Will retry next cycle..." -ForegroundColor Yellow
         return $false
     }
 }
