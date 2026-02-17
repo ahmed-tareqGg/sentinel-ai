@@ -329,13 +329,54 @@ function Invoke-SOARAction {
                 if ($isDry) {
                     $result = @{ success = $true; details = "DRY-RUN: Would isolate host (block all non-SOCMind traffic)" }
                 } else {
-                    # Block all outbound except SOCMind gateway
-                    $gwHost = $Action.parameters.gateway_host
+                    # Extract gateway host from action parameters safely
+                    $gwHost = $null
+                    try {
+                        if ($Action.PSObject.Properties['parameters'] -and $Action.parameters) {
+                            $params = $Action.parameters
+                            if ($params.PSObject.Properties['gateway_host']) { $gwHost = $params.gateway_host }
+                        }
+                    } catch { }
+                    
+                    # Parse API endpoint to get gateway IP/host for whitelisting
+                    $apiHost = $null
+                    try {
+                        $uri = [System.Uri]$apiEndpoint
+                        $apiHost = $uri.Host
+                        # Resolve to IP
+                        $apiIPs = [System.Net.Dns]::GetHostAddresses($apiHost) | ForEach-Object { $_.IPAddressToString }
+                    } catch { $apiIPs = @() }
+                    
+                    # Get default gateway
+                    $defaultGW = $null
+                    try { $defaultGW = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object -First 1).NextHop } catch { }
+                    
+                    # Block all outbound first
                     New-NetFirewallRule -DisplayName "SOCMind-Isolate-BlockAll" -Direction Outbound -Action Block -ErrorAction SilentlyContinue | Out-Null
-                    if ($gwHost) {
-                        New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowGW" -Direction Outbound -RemoteAddress $gwHost -Action Allow -ErrorAction SilentlyContinue | Out-Null
+                    
+                    # Allow SOCMind API endpoint (CRITICAL - keeps agent connected)
+                    foreach ($ip in $apiIPs) {
+                        New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowAPI-$ip" -Direction Outbound -RemoteAddress $ip -RemotePort 443 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
                     }
-                    $result = @{ success = $true; details = "Host isolated. Only SOCMind gateway traffic allowed."; rollback_available = $true }
+                    
+                    # Allow DNS (needed to resolve API endpoint)
+                    New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowDNS" -Direction Outbound -RemotePort 53 -Protocol UDP -Action Allow -ErrorAction SilentlyContinue | Out-Null
+                    New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowDNS-TCP" -Direction Outbound -RemotePort 53 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
+                    
+                    # Allow default gateway (for routing)
+                    if ($defaultGW) {
+                        New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowGW" -Direction Outbound -RemoteAddress $defaultGW -Action Allow -ErrorAction SilentlyContinue | Out-Null
+                    }
+                    
+                    # Allow custom gateway if specified
+                    if ($gwHost) {
+                        New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowCustomGW" -Direction Outbound -RemoteAddress $gwHost -Action Allow -ErrorAction SilentlyContinue | Out-Null
+                    }
+                    
+                    # Allow localhost
+                    New-NetFirewallRule -DisplayName "SOCMind-Isolate-AllowLoopback" -Direction Outbound -RemoteAddress 127.0.0.1 -Action Allow -ErrorAction SilentlyContinue | Out-Null
+                    
+                    $result = @{ success = $true; details = "Host isolated. Management channel (API + DNS) preserved."; rollback_available = $true }
                 }
             }
             "unisolate_host" {
@@ -347,7 +388,12 @@ function Invoke-SOARAction {
                 }
             }
             "show_warning" {
-                $msg = $Action.parameters.message -or "SOCMind Security Alert: Suspicious activity detected on this workstation."
+                $msg = "SOCMind Security Alert: Suspicious activity detected on this workstation."
+                try {
+                    if ($Action.PSObject.Properties['parameters'] -and $Action.parameters -and $Action.parameters.PSObject.Properties['message']) {
+                        $msg = $Action.parameters.message
+                    }
+                } catch { }
                 if (-not $isDry) {
                     msg * "$msg" 2>&1 | Out-Null
                 }
