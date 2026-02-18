@@ -1228,7 +1228,7 @@ serve(async (req) => {
           });
         }
 
-        // Insert raw logs
+        // Insert raw logs synchronously (fast - just DB write)
         let insertedIds: string[] = [];
         const idByIngestId = new Map<string, string>();
 
@@ -1259,105 +1259,111 @@ serve(async (req) => {
           t.raw_log_id = idByIngestId.get(t.ingest_id) || null;
         }
 
-        // 🔥 CHECK CORRELATION RULES FIRST
-        const { incidentsCreated: correlationIncidents, rulesTriggered } = await checkCorrelationRules(
-          supabase,
-          transformedLogs,
-          auth.dataSourceId!,
-          auth.dataSourceName!
-        );
-
-        // Analyze via ingest-log
-        let analyzedCount = 0;
-        let incidentsCreated: any[] = [];
-        let incidentsCreatedCount = 0;
-        let incidentsSkippedCount = 0;
-
-        if (transformedLogs.length > 0) {
-          const { data: ingestResult, error: ingestErr } = await supabase.functions.invoke('ingest-log', {
-            body: {
-              logs: transformedLogs,
-              source: `Agent: ${auth.dataSourceName}`,
-            },
-            headers: {
-              'x-raw-logs-inserted': 'true',
-            },
-          });
-
-          if (ingestErr) {
-            console.error('Ingest-log failed:', ingestErr);
-
-            if (insertedIds.length > 0) {
-              await supabase
-                .from('raw_logs')
-                .update({
-                  processing_status: 'error',
-                  error_message: 'Analysis failed',
-                  analyzed_at: new Date().toISOString(),
-                })
-                .in('id', insertedIds);
-            }
-          } else {
-            analyzedCount = (ingestResult as any)?.processed || 0;
-            incidentsCreated = (ingestResult as any)?.incidents || [];
-            incidentsCreatedCount = (ingestResult as any)?.incidents_created ?? (incidentsCreated?.length || 0);
-            incidentsSkippedCount = (ingestResult as any)?.incidents_skipped ?? 0;
-          }
-        }
-
-        // Combine correlation incidents with AI incidents
-        const allIncidents = [...correlationIncidents, ...incidentsCreated];
-        const totalIncidentsCreated = incidentsCreatedCount + correlationIncidents.length;
-
-        // Update data source stats
-        const { data: currentSource } = await supabase
-          .from('data_sources')
-          .select('logs_received_today, logs_received_total')
-          .eq('id', auth.dataSourceId)
-          .single();
-
-        await supabase
-          .from('data_sources')
-          .update({
-            last_log_received: new Date().toISOString(),
-            logs_received_today: (currentSource?.logs_received_today || 0) + body.logs.length,
-            logs_received_total: (currentSource?.logs_received_total || 0) + body.logs.length,
-            status: 'active',
-          })
-          .eq('id', auth.dataSourceId);
-
-        // Update stats table
-        const currentHour = new Date().getHours();
-        for (const log of body.logs) {
-          await supabase
-            .from('log_ingestion_stats')
-            .upsert({
-              data_source_id: auth.dataSourceId,
-              date: new Date().toISOString().split('T')[0],
-              hour: currentHour,
-              log_type: log.log_type,
-              count: 1,
-              incidents_created: allIncidents.length > 0 ? 1 : 0,
-            }, {
-              onConflict: 'data_source_id,date,hour,log_type',
-            });
-        }
-
-        console.log(`📊 Correlation: ${rulesTriggered.length} rules triggered, ${correlationIncidents.length} incidents created`);
-
-        return new Response(JSON.stringify({
+        // ✅ Return immediate response to agent (prevents timeout)
+        const immediateResponse = new Response(JSON.stringify({
           success: true,
           logs_received: body.logs.length,
           logs_ingested: rawLogsToInsert.length,
-          logs_analyzed: analyzedCount,
-          incidents_created: totalIncidentsCreated,
-          incidents_skipped: incidentsSkippedCount,
-          incidents: allIncidents,
-          correlation_rules_triggered: rulesTriggered,
-          message: `Processed ${body.logs.length} logs (Incidents: ${totalIncidentsCreated}, Correlation: ${correlationIncidents.length})`,
+          processed: rawLogsToInsert.length,
+          incidents_created: 0,
+          message: `Received ${body.logs.length} logs - analysis running in background`,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+
+        // 🔥 Run heavy analysis in background (non-blocking)
+        const backgroundWork = async () => {
+          try {
+            // Check correlation rules
+            const { incidentsCreated: correlationIncidents, rulesTriggered } = await checkCorrelationRules(
+              supabase,
+              transformedLogs,
+              auth.dataSourceId!,
+              auth.dataSourceName!
+            );
+
+            // Analyze via ingest-log (AI analysis)
+            if (transformedLogs.length > 0) {
+              const { data: ingestResult, error: ingestErr } = await supabase.functions.invoke('ingest-log', {
+                body: {
+                  logs: transformedLogs,
+                  source: `Agent: ${auth.dataSourceName}`,
+                },
+                headers: {
+                  'x-raw-logs-inserted': 'true',
+                },
+              });
+
+              if (ingestErr) {
+                console.error('Ingest-log failed:', ingestErr);
+                if (insertedIds.length > 0) {
+                  await supabase
+                    .from('raw_logs')
+                    .update({
+                      processing_status: 'error',
+                      error_message: 'Analysis failed',
+                      analyzed_at: new Date().toISOString(),
+                    })
+                    .in('id', insertedIds);
+                }
+              } else {
+                const incidentsCreated = (ingestResult as any)?.incidents_created ?? 0;
+                const correlationCount = correlationIncidents.length;
+                console.log(`✅ Background analysis complete: ${incidentsCreated + correlationCount} incidents (correlation: ${correlationCount}, rules triggered: ${rulesTriggered.join(', ') || 'none'})`);
+              }
+            }
+
+            // Update data source stats
+            const { data: currentSource } = await supabase
+              .from('data_sources')
+              .select('logs_received_today, logs_received_total')
+              .eq('id', auth.dataSourceId)
+              .single();
+
+            await supabase
+              .from('data_sources')
+              .update({
+                last_log_received: new Date().toISOString(),
+                logs_received_today: (currentSource?.logs_received_today || 0) + body.logs.length,
+                logs_received_total: (currentSource?.logs_received_total || 0) + body.logs.length,
+                status: 'active',
+              })
+              .eq('id', auth.dataSourceId);
+
+            // Update stats table (batch to avoid per-log overhead)
+            const currentHour = new Date().getHours();
+            const logTypeCounts = new Map<string, number>();
+            for (const log of body.logs) {
+              const lt = log.log_type || 'unknown';
+              logTypeCounts.set(lt, (logTypeCounts.get(lt) || 0) + 1);
+            }
+            for (const [lt, count] of logTypeCounts) {
+              await supabase
+                .from('log_ingestion_stats')
+                .upsert({
+                  data_source_id: auth.dataSourceId,
+                  date: new Date().toISOString().split('T')[0],
+                  hour: currentHour,
+                  log_type: lt,
+                  count,
+                  incidents_created: correlationIncidents.length > 0 ? correlationIncidents.length : 0,
+                }, {
+                  onConflict: 'data_source_id,date,hour,log_type',
+                });
+            }
+          } catch (bgErr) {
+            console.error('Background analysis error:', bgErr);
+          }
+        };
+
+        // Use Deno's waitUntil to run background work after response is sent
+        try {
+          (globalThis as any).Deno?.serve?.waitUntil?.(backgroundWork());
+        } catch {}
+        // Fallback: fire and forget
+        backgroundWork().catch(console.error);
+
+        return immediateResponse;
       }
     }
 
