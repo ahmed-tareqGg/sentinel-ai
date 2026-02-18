@@ -495,15 +495,27 @@ function EnrichmentLogTab() {
                 {logs.map((log) => (
                   <TableRow key={log.id}>
                     <TableCell className="font-mono text-sm max-w-[180px] truncate">{log.ioc_value}</TableCell>
-                    <TableCell><Badge variant="outline" className="text-[10px]">{log.ioc_type}</Badge></TableCell>
-                    <TableCell className="text-sm">{log.provider}</TableCell>
+                    <TableCell><Badge variant="outline" className="text-[10px]">{log.ioc_type?.toUpperCase()}</Badge></TableCell>
+                    <TableCell className="text-sm capitalize">{log.provider}</TableCell>
                     <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={log.request_status === 'success' ? 'bg-success/10 text-success border-success/30' : 'bg-destructive/10 text-destructive border-destructive/30'}
-                      >
-                        {log.request_status}
-                      </Badge>
+                      <div className="space-y-1">
+                        <Badge
+                          variant="outline"
+                          className={log.request_status === 'success' ? 'bg-success/10 text-success border-success/30' : 'bg-destructive/10 text-destructive border-destructive/30'}
+                        >
+                          {log.request_status}
+                        </Badge>
+                        {log.request_status !== 'success' && log.error_message && (
+                          <p className="text-[10px] text-destructive max-w-[200px] truncate" title={log.error_message}>
+                            {log.error_message}
+                          </p>
+                        )}
+                        {log.request_status !== 'success' && !log.error_message && log.response_data?.error && (
+                          <p className="text-[10px] text-destructive max-w-[200px] truncate" title={String(log.response_data.error)}>
+                            {String(log.response_data.error)}
+                          </p>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(log.created_at).toLocaleString()}
