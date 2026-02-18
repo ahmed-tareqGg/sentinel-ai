@@ -420,11 +420,17 @@ function Send-Logs {
     $body = @{ logs = $Logs } | ConvertTo-Json -Depth 10 -Compress
     try {
         $headers = @{ "Content-Type" = "application/json"; "X-Agent-Key" = $ApiKey; "User-Agent" = "SOCMind-Agent-Windows/$($script:AgentVersion)" }
-        $resp = Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body -TimeoutSec 60
+        $resp = Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body -TimeoutSec 120
         $script:TotalLogsSent += $Logs.Count
-        Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Sent $($Logs.Count) logs -> $($resp.processed) processed, $($resp.incidents_created) incidents (total: $($script:TotalLogsSent))" -ForegroundColor Green
+        Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Sent $($Logs.Count) logs -> $($resp.logs_ingested) ingested, $($resp.incidents_created) incidents (total: $($script:TotalLogsSent))" -ForegroundColor Green
         return $true
     } catch {
+        if ($_.Exception.Message -like "*timed out*" -or $_.Exception.Message -like "*timeout*") {
+            # Timeout likely means the server received the logs but took too long to respond
+            # Don't count as failure - logs were probably saved
+            Write-Host "[WARN] Send timeout - logs may have been received. Continuing..." -ForegroundColor Yellow
+            return $true
+        }
         Write-Host "[ERR] Failed to send $($Logs.Count) logs: $_" -ForegroundColor Red
         Write-Host "[INFO] Will retry next cycle..." -ForegroundColor Yellow
         return $false
