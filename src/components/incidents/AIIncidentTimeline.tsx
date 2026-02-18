@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Brain, Loader2, ChevronDown, ChevronUp, Zap, Shield, AlertTriangle,
   Search, Lock, Network, Terminal, FileWarning, Eye, Crosshair,
-  ArrowRight, Clock, Sparkles, Play, RefreshCw
+  ArrowRight, Clock, Sparkles, Play, RefreshCw, MonitorDot, ServerCrash
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -264,6 +264,23 @@ Write the narrative now:`;
           </Button>
         </div>
       </div>
+
+      {/* Source / Dest IP Bar */}
+      {(incident.src_ip || incident.dst_ip) && (
+        <div className="px-4 py-2 border-b border-border bg-secondary/20 flex items-center gap-4 flex-wrap text-xs font-mono">
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <MonitorDot className="h-3.5 w-3.5 text-primary" />
+            <span className="text-muted-foreground/70">SRC:</span>
+            <span className="text-foreground font-semibold">{incident.src_ip || '—'}</span>
+          </span>
+          <ArrowRight className="h-3 w-3 text-border" />
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <ServerCrash className="h-3.5 w-3.5 text-destructive" />
+            <span className="text-muted-foreground/70">DST:</span>
+            <span className="text-foreground font-semibold">{incident.dst_ip || '—'}</span>
+          </span>
+        </div>
+      )}
 
       {/* AI Full Narrative */}
       <AnimatePresence>
