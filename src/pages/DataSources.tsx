@@ -20,7 +20,13 @@ import {
   Package,
   Network,
   Terminal,
-  Shield
+  Shield,
+  Zap,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  RotateCcw,
+  Timer
 } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { LicenseManagement } from '@/components/licenses/LicenseManagement';
@@ -37,6 +43,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
+import { format, formatDistanceToNow } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 interface DataSource {
   id: string;
@@ -162,6 +170,23 @@ export default function DataSources() {
       if (error) throw error;
       return data as DataSource[];
     },
+    refetchInterval: 15000,
+  });
+
+  // Fetch SOAR actions queue
+  const { data: soarActions, refetch: refetchSoar } = useQuery({
+    queryKey: ['soar-actions-queue'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('soar_actions')
+        .select('*')
+        .in('status', ['approved', 'dispatched', 'completed', 'failed'])
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return data || [];
+    },
+    refetchInterval: 8000,
   });
 
   // Register new agent
@@ -499,6 +524,20 @@ export default function DataSources() {
                   </div>
                 </div>
 
+                {/* Heartbeat warning */}
+                {source.status === 'active' && source.last_heartbeat && (() => {
+                  const secsAgo = (Date.now() - new Date(source.last_heartbeat).getTime()) / 1000;
+                  if (secsAgo > 120) {
+                    return (
+                      <div className="flex items-center gap-1.5 text-xs text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded px-2 py-1">
+                        <AlertCircle className="h-3 w-3 shrink-0" />
+                        No heartbeat for {Math.floor(secsAgo / 60)}m — agent may be offline
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
                 <div className="flex flex-wrap gap-1">
                   {source.log_types?.map((type) => (
                     <Badge key={type} variant="secondary" className="text-xs">
@@ -608,6 +647,83 @@ export default function DataSources() {
           ))
         )}
       </div>
+
+      {/* SOAR Actions Queue */}
+      <Card className="mt-6 border-border">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Zap className="h-4 w-4 text-yellow-500" />
+                SOAR Actions Queue
+                {soarActions?.filter(a => a.status === 'approved').length ? (
+                  <Badge className="bg-yellow-500/20 text-yellow-500 border-yellow-500/30">
+                    {soarActions.filter(a => a.status === 'approved').length} pending
+                  </Badge>
+                ) : null}
+              </CardTitle>
+              <CardDescription className="text-xs mt-1">
+                Live view of actions being dispatched to the Executor agent
+              </CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => refetchSoar()}>
+              <RefreshCw className="h-3 w-3" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {!soarActions || soarActions.length === 0 ? (
+            <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
+              <CheckCircle2 className="h-4 w-4 mr-2 text-green-500" />
+              No recent actions
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {soarActions.map((action: any) => {
+                const statusConfig: Record<string, { icon: React.ReactNode; label: string; cls: string }> = {
+                  approved: { icon: <Timer className="h-3 w-3" />, label: 'Awaiting Executor', cls: 'text-yellow-500 bg-yellow-500/10 border-yellow-500/30' },
+                  dispatched: { icon: <Loader2 className="h-3 w-3 animate-spin" />, label: 'Dispatched', cls: 'text-blue-500 bg-blue-500/10 border-blue-500/30' },
+                  completed: { icon: <CheckCircle2 className="h-3 w-3" />, label: 'Completed', cls: 'text-green-500 bg-green-500/10 border-green-500/30' },
+                  failed: { icon: <XCircle className="h-3 w-3" />, label: 'Failed', cls: 'text-destructive bg-destructive/10 border-destructive/30' },
+                  rolled_back: { icon: <RotateCcw className="h-3 w-3" />, label: 'Rolled Back', cls: 'text-muted-foreground bg-muted/30 border-border' },
+                };
+                const s = statusConfig[action.status] || statusConfig.approved;
+                const actionEmoji: Record<string, string> = {
+                  block_ip: '🚫', isolate_host: '🔒', kill_process: '⚡', 
+                  disable_user: '👤', lock_account: '🔐', unblock_ip: '✅',
+                  unisolate_host: '🔓', delete_file: '🗑️', reset_password: '🔑',
+                };
+                const emoji = actionEmoji[action.action_type] || '⚙️';
+                return (
+                  <div key={action.id} className="flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="text-lg">{emoji}</span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {action.action_type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Target: <code className="bg-muted px-1 rounded">{action.target || 'N/A'}</code>
+                          {action.action_id && <span className="ml-2 opacity-60">{action.action_id}</span>}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0 ml-2">
+                      <span className="text-xs text-muted-foreground">
+                        {action.created_at && formatDistanceToNow(new Date(action.created_at), { addSuffix: true })}
+                      </span>
+                      <Badge variant="outline" className={cn('text-xs gap-1', s.cls)}>
+                        {s.icon}
+                        {s.label}
+                      </Badge>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Add Data Source Dialog */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>

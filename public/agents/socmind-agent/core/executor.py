@@ -56,15 +56,32 @@ class ActionExecutor:
         print(f"[EXECUTOR] Started — polling every {self.poll_interval}s")
         print(f"[EXECUTOR] Dry Run: {self.dry_run}")
         print(f"[EXECUTOR] Loaded {len(self._action_handlers)} action handlers")
+        print(f"[EXECUTOR] Role: executor (receives all approved actions)")
+
+        executed_count = 0
+        consecutive_errors = 0
 
         while not shutdown_event.is_set():
             try:
                 actions = self._poll_actions()
-                for action in actions:
-                    self._process_action(action)
+                if actions:
+                    print(f"\n[EXECUTOR] ✅ {len(actions)} action(s) received!")
+                    for action in actions:
+                        self._process_action(action)
+                        executed_count += 1
+                    print(f"[EXECUTOR] Total executed this session: {executed_count}")
+                else:
+                    ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
+                    print(f"[{ts}] Waiting... (executed: {executed_count})", end="\r", flush=True)
+                consecutive_errors = 0
             except Exception as e:
-                print(f"[EXECUTOR:ERROR] {e}")
+                consecutive_errors += 1
+                print(f"\n[EXECUTOR:ERROR] {e} (consecutive errors: {consecutive_errors})")
                 self.audit.log_error("executor", str(e))
+                if consecutive_errors >= 5:
+                    print(f"[EXECUTOR:WARN] {consecutive_errors} consecutive errors — backing off 30s")
+                    shutdown_event.wait(timeout=30)
+                    consecutive_errors = 0
 
             shutdown_event.wait(timeout=self.poll_interval)
 
@@ -129,27 +146,37 @@ class ActionExecutor:
         # Execute the action
         handler = self._action_handlers.get(action_type)
         if handler:
-            try:
-                result = handler(action, dry_run=is_dry)
-                success = result.get("success", True)
-                details = result.get("details", "Completed")
-                rollback = result.get("rollback_available", False)
+            max_retries = 2
+            for attempt in range(max_retries + 1):
+                try:
+                    result = handler(action, dry_run=is_dry)
+                    success = result.get("success", True)
+                    details = result.get("details", "Completed")
+                    rollback = result.get("rollback_available", False)
 
-                if success:
-                    print(f"  [OK] {details}")
-                else:
-                    print(f"  [FAIL] {details}")
+                    if success:
+                        print(f"  [✅ OK] {details}")
+                    else:
+                        print(f"  [❌ FAIL] {details}")
+                        if attempt < max_retries and not is_dry:
+                            print(f"  [↩ RETRY] Attempt {attempt + 1}/{max_retries}...")
+                            time.sleep(3)
+                            continue
 
-                self.audit.log_action(action, result)
-                self._report_result(action, success, details, rollback)
+                    self.audit.log_action(action, result)
+                    self._report_result(action, success, details, rollback)
+                    break
 
-            except Exception as e:
-                print(f"  [ERROR] {e}")
-                self.audit.log_action(action, {"success": False, "details": str(e)})
-                self._report_result(action, False, str(e))
+                except Exception as e:
+                    print(f"  [⚠ ERROR attempt {attempt + 1}] {e}")
+                    if attempt == max_retries:
+                        self.audit.log_action(action, {"success": False, "details": str(e)})
+                        self._report_result(action, False, str(e))
+                    else:
+                        time.sleep(3)
         else:
             msg = f"No handler found for action type: {action_type}"
-            print(f"  [ERROR] {msg}")
+            print(f"  [❌ ERROR] {msg}")
             self._report_result(action, False, msg)
 
     def execute_action(self, action: dict, dry_run: bool = None) -> dict:
