@@ -1252,108 +1252,161 @@ python3 agent.py run --dry-run  # Simulation`}
 
                 {/* ── Executor Tab ── */}
                 <TabsContent value="executor" className="mt-3 space-y-3">
-                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-                    <div className="flex items-center gap-3 mb-3">
-                      <Shield className="h-5 w-5 text-destructive" />
-                      <div>
-                        <p className="font-medium text-sm">SOCMind Executor v2.0.0</p>
-                        <p className="text-xs text-muted-foreground">SOAR Action Execution Engine — deploy on ONE secure host</p>
+
+                  {/* Header */}
+                  <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 flex items-start gap-3">
+                    <Shield className="h-6 w-6 text-destructive mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-semibold text-sm">SOCMind Executor v2.0.0</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">محرك تنفيذ الـ SOAR Actions — ينفذ الأوامر الأمنية على الشبكة فعلياً (block IP, isolate host, إلخ)</p>
+                      <div className="mt-2 flex items-center gap-1.5 text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 rounded px-2 py-1">
+                        <AlertCircle className="h-3 w-3 flex-shrink-0" />
+                        <span>شغّله على جهاز واحد بصلاحيات (Jump Server / Bastion) — مش على الـ endpoints</span>
                       </div>
-                    </div>
-
-                    {/* Warning */}
-                    <div className="rounded bg-yellow-500/10 border border-yellow-500/30 p-2 mb-3">
-                      <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium flex items-center gap-1">
-                        <AlertCircle className="h-3 w-3" />
-                        Deploy ONLY on one privileged SOC jump server — NOT on endpoints
-                      </p>
-                    </div>
-
-                    {/* Download button */}
-                    <button
-                      onClick={() => handleAgentDownload('/agents/socmind-executor.py', 'socmind-executor.py')}
-                      className="w-full flex items-center justify-center gap-2 p-3 rounded-lg border border-destructive/50 hover:border-destructive hover:bg-destructive/10 transition-colors text-sm font-medium mb-3"
-                    >
-                      <Download className="h-4 w-4 text-destructive" />
-                      Download socmind-executor.py
-                    </button>
-
-                    {/* Supported Actions */}
-                    <div className="space-y-2 mb-3">
-                      <p className="text-xs font-medium text-muted-foreground">⚡ 24 Supported Actions</p>
-                      <div className="grid grid-cols-2 gap-1.5 text-xs">
-                        {[
-                          { category: "🌐 Network", actions: ["block_ip", "unblock_ip", "isolate_host", "unisolate_host", "flush_dns", "block_domain"] },
-                          { category: "⚙️ Process/Service", actions: ["kill_process", "suspend_process", "stop_service", "start_service", "restart_service"] },
-                          { category: "👤 User/Identity", actions: ["disable_user", "enable_user", "lock_user", "unlock_user", "reset_password", "force_logoff"] },
-                          { category: "📁 File/Forensics", actions: ["quarantine_file", "delete_file", "wipe_file", "collect_forensics", "dump_memory"] },
-                          { category: "🔔 Notifications", actions: ["notify_user", "send_alert"] },
-                          { category: "🔑 Credentials", actions: ["rotate_credentials", "revoke_token"] },
-                        ].map((group) => (
-                          <div key={group.category} className="rounded border border-border p-2">
-                            <p className="font-medium text-muted-foreground mb-1">{group.category}</p>
-                            <div className="space-y-0.5">
-                              {group.actions.map((a) => (
-                                <p key={a} className="text-muted-foreground font-mono">{a}</p>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Quick Start */}
-                    <div className="rounded-lg border border-border bg-secondary/30 p-3">
-                      <p className="text-xs font-medium mb-2">🚀 Quick Start:</p>
-                      <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground">
-{`# Install dependency
-pip install requests psutil
-
-# First-time setup (interactive)
-python3 socmind-executor.py configure
-
-# Start (REAL execution — requires root/admin)
-sudo python3 socmind-executor.py start
-
-# Safe simulation mode (no real changes)
-python3 socmind-executor.py dryrun
-
-# Test connectivity + poll once
-python3 socmind-executor.py test
-
-# View status + last 5 actions
-python3 socmind-executor.py status
-
-# Rollback last reversible action
-python3 socmind-executor.py rollback`}
-                      </pre>
-                    </div>
-
-                    {/* Architecture Note */}
-                    <div className="rounded-lg border border-border bg-secondary/20 p-3 mt-2">
-                      <p className="text-xs font-medium mb-1">🏗️ Architecture:</p>
-                      <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground">
-{`┌─────────────────────────────────────────────────┐
-│           SOCMind Platform (Cloud)              │
-│  Approved Action → agent-gateway/poll-actions   │
-└─────────────────────┬───────────────────────────┘
-                      │ HTTPS poll every 5s
-                      ▼
-┌─────────────────────────────────────────────────┐
-│         SOCMind Executor (Jump Server)          │
-│  socmind-executor.py  ←  1 privileged host      │
-│  ├── block_ip / isolate_host (iptables/netsh)   │
-│  ├── kill_process / stop_service                │
-│  ├── lock_user / reset_password                 │
-│  ├── quarantine_file / collect_forensics        │
-│  └── Reports result → agent-gateway/report      │
-└─────────────────────────────────────────────────┘
-
-Collectors (endpoints) → send logs only
-Executor (jump server) → execute SOAR actions only`}
-                      </pre>
                     </div>
                   </div>
+
+                  {/* How it works */}
+                  <div className="rounded-lg border border-border bg-secondary/20 p-3">
+                    <p className="text-xs font-semibold mb-2 text-foreground">🔄 إزاي بيشتغل؟</p>
+                    <div className="space-y-1.5 text-xs text-muted-foreground">
+                      <div className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center flex-shrink-0 font-bold text-[10px]">1</span>
+                        <span>المحلل (Analyst) بيعمل Action من الـ Platform (مثلاً: Block IP)</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center flex-shrink-0 font-bold text-[10px]">2</span>
+                        <span>الـ Manager أو CISO بيوافق من صفحة الـ Approvals</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center flex-shrink-0 font-bold text-[10px]">3</span>
+                        <span>الـ Executor بيعمل Poll كل 5 ثواني — ولما يلاقي أمر approved بينفذه فعلياً على السيرفر</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-full bg-green-500/20 text-green-500 flex items-center justify-center flex-shrink-0 font-bold text-[10px]">4</span>
+                        <span>بيرجع النتيجة للـ Platform ويسجلها في الـ Audit Log والـ Timeline</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 1: Download */}
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">1</span>
+                      تحميل الـ Executor
+                    </p>
+                    <button
+                      onClick={() => handleAgentDownload('/agents/socmind-executor.py', 'socmind-executor.py')}
+                      className="w-full flex items-center justify-center gap-2 p-2.5 rounded-lg border border-destructive/50 hover:border-destructive hover:bg-destructive/10 transition-colors text-sm font-medium"
+                    >
+                      <Download className="h-4 w-4 text-destructive" />
+                      تحميل socmind-executor.py
+                    </button>
+                  </div>
+
+                  {/* Step 2: Install */}
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">2</span>
+                      تثبيت المتطلبات (مرة واحدة بس)
+                    </p>
+                    <pre className="bg-background border border-border p-2 rounded text-xs text-muted-foreground overflow-x-auto">pip install requests psutil</pre>
+                  </div>
+
+                  {/* Step 3: Configure */}
+                  <div className="rounded-lg border border-border p-3 space-y-2">
+                    <p className="text-xs font-semibold flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">3</span>
+                      إعداد الـ Executor (أول مرة فقط)
+                    </p>
+                    <pre className="bg-background border border-border p-2 rounded text-xs text-muted-foreground overflow-x-auto">python3 socmind-executor.py configure</pre>
+                    <p className="text-xs text-muted-foreground">هيطلب منك:</p>
+                    <div className="space-y-2">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">① API Endpoint (انسخه واحطّه)</Label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <code className="flex-1 bg-background border border-border p-1.5 rounded text-xs font-mono overflow-x-auto whitespace-nowrap">
+                            https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1
+                          </code>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-shrink-0 h-7 px-2"
+                            onClick={() => copyToClipboard('https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1')}
+                          >
+                            {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                          </Button>
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">② API Key — اضغط "Generate New Key" من فوق وانسخه</Label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 4: Run */}
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">4</span>
+                      تشغيل الـ Executor
+                    </p>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">▶ تشغيل حقيقي (يحتاج صلاحيات Admin/Root)</p>
+                        <pre className="bg-background border border-border p-2 rounded text-xs text-green-600 dark:text-green-400 overflow-x-auto">{`# Linux
+sudo python3 socmind-executor.py start
+
+# Windows (Run as Administrator)
+python socmind-executor.py start`}</pre>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">🧪 وضع الاختبار (بدون تنفيذ فعلي — للتجربة)</p>
+                        <pre className="bg-background border border-border p-2 rounded text-xs text-blue-600 dark:text-blue-400 overflow-x-auto">python3 socmind-executor.py dryrun</pre>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Other commands */}
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs font-semibold mb-2">📋 أوامر مفيدة أخرى</p>
+                    <div className="space-y-1.5 text-xs">
+                      {[
+                        { cmd: 'python3 socmind-executor.py test', desc: 'اختبار الاتصال بالـ Platform' },
+                        { cmd: 'python3 socmind-executor.py status', desc: 'إظهار الحالة وآخر 5 actions' },
+                        { cmd: 'python3 socmind-executor.py rollback', desc: 'التراجع عن آخر action قابل للعكس' },
+                      ].map(({ cmd, desc }) => (
+                        <div key={cmd} className="flex items-center justify-between gap-2 bg-background border border-border rounded p-1.5">
+                          <code className="font-mono text-[11px] text-foreground">{cmd}</code>
+                          <span className="text-muted-foreground text-[11px] flex-shrink-0">{desc}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Supported Actions */}
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs font-semibold mb-2">⚡ الـ Actions المدعومة (26 action)</p>
+                    <div className="grid grid-cols-2 gap-1.5 text-xs">
+                      {[
+                        { category: "🌐 Network", actions: ["block_ip", "unblock_ip", "isolate_host", "unisolate_host", "flush_dns", "block_domain"] },
+                        { category: "⚙️ Process/Service", actions: ["kill_process", "suspend_process", "stop_service", "start_service", "restart_service"] },
+                        { category: "👤 User/Identity", actions: ["disable_user", "enable_user", "lock_user", "unlock_user", "reset_password", "force_logoff"] },
+                        { category: "📁 File/Forensics", actions: ["quarantine_file", "delete_file", "wipe_file", "collect_forensics", "dump_memory"] },
+                        { category: "🔔 Notifications", actions: ["notify_user", "send_alert"] },
+                        { category: "🔑 Credentials", actions: ["rotate_credentials", "revoke_token"] },
+                      ].map((group) => (
+                        <div key={group.category} className="rounded border border-border p-2">
+                          <p className="font-semibold text-foreground mb-1">{group.category}</p>
+                          <div className="space-y-0.5">
+                            {group.actions.map((a) => (
+                              <p key={a} className="text-muted-foreground font-mono text-[11px]">{a}</p>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                 </TabsContent>
               </Tabs>
             </div>
