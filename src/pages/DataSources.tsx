@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AgentHealthDashboard } from '@/components/agents/AgentHealthDashboard';
 import { 
   Server, 
   Monitor, 
@@ -647,6 +648,9 @@ export default function DataSources() {
           ))
         )}
       </div>
+
+      {/* Agent Health Dashboard */}
+      <AgentHealthDashboard />
 
       {/* SOAR Actions Queue */}
       <Card className="mt-6 border-border">
