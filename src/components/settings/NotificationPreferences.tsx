@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/backend/client';
+import { backendUrl, publishableKey } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
-import { Bell, Mail, Volume2, AlertTriangle, MessageSquare, ClipboardCheck, UserCheck, Info, ArrowUpRight, Loader2, Save } from 'lucide-react';
+import { Bell, Mail, Volume2, AlertTriangle, MessageSquare, ClipboardCheck, UserCheck, Info, ArrowUpRight, Loader2, Save, Send } from 'lucide-react';
 
 interface Preferences {
   in_app_incidents: boolean;
@@ -257,6 +258,25 @@ export function NotificationPreferences() {
 
       <Separator />
 
+      {/* Daily AI Digest */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Mail className="h-4 w-4 text-primary" />
+              <h4 className="text-sm font-semibold text-foreground">Daily AI Digest</h4>
+              <Badge className="text-[10px] bg-primary/20 text-primary border-0">AI-Powered</Badge>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Receive a daily AI-generated summary of SOC activity, top threats, and KPIs — delivered to your email every morning.
+            </p>
+          </div>
+          <DigestSendButton />
+        </div>
+      </div>
+
+      <Separator />
+
       {/* Save */}
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
@@ -276,5 +296,36 @@ export function NotificationPreferences() {
         </Button>
       </div>
     </div>
+  );
+}
+
+function DigestSendButton() {
+  const [sending, setSending] = useState(false);
+  const handleSend = async () => {
+    setSending(true);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const res = await fetch(`${backendUrl}/functions/v1/daily-ai-digest`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || publishableKey}`,
+          'apikey': publishableKey,
+        },
+      });
+      const data = await res.json();
+      if (res.ok) toast.success(`Daily digest sent to ${data.sent} user(s)`);
+      else toast.error(data.error || 'Failed to send digest');
+    } catch {
+      toast.error('Failed to trigger digest');
+    } finally {
+      setSending(false);
+    }
+  };
+  return (
+    <Button size="sm" variant="outline" onClick={handleSend} disabled={sending} className="shrink-0">
+      {sending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Send className="h-3.5 w-3.5 mr-1.5" />}
+      Send Now
+    </Button>
   );
 }

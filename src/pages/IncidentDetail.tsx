@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket, Clock, CheckCheck, Swords } from 'lucide-react';
+import { ArrowLeft, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket, Clock, CheckCheck, Swords, Zap, Lock, Ban, RefreshCw } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -27,6 +27,7 @@ import { AIReportGenerator } from '@/components/incidents/AIReportGenerator';
 import { RootCauseAnalysis } from '@/components/incidents/RootCauseAnalysis';
 import { CorrelatedLogs } from '@/components/incidents/CorrelatedLogs';
 import { AIIncidentTimeline } from '@/components/incidents/AIIncidentTimeline';
+import { OneClickResponsePanel } from '@/components/incidents/OneClickResponsePanel';
 
 interface TimelineEntry {
   id: string;
@@ -777,6 +778,11 @@ export default function IncidentDetail() {
           </div>
         </div>
       </div>
+
+      {/* One-Click Response Panel */}
+      {canRunPlaybook && incident.status !== 'Closed' && incident.status !== 'Resolved' && (
+        <OneClickResponsePanel incident={incident} onAction={() => { fetchIncident(); fetchTimeline(); }} />
+      )}
 
       <div className="mb-6">
         <IncidentDetails description={bodyDescription} />
