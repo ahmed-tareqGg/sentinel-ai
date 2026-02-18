@@ -4,6 +4,8 @@ import { GlobalFooter } from './GlobalFooter';
 import { DemoBanner } from '@/components/demo/DemoBanner';
 import { GuidedTour } from '@/components/demo/GuidedTour';
 import { SOCChatWidget } from '@/components/chat/SOCChatWidget';
+import { MobileBottomNav } from './MobileBottomNav';
+import { SLABreachMonitor } from '@/components/notifications/SLABreachMonitor';
 
 
 interface AppLayoutProps {
@@ -17,12 +19,15 @@ export function AppLayout({ children, title, subtitle }: AppLayoutProps) {
     <div className="min-h-screen bg-background bg-grid flex flex-col">
       <DemoBanner />
       <GuidedTour />
+      <SLABreachMonitor />
       <AppNavbar />
-      <main className="p-4 lg:p-6 flex-1">
+      <main className="p-4 lg:p-6 flex-1 pb-20 lg:pb-6">
         {children}
       </main>
       <GlobalFooter />
       <SOCChatWidget />
+      <MobileBottomNav />
     </div>
   );
 }
+
