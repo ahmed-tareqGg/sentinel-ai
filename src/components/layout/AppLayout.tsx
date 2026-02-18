@@ -6,6 +6,7 @@ import { GuidedTour } from '@/components/demo/GuidedTour';
 import { SOCChatWidget } from '@/components/chat/SOCChatWidget';
 import { MobileBottomNav } from './MobileBottomNav';
 import { SLABreachMonitor } from '@/components/notifications/SLABreachMonitor';
+import { SmartAlertBanner } from '@/components/notifications/SmartAlertBanner';
 
 
 interface AppLayoutProps {
@@ -20,6 +21,7 @@ export function AppLayout({ children, title, subtitle }: AppLayoutProps) {
       <DemoBanner />
       <GuidedTour />
       <SLABreachMonitor />
+      <SmartAlertBanner />
       <AppNavbar />
       <main className="p-4 lg:p-6 flex-1 pb-20 lg:pb-6">
         {children}
@@ -30,4 +32,5 @@ export function AppLayout({ children, title, subtitle }: AppLayoutProps) {
     </div>
   );
 }
+
 
