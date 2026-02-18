@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle, Clock, Shield, TrendingDown, Activity, Zap, Target } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Shield, TrendingDown, Activity, Zap, Target, Bot, Trophy, Globe, PieChart, ChevronRight, Flame, Sparkles } from 'lucide-react';
 import { AnalystLeaderboard } from '@/components/gamification/AnalystLeaderboard';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { StatCard } from '@/components/dashboard/StatCard';
@@ -17,6 +17,58 @@ import { useIncidents } from '@/hooks/useIncidents';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { Link } from 'react-router-dom';
 import { AnimatedCard, AnimatedSection, AnimatedPage } from '@/components/ui/animated-card';
+import { motion } from 'framer-motion';
+
+const FEATURE_CARDS = [
+  {
+    icon: <Bot className="h-6 w-6" />,
+    label: 'AI Copilot',
+    description: 'Ask anything about your SOC — powered by AI',
+    path: '/team-chat',
+    gradient: 'from-violet-600/20 to-purple-600/10',
+    border: 'border-violet-500/30',
+    iconBg: 'bg-violet-500/20',
+    iconColor: 'text-violet-400',
+    badge: 'AI',
+    badgeColor: 'bg-violet-500/20 text-violet-300',
+  },
+  {
+    icon: <Trophy className="h-6 w-6" />,
+    label: 'Leaderboard',
+    description: 'Points, badges & analyst rankings',
+    path: '/executive',
+    gradient: 'from-amber-600/20 to-yellow-600/10',
+    border: 'border-amber-500/30',
+    iconBg: 'bg-amber-500/20',
+    iconColor: 'text-amber-400',
+    badge: 'Gamification',
+    badgeColor: 'bg-amber-500/20 text-amber-300',
+  },
+  {
+    icon: <PieChart className="h-6 w-6" />,
+    label: 'Executive View',
+    description: 'CISO KPIs, financial risk & SLA tracking',
+    path: '/executive',
+    gradient: 'from-cyan-600/20 to-sky-600/10',
+    border: 'border-cyan-500/30',
+    iconBg: 'bg-cyan-500/20',
+    iconColor: 'text-cyan-400',
+    badge: 'CISO',
+    badgeColor: 'bg-cyan-500/20 text-cyan-300',
+  },
+  {
+    icon: <Globe className="h-6 w-6" />,
+    label: 'Threat Intel',
+    description: 'VirusTotal, AbuseIPDB & live threat map',
+    path: '/threat-intel',
+    gradient: 'from-emerald-600/20 to-green-600/10',
+    border: 'border-emerald-500/30',
+    iconBg: 'bg-emerald-500/20',
+    iconColor: 'text-emerald-400',
+    badge: 'OSINT',
+    badgeColor: 'bg-emerald-500/20 text-emerald-300',
+  },
+];
 
 export default function Dashboard() {
   const { incidents, loading } = useIncidents();
@@ -86,6 +138,42 @@ export default function Dashboard() {
                 variant="primary"
               />
             </AnimatedCard>
+          </div>
+        </div>
+
+        {/* Feature Spotlight */}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold text-foreground">Platform Highlights</h2>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {FEATURE_CARDS.map((f, i) => (
+              <motion.div
+                key={f.label}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.07 }}
+              >
+                <Link
+                  to={f.path}
+                  className={`group flex flex-col gap-3 p-4 rounded-xl border bg-gradient-to-br ${f.gradient} ${f.border} hover:border-opacity-60 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg block`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className={`p-2 rounded-lg ${f.iconBg} ${f.iconColor}`}>{f.icon}</div>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${f.badgeColor}`}>{f.badge}</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">{f.label}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{f.description}</p>
+                  </div>
+                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground group-hover:text-primary transition-colors">
+                    <span>Explore</span>
+                    <ChevronRight className="h-3 w-3" />
+                  </div>
+                </Link>
+              </motion.div>
+            ))}
           </div>
         </div>
 
