@@ -37,6 +37,7 @@ import { ControlDetailsDialog } from '@/components/compliance/ControlDetailsDial
 import { RiskRegisterTab } from '@/components/compliance/RiskRegisterTab';
 import { GapsTab } from '@/components/compliance/GapsTab';
 import { GRCAuditTrailTab } from '@/components/compliance/GRCAuditTrailTab';
+import { ComplianceAutomation } from '@/components/compliance/ComplianceAutomation';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts';
 
 const ACTOR_ICONS: Record<string, typeof User> = {
@@ -240,6 +241,7 @@ export default function Compliance() {
         <TabsList className="flex-wrap">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="controls">Controls ({controls.length})</TabsTrigger>
+          <TabsTrigger value="automation">🤖 Automation</TabsTrigger>
           <TabsTrigger value="risks">Risk Register ({risks.length})</TabsTrigger>
           <TabsTrigger value="gaps">Gaps ({gaps.length})</TabsTrigger>
           <TabsTrigger value="audit-trail">Compliance Audit</TabsTrigger>
@@ -473,6 +475,11 @@ export default function Compliance() {
               Refresh Data
             </Button>
           </div>
+        </TabsContent>
+
+        {/* Automation Tab */}
+        <TabsContent value="automation" className="space-y-6">
+          <ComplianceAutomation onRefetch={refetch} />
         </TabsContent>
 
         {/* Controls Tab */}
