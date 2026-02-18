@@ -166,7 +166,7 @@ export function AppNavbar() {
   const allNavItems = navGroups.flatMap((g) => g.items).filter((item) => isItemAllowed(item.path));
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/98 backdrop-blur-xl supports-[backdrop-filter]:bg-background/90 shadow-sm">
+    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75 shadow-sm shadow-black/10">
       <div className="flex h-11 items-center gap-2 px-3 lg:px-5">
 
         {/* Mobile menu trigger */}
