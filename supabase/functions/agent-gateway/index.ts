@@ -988,6 +988,62 @@ serve(async (req) => {
       });
     }
 
+    // ==================== CHECK APPROVAL STATUS (Agent Auth) ====================
+    if (action === 'check-approval') {
+      const auth = await verifyAgentKey(req, supabase);
+      if (!auth.valid) {
+        return new Response(JSON.stringify({ error: auth.error }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const body = await req.json().catch(() => ({})) as any;
+      const { action_id } = body;
+
+      if (!action_id) {
+        return new Response(JSON.stringify({ status: 'pending' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Check soar_actions table first (by action_id string or UUID id)
+      const { data: soarAction } = await supabase
+        .from('soar_actions')
+        .select('status, approved_by, approved_at')
+        .or(`action_id.eq.${action_id},id.eq.${action_id}`)
+        .maybeSingle();
+
+      if (soarAction) {
+        const statusMap: Record<string, string> = {
+          approved: 'approved',
+          dispatched: 'approved',
+          rejected: 'rejected',
+          failed: 'rejected',
+          completed: 'approved',
+          stale: 'rejected',
+        };
+        const mappedStatus = statusMap[soarAction.status] || 'pending';
+        console.log(`✅ check-approval [${action_id}] → ${mappedStatus} (raw: ${soarAction.status})`);
+        return new Response(JSON.stringify({ status: mappedStatus, raw_status: soarAction.status }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Fall back to approval_requests table
+      const { data: approvalReq } = await supabase
+        .from('approval_requests')
+        .select('status')
+        .eq('id', action_id)
+        .maybeSingle();
+
+      const approvalStatus = approvalReq?.status || 'pending';
+      console.log(`📋 check-approval (approval_requests) [${action_id}] → ${approvalStatus}`);
+      return new Response(JSON.stringify({ status: approvalStatus }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Actions that require agent key authentication
     if (['heartbeat', 'ingest', 'poll-actions', 'report-action'].includes(action || '')) {
       const auth = await verifyAgentKey(req, supabase);
