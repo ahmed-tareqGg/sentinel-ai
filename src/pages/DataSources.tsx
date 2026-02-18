@@ -1310,7 +1310,21 @@ python3 agent.py run --dry-run  # Simulation`}
                       <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">2</span>
                       تثبيت المتطلبات (مرة واحدة بس)
                     </p>
-                    <pre className="bg-background border border-border p-2 rounded text-xs text-muted-foreground overflow-x-auto">pip install requests psutil</pre>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">✅ الطريقة العادية (Windows / macOS / Ubuntu)</p>
+                        <pre className="bg-background border border-border p-2 rounded text-xs text-muted-foreground overflow-x-auto">pip install requests psutil</pre>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">🐉 Kali Linux / Debian / بتجيبك error "externally-managed-environment"</p>
+                        <pre className="bg-background border border-border p-2 rounded text-xs text-muted-foreground overflow-x-auto">{`pip install requests psutil --break-system-packages`}</pre>
+                        <p className="text-xs text-muted-foreground mt-1">أو استخدم venv (الأفضل):</p>
+                        <pre className="bg-background border border-border p-2 rounded text-xs text-muted-foreground overflow-x-auto">{`python3 -m venv venv
+source venv/bin/activate
+pip install requests psutil
+python3 socmind-executor.py configure`}</pre>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Step 3: Configure */}
