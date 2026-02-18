@@ -505,89 +505,26 @@ export default function TeamChat() {
         body: JSON.stringify({
           messages: aiMessages,
           current_route: '/team-chat',
+          chat_channel: currentChannel,
+          reply_to_id: replyToMsgId || null,
         }),
       });
 
-      if (!resp.ok || !resp.body) {
+      if (!resp.ok) {
+        console.error('AI reply failed:', resp.status);
         setAiReplying(false);
         return;
       }
 
-      // Insert streaming placeholder message into DB immediately so it appears
-      const { data: placeholderMsg } = await supabase.from('chat_messages').insert({
-        sender_id: '00000000-0000-0000-0000-000000000000',
-        sender_email: 'ai@socmind',
-        sender_name: 'SOCMind AI',
-        content: '▌',
-        mentions: [],
-        channel: currentChannel,
-        priority: 'normal',
-        reply_to_id: replyToMsgId || null,
-        attachments: [],
-      } as any).select('id').single();
-
-      const streamMsgId = placeholderMsg?.id;
-
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let textBuffer = '';
-      let aiContent = '';
-      let updateTimer: ReturnType<typeof setTimeout> | null = null;
-
-      // Debounced DB update — update every 300ms to avoid flooding
-      const flushUpdate = async () => {
-        if (!streamMsgId || !aiContent) return;
-        await supabase.from('chat_messages')
-          .update({ content: aiContent + '▌' } as any)
-          .eq('id', streamMsgId);
-      };
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        textBuffer += decoder.decode(value, { stream: true });
-
-        let newlineIndex: number;
-        while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
-          let line = textBuffer.slice(0, newlineIndex);
-          textBuffer = textBuffer.slice(newlineIndex + 1);
-          if (line.endsWith('\r')) line = line.slice(0, -1);
-          if (line.startsWith(':') || !line.startsWith('data: ')) continue;
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === '[DONE]') break;
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              aiContent += content;
-              // Schedule debounced update
-              if (updateTimer) clearTimeout(updateTimer);
-              updateTimer = setTimeout(flushUpdate, 300);
-            }
-          } catch { /* ignore partial */ }
+      // Drain the response body so the backend can finish processing
+      // The backend saves the message to DB via service role (bypasses RLS)
+      // Our realtime subscription will pick it up automatically
+      if (resp.body) {
+        const reader = resp.body.getReader();
+        while (true) {
+          const { done } = await reader.read();
+          if (done) break;
         }
-      }
-
-      // Cancel pending timer and do final update removing the cursor
-      if (updateTimer) clearTimeout(updateTimer);
-
-      if (streamMsgId && aiContent) {
-        await supabase.from('chat_messages')
-          .update({ content: aiContent } as any)
-          .eq('id', streamMsgId);
-      } else if (!streamMsgId && aiContent) {
-        // Fallback: insert fresh message
-        await supabase.from('chat_messages').insert({
-          sender_id: '00000000-0000-0000-0000-000000000000',
-          sender_email: 'ai@socmind',
-          sender_name: 'SOCMind AI',
-          content: aiContent,
-          mentions: [],
-          channel: currentChannel,
-          priority: 'normal',
-          reply_to_id: replyToMsgId || null,
-          attachments: [],
-        } as any);
       }
     } catch (e) {
       console.error('AI reply error:', e);
