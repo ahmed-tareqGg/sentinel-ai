@@ -1056,13 +1056,25 @@ serve(async (req) => {
       if (action === 'poll-actions') {
         // Agent polls for actions to execute
         // CRITICAL: Only return actions that have been MANUALLY approved by a human
-        const { data: pendingActions, error: pollErr } = await supabase
+        // Executor agents get ALL approved actions (not filtered by data_source_id)
+        // since there is typically one executor per SOC environment
+        const body = await req.json().catch(() => ({})) as any;
+        const agentRole = body.role || 'collector';
+        const isExecutor = agentRole === 'executor';
+
+        let query = supabase
           .from('soar_actions')
           .select('*')
-          .eq('data_source_id', auth.dataSourceId)
           .eq('status', 'approved')
           .order('created_at', { ascending: true })
           .limit(10);
+
+        // Collectors only see their own data_source actions
+        if (!isExecutor) {
+          query = query.eq('data_source_id', auth.dataSourceId);
+        }
+
+        const { data: pendingActions, error: pollErr } = await query;
 
         if (pollErr) throw pollErr;
 
