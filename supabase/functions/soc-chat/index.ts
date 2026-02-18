@@ -411,7 +411,27 @@ serve(async (req) => {
       }
     }
 
-    const { messages, current_route } = await req.json();
+    const { messages, current_route, chat_channel, reply_to_id } = await req.json();
+
+    // Helper: save AI message to DB using service role (bypasses RLS)
+    const saveAIMessage = async (content: string) => {
+      if (!chat_channel || !content) return;
+      try {
+        await supabase.from('chat_messages').insert({
+          sender_id: '00000000-0000-0000-0000-000000000000',
+          sender_email: 'ai@socmind',
+          sender_name: 'SOCMind AI',
+          content,
+          mentions: [],
+          channel: chat_channel,
+          priority: 'normal',
+          reply_to_id: reply_to_id || null,
+          attachments: [],
+        });
+      } catch (e) {
+        console.error('[soc-chat] Failed to save AI message:', e);
+      }
+    };
     const pageContext = getPageContext(current_route || '/dashboard');
 
     const lastUserMsg = messages?.filter((m: any) => m.role === 'user').pop()?.content || '';
@@ -529,6 +549,7 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
     const ruleBasedResponse = await tryRuleBasedEngine(msgText, incidents, openIncidents, dataSources, mitreCov, pendingApprovals, playbooks);
     if (ruleBasedResponse) {
       console.log('[soc-chat] ✅ Rule-Based Engine answered');
+      await saveAIMessage(ruleBasedResponse);
       return streamTextResponse(ruleBasedResponse, corsHeaders);
     }
 
@@ -544,9 +565,10 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
 
     if (cachedEntry) {
       console.log(`[soc-chat] ✅ Cache hit (${cachedEntry.hit_count + 1} times)`);
-      // Update hit count async
       supabase.from('ai_response_cache').update({ hit_count: cachedEntry.hit_count + 1, last_used_at: new Date().toISOString() }).eq('id', cachedEntry.id).then(() => {});
-      return streamTextResponse(cachedEntry.response_text + '\n\n*🗄️ Cached response — AI providers unavailable*', corsHeaders);
+      const cachedText = cachedEntry.response_text + '\n\n*🗄️ Cached response — AI providers unavailable*';
+      await saveAIMessage(cachedText);
+      return streamTextResponse(cachedText, corsHeaders);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -606,8 +628,14 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
 
           if (response.ok) {
             console.log(`[soc-chat] ✅ ${provider.name} succeeded`);
-            // Cache the response in background for future offline use
-            cacheAIResponse(supabase, cacheKey, msgText, response.clone(), current_route).catch(() => {});
+            // Cache the response in background and also save to chat DB
+            const responseCloneForCache = response.clone();
+            const responseCloneForDB = response.clone();
+            cacheAIResponse(supabase, cacheKey, msgText, responseCloneForCache, current_route).catch(() => {});
+            // Save AI message to chat DB using service role (bypasses RLS)
+            if (chat_channel) {
+              saveAIResponseToDB(supabase, responseCloneForDB, chat_channel, reply_to_id).catch(() => {});
+            }
             return new Response(response.body, {
               headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
             });
@@ -639,6 +667,7 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
     // ALL LAYERS EXHAUSTED — Generate smart offline summary
     // ═══════════════════════════════════════════════════════════════
     const offlineFallback = generateOfflineSummary(incidents, openIncidents, dataSources, mitreCov, pendingApprovals);
+    await saveAIMessage(offlineFallback);
     return streamTextResponse(offlineFallback, corsHeaders);
 
   } catch (error) {
@@ -648,6 +677,54 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
     });
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// HELPER: Save AI streaming response to chat_messages table
+// Uses service role key — bypasses RLS
+// ═══════════════════════════════════════════════════════════════════════
+async function saveAIResponseToDB(supabase: any, response: Response, channel: string, reply_to_id: string | null) {
+  try {
+    const reader = response.body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let content = '';
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nlIdx: number;
+      while ((nlIdx = buffer.indexOf('\n')) !== -1) {
+        let line = buffer.slice(0, nlIdx);
+        buffer = buffer.slice(nlIdx + 1);
+        if (!line.startsWith('data: ')) continue;
+        const json = line.slice(6).trim();
+        if (json === '[DONE]') break;
+        try {
+          const p = JSON.parse(json);
+          const delta = p.choices?.[0]?.delta?.content;
+          if (delta) content += delta;
+        } catch {}
+      }
+    }
+    if (content.trim()) {
+      await supabase.from('chat_messages').insert({
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        sender_email: 'ai@socmind',
+        sender_name: 'SOCMind AI',
+        content: content.trim(),
+        mentions: [],
+        channel,
+        priority: 'normal',
+        reply_to_id: reply_to_id || null,
+        attachments: [],
+      });
+      console.log('[soc-chat] ✅ AI message saved to DB via service role');
+    }
+  } catch (e) {
+    console.error('[soc-chat] Failed to save AI response to DB:', e);
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 // HELPER: Stream plain text as SSE (for rule-based + offline fallback)
