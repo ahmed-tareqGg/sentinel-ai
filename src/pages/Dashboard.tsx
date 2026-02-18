@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { AlertTriangle, CheckCircle, Clock, Shield, TrendingDown, Activity, Zap, Target, Bot, Trophy, Globe, PieChart, ChevronRight, Flame, Sparkles } from 'lucide-react';
 import { AnalystLeaderboard } from '@/components/gamification/AnalystLeaderboard';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -148,17 +149,10 @@ export default function Dashboard() {
             <h2 className="text-sm font-semibold text-foreground">Platform Highlights</h2>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {FEATURE_CARDS.map((f, i) => (
-              <motion.div
-                key={f.label}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.07 }}
-              >
-                <Link
-                  to={f.path}
-                  className={`group flex flex-col gap-3 p-4 rounded-xl border bg-gradient-to-br ${f.gradient} ${f.border} hover:border-opacity-60 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg block`}
-                >
+            {FEATURE_CARDS.map((f, i) => {
+              const isAICopilot = f.label === 'AI Copilot';
+              const cardContent = (
+                <div className={`group flex flex-col gap-3 p-4 rounded-xl border bg-gradient-to-br ${f.gradient} ${f.border} hover:border-opacity-60 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg cursor-pointer`}>
                   <div className="flex items-center justify-between">
                     <div className={`p-2 rounded-lg ${f.iconBg} ${f.iconColor}`}>{f.icon}</div>
                     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${f.badgeColor}`}>{f.badge}</span>
@@ -171,9 +165,26 @@ export default function Dashboard() {
                     <span>Explore</span>
                     <ChevronRight className="h-3 w-3" />
                   </div>
-                </Link>
-              </motion.div>
-            ))}
+                </div>
+              );
+
+              return (
+                <motion.div
+                  key={f.label}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.07 }}
+                >
+                  {isAICopilot ? (
+                    <div onClick={() => window.dispatchEvent(new Event('open-soc-chat'))}>
+                      {cardContent}
+                    </div>
+                  ) : (
+                    <Link to={f.path}>{cardContent}</Link>
+                  )}
+                </motion.div>
+              );
+            })}
           </div>
         </div>
 
