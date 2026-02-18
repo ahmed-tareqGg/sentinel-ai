@@ -102,15 +102,44 @@ export default function Approvals() {
 
           const dataSourceId = dataSources?.[0]?.id ?? null;
 
+          // Fetch the incident to get the REAL attacker IP from raw_log
+          let realTarget = request.action_params?.ip || request.action_params?.user || request.action_params?.host || request.action_params?.target || 'unknown';
+          
+          if (request.incident_id) {
+            const { data: incidentData } = await supabase
+              .from('incidents')
+              .select('src_ip, raw_log')
+              .eq('id', request.incident_id)
+              .single();
+            
+            if (incidentData) {
+              // Try to extract real attacker IP from nested raw_log (not hostname)
+              const rawLog = incidentData.raw_log as any;
+              const nestedSrcIp = rawLog?.raw_log?.src_ip || rawLog?.srcIP;
+              const topSrcIp = incidentData.src_ip;
+              
+              // Use nested src_ip if available and looks like a real IP (not hostname)
+              const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+              if (nestedSrcIp && ipRegex.test(nestedSrcIp)) {
+                realTarget = nestedSrcIp;
+              } else if (topSrcIp && ipRegex.test(topSrcIp)) {
+                realTarget = topSrcIp;
+              }
+            }
+          }
+
           const actionId = `ACT-${Date.now().toString(36).toUpperCase()}`;
-          const target =
-            request.action_params?.ip ||
-            request.action_params?.user ||
-            request.action_params?.host ||
-            request.action_params?.target ||
-            'unknown';
+          const target = realTarget;
 
           // Create the soar_action — this is what the Executor polls for
+          // Enrich parameters with the resolved real IP
+          const enrichedParams = {
+            ...(request.action_params ?? {}),
+            ip: target,
+            host: target,
+            resolved_target: target,
+          };
+
           const { error: soarErr } = await supabase.from('soar_actions').insert({
             action_id: actionId,
             incident_id: request.incident_id,
@@ -118,7 +147,7 @@ export default function Approvals() {
             action_type: request.action_type,
             target,
             target_type: 'ip',
-            parameters: request.action_params ?? {},
+            parameters: enrichedParams,
             reason: request.reason || `Approved via Approval Workflow (${request.id.slice(0, 8)})`,
             status: 'approved',
             requested_by: userData?.user?.id ?? null,
