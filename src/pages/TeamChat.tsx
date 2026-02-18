@@ -464,13 +464,37 @@ export default function TeamChat() {
     setPendingFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const triggerAIReply = async (userMessageText: string, currentChannel: string) => {
+  const triggerAIReply = async (userMessageText: string, currentChannel: string, replyToMsgId?: string) => {
     setAiReplying(true);
+
+    // Insert a placeholder "typing" message that we'll update in-place via realtime
+    const placeholderId = `ai-typing-${Date.now()}`;
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const authToken = session?.access_token;
+
       // Strip mention tags for clean question to AI
-      const cleanQuestion = userMessageText.replace(/@\[SOCMind AI\]\(ai-bot\)/gi, '').replace(/@(AI|SOCMind)\b/gi, '').trim();
+      const cleanQuestion = userMessageText
+        .replace(/@\[SOCMind AI\]\(ai-bot\)/gi, '')
+        .replace(/@(AI|SOCMind)\b/gi, '')
+        .trim();
+
+      // Build conversation history from last 12 messages in this channel for context
+      const channelHistory = messages
+        .filter(m => m.channel === currentChannel)
+        .slice(-12)
+        .map(m => ({
+          role: m.sender_id === '00000000-0000-0000-0000-000000000000' ? 'assistant' : 'user',
+          content: m.content.replace(/@\[[^\]]+\]\([^)]+\)/g, '').trim(),
+        }))
+        .filter(m => m.content.length > 0);
+
+      // Ensure last message is the current user question
+      const aiMessages = [
+        ...channelHistory.slice(0, -1), // all except last (which is same as current msg)
+        { role: 'user', content: cleanQuestion || userMessageText },
+      ];
 
       const resp = await fetch(`${backendUrl}/functions/v1/soc-chat`, {
         method: 'POST',
@@ -479,39 +503,80 @@ export default function TeamChat() {
           'Authorization': `Bearer ${authToken || publishableKey}`,
         },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: cleanQuestion || userMessageText }],
+          messages: aiMessages,
           current_route: '/team-chat',
         }),
       });
 
-      if (!resp.ok || !resp.body) return;
+      if (!resp.ok || !resp.body) {
+        setAiReplying(false);
+        return;
+      }
+
+      // Insert streaming placeholder message into DB immediately so it appears
+      const { data: placeholderMsg } = await supabase.from('chat_messages').insert({
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        sender_email: 'ai@socmind',
+        sender_name: 'SOCMind AI',
+        content: '▌',
+        mentions: [],
+        channel: currentChannel,
+        priority: 'normal',
+        reply_to_id: replyToMsgId || null,
+        attachments: [],
+      } as any).select('id').single();
+
+      const streamMsgId = placeholderMsg?.id;
 
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
+      let textBuffer = '';
       let aiContent = '';
+      let updateTimer: ReturnType<typeof setTimeout> | null = null;
+
+      // Debounced DB update — update every 300ms to avoid flooding
+      const flushUpdate = async () => {
+        if (!streamMsgId || !aiContent) return;
+        await supabase.from('chat_messages')
+          .update({ content: aiContent + '▌' } as any)
+          .eq('id', streamMsgId);
+      };
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+        textBuffer += decoder.decode(value, { stream: true });
+
         let newlineIndex: number;
-        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-          let line = buffer.slice(0, newlineIndex);
-          buffer = buffer.slice(newlineIndex + 1);
+        while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
           if (line.endsWith('\r')) line = line.slice(0, -1);
-          if (!line.startsWith('data: ')) continue;
+          if (line.startsWith(':') || !line.startsWith('data: ')) continue;
           const jsonStr = line.slice(6).trim();
           if (jsonStr === '[DONE]') break;
           try {
             const parsed = JSON.parse(jsonStr);
             const content = parsed.choices?.[0]?.delta?.content;
-            if (content) aiContent += content;
-          } catch { /* ignore */ }
+            if (content) {
+              aiContent += content;
+              // Schedule debounced update
+              if (updateTimer) clearTimeout(updateTimer);
+              updateTimer = setTimeout(flushUpdate, 300);
+            }
+          } catch { /* ignore partial */ }
         }
       }
 
-      if (aiContent) {
+      // Cancel pending timer and do final update removing the cursor
+      if (updateTimer) clearTimeout(updateTimer);
+
+      if (streamMsgId && aiContent) {
+        await supabase.from('chat_messages')
+          .update({ content: aiContent } as any)
+          .eq('id', streamMsgId);
+      } else if (!streamMsgId && aiContent) {
+        // Fallback: insert fresh message
         await supabase.from('chat_messages').insert({
           sender_id: '00000000-0000-0000-0000-000000000000',
           sender_email: 'ai@socmind',
@@ -520,6 +585,7 @@ export default function TeamChat() {
           mentions: [],
           channel: currentChannel,
           priority: 'normal',
+          reply_to_id: replyToMsgId || null,
           attachments: [],
         } as any);
       }
@@ -550,7 +616,7 @@ export default function TeamChat() {
     const hasAIMention = containsAIMention(newMessage);
     const currentChannel = channel;
 
-    const { error } = await supabase.from('chat_messages').insert({
+    const { data: insertedMsg, error } = await supabase.from('chat_messages').insert({
       sender_id: user.id,
       sender_email: profile?.email || user.email,
       sender_name: senderDisplayName,
@@ -561,7 +627,7 @@ export default function TeamChat() {
       priority,
       reply_to_id: replyTo?.id || null,
       attachments: attachments.length > 0 ? attachments : [],
-    } as any);
+    } as any).select('id').single();
     if (error) {
       toast.error('Failed to send message');
     } else {
@@ -569,9 +635,9 @@ export default function TeamChat() {
       setPriority('normal');
       setReplyTo(null);
       setPendingFiles([]);
-      // Trigger AI reply if @AI was mentioned
+      // Trigger AI reply if @AI was mentioned — pass message ID as reply context
       if (hasAIMention && messageText) {
-        triggerAIReply(messageText, currentChannel);
+        triggerAIReply(messageText, currentChannel, insertedMsg?.id);
       }
     }
     setSending(false);
@@ -1052,7 +1118,18 @@ export default function TeamChat() {
                         </div>
                       ) : isAIBot ? (
                         <div className="prose prose-sm max-w-none text-foreground/90 text-sm [&>p]:mb-1.5 [&>ul]:mb-1.5 [&>ol]:mb-1.5 [&>h1]:text-base [&>h2]:text-sm [&>h3]:text-sm [&>code]:bg-secondary [&>code]:px-1 [&>code]:rounded [&>pre]:bg-secondary [&>pre]:p-2 [&>pre]:rounded-md [&>pre]:overflow-x-auto">
-                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                          {msg.content === '▌' ? (
+                            <div className="flex items-center gap-1.5 py-1">
+                              <span className="inline-flex gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce [animation-delay:0ms]" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce [animation-delay:150ms]" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce [animation-delay:300ms]" />
+                              </span>
+                              <span className="text-xs text-muted-foreground">SOCMind AI is thinking…</span>
+                            </div>
+                          ) : (
+                            <ReactMarkdown>{msg.content.replace(/▌$/, '')}</ReactMarkdown>
+                          )}
                         </div>
                       ) : (
                         <p className="text-sm text-foreground/90 break-words" dir="auto">{renderContent(msg.content)}</p>
