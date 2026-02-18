@@ -1022,9 +1022,10 @@ https://kglmzurhiiuhxmzykkqv.supabase.co/functions/v1/agent-gateway
 
               {/* Download Agents */}
               <Tabs defaultValue="basic" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="basic">Basic Agents</TabsTrigger>
                   <TabsTrigger value="universal">Universal Agent</TabsTrigger>
+                  <TabsTrigger value="executor">Executor</TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="basic" className="mt-3">
@@ -1246,6 +1247,112 @@ python3 agent.py configure
 python3 agent.py run            # Live mode
 python3 agent.py run --dry-run  # Simulation`}
                     </pre>
+                  </div>
+                </TabsContent>
+
+                {/* ── Executor Tab ── */}
+                <TabsContent value="executor" className="mt-3 space-y-3">
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                    <div className="flex items-center gap-3 mb-3">
+                      <Shield className="h-5 w-5 text-destructive" />
+                      <div>
+                        <p className="font-medium text-sm">SOCMind Executor v2.0.0</p>
+                        <p className="text-xs text-muted-foreground">SOAR Action Execution Engine — deploy on ONE secure host</p>
+                      </div>
+                    </div>
+
+                    {/* Warning */}
+                    <div className="rounded bg-yellow-500/10 border border-yellow-500/30 p-2 mb-3">
+                      <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" />
+                        Deploy ONLY on one privileged SOC jump server — NOT on endpoints
+                      </p>
+                    </div>
+
+                    {/* Download button */}
+                    <button
+                      onClick={() => handleAgentDownload('/agents/socmind-executor.py', 'socmind-executor.py')}
+                      className="w-full flex items-center justify-center gap-2 p-3 rounded-lg border border-destructive/50 hover:border-destructive hover:bg-destructive/10 transition-colors text-sm font-medium mb-3"
+                    >
+                      <Download className="h-4 w-4 text-destructive" />
+                      Download socmind-executor.py
+                    </button>
+
+                    {/* Supported Actions */}
+                    <div className="space-y-2 mb-3">
+                      <p className="text-xs font-medium text-muted-foreground">⚡ 24 Supported Actions</p>
+                      <div className="grid grid-cols-2 gap-1.5 text-xs">
+                        {[
+                          { category: "🌐 Network", actions: ["block_ip", "unblock_ip", "isolate_host", "unisolate_host", "flush_dns", "block_domain"] },
+                          { category: "⚙️ Process/Service", actions: ["kill_process", "suspend_process", "stop_service", "start_service", "restart_service"] },
+                          { category: "👤 User/Identity", actions: ["disable_user", "enable_user", "lock_user", "unlock_user", "reset_password", "force_logoff"] },
+                          { category: "📁 File/Forensics", actions: ["quarantine_file", "delete_file", "wipe_file", "collect_forensics", "dump_memory"] },
+                          { category: "🔔 Notifications", actions: ["notify_user", "send_alert"] },
+                          { category: "🔑 Credentials", actions: ["rotate_credentials", "revoke_token"] },
+                        ].map((group) => (
+                          <div key={group.category} className="rounded border border-border p-2">
+                            <p className="font-medium text-muted-foreground mb-1">{group.category}</p>
+                            <div className="space-y-0.5">
+                              {group.actions.map((a) => (
+                                <p key={a} className="text-muted-foreground font-mono">{a}</p>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Quick Start */}
+                    <div className="rounded-lg border border-border bg-secondary/30 p-3">
+                      <p className="text-xs font-medium mb-2">🚀 Quick Start:</p>
+                      <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground">
+{`# Install dependency
+pip install requests psutil
+
+# First-time setup (interactive)
+python3 socmind-executor.py configure
+
+# Start (REAL execution — requires root/admin)
+sudo python3 socmind-executor.py start
+
+# Safe simulation mode (no real changes)
+python3 socmind-executor.py dryrun
+
+# Test connectivity + poll once
+python3 socmind-executor.py test
+
+# View status + last 5 actions
+python3 socmind-executor.py status
+
+# Rollback last reversible action
+python3 socmind-executor.py rollback`}
+                      </pre>
+                    </div>
+
+                    {/* Architecture Note */}
+                    <div className="rounded-lg border border-border bg-secondary/20 p-3 mt-2">
+                      <p className="text-xs font-medium mb-1">🏗️ Architecture:</p>
+                      <pre className="bg-background p-2 rounded text-xs overflow-x-auto text-muted-foreground">
+{`┌─────────────────────────────────────────────────┐
+│           SOCMind Platform (Cloud)              │
+│  Approved Action → agent-gateway/poll-actions   │
+└─────────────────────┬───────────────────────────┘
+                      │ HTTPS poll every 5s
+                      ▼
+┌─────────────────────────────────────────────────┐
+│         SOCMind Executor (Jump Server)          │
+│  socmind-executor.py  ←  1 privileged host      │
+│  ├── block_ip / isolate_host (iptables/netsh)   │
+│  ├── kill_process / stop_service                │
+│  ├── lock_user / reset_password                 │
+│  ├── quarantine_file / collect_forensics        │
+│  └── Reports result → agent-gateway/report      │
+└─────────────────────────────────────────────────┘
+
+Collectors (endpoints) → send logs only
+Executor (jump server) → execute SOAR actions only`}
+                      </pre>
+                    </div>
                   </div>
                 </TabsContent>
               </Tabs>
