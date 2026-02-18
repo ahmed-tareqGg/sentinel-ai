@@ -1156,7 +1156,51 @@ serve(async (req) => {
           details: { action_type: updated.action_type, target: updated.target, result, error_message },
         });
 
-        console.log(`${newStatus === 'completed' ? '✅' : '❌'} Action ${updated.action_id} ${newStatus} on ${auth.dataSourceName}`);
+        // 🤖 Post notification to Team Chat (general channel)
+        const isSuccess = newStatus === 'completed';
+        const actionEmoji: Record<string, string> = {
+          isolate_host: '🔒',
+          block_ip: '🚫',
+          unblock_ip: '✅',
+          unisolate_host: '🔓',
+          kill_process: '⚡',
+          lock_user: '👤',
+          notify_user: '📢',
+          forensic_analysis: '🔬',
+          reset_credentials: '🔑',
+          delete_file: '🗑️',
+        };
+        const emoji = actionEmoji[updated.action_type] || '⚙️';
+        const statusEmoji = isSuccess ? '✅' : '❌';
+        const actionLabel = updated.action_type?.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) || updated.action_type;
+        const targetLabel = updated.target ? `**Target:** \`${updated.target}\`` : '';
+        const agentLabel = auth.dataSourceName ? `**Agent:** ${auth.dataSourceName}` : '';
+        const incidentLabel = updated.incident_id ? `**Incident:** linked` : '';
+        const resultDetails = isSuccess
+          ? (result?.details || 'Action executed successfully')
+          : (error_message || 'Action failed');
+
+        const chatMessage = [
+          `${statusEmoji} **SOAR Action ${isSuccess ? 'Completed' : 'Failed'}**`,
+          `${emoji} ${actionLabel}`,
+          targetLabel,
+          agentLabel,
+          incidentLabel,
+          `**Result:** ${resultDetails}`,
+          isSuccess && rollback_available ? `_Rollback available if needed_` : '',
+        ].filter(Boolean).join('\n');
+
+        await supabase.from('chat_messages').insert({
+          sender_id: '00000000-0000-0000-0000-000000000000',
+          sender_email: 'ai@socmind',
+          sender_name: 'SOCMind Bot',
+          channel: 'general',
+          content: chatMessage,
+          incident_id: updated.incident_id || null,
+          priority: isSuccess ? 'normal' : 'high',
+        });
+
+        console.log(`${isSuccess ? '✅' : '❌'} Action ${updated.action_id} ${newStatus} on ${auth.dataSourceName}`);
 
         return new Response(JSON.stringify({ success: true, action: updated }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
