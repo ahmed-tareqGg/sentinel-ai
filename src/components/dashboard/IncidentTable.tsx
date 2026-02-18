@@ -129,8 +129,8 @@ export function IncidentTable({ incidents, limit, selectable, selectedIds, onSel
                   </Badge>
                 </td>
                 <td className="px-4 py-3">
-                  <Badge variant="outline" className={cn(classificationColors[incident.classification])}>
-                    {incident.classification}
+                  <Badge variant="outline" className={cn(classificationColors[incident.classification ?? 'Pending'])}>
+                    {incident.classification || 'Pending'}
                   </Badge>
                 </td>
                 <td className="px-4 py-3">
