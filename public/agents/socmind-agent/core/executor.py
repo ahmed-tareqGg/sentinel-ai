@@ -76,7 +76,7 @@ class ActionExecutor:
         try:
             resp = requests.post(
                 f"{self.api_endpoint}/poll-actions",
-                json={},
+                json={"role": "executor"},
                 headers={
                     "Content-Type": "application/json",
                     "X-Agent-Key": self.api_key,
