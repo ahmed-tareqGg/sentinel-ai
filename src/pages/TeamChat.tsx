@@ -300,11 +300,17 @@ export default function TeamChat() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   };
 
+  const isValidUUID = (str: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
   const extractMentions = (text: string): string[] => {
     const mentionRegex = /@\[([^\]]+)\]\(([^)]+)\)/g;
     const ids: string[] = [];
     let match;
-    while ((match = mentionRegex.exec(text)) !== null) ids.push(match[2]);
+    while ((match = mentionRegex.exec(text)) !== null) {
+      // Only include valid UUIDs — skip ai-bot and other pseudo-ids
+      if (isValidUUID(match[2])) ids.push(match[2]);
+    }
     return ids;
   };
 
