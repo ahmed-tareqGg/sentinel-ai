@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { LiveThreatFeed } from '@/components/dashboard/LiveThreatFeed';
+import { AIAutoTriage } from '@/components/incidents/AIAutoTriage';
 import {
   Shield,
   Search,
@@ -23,6 +25,8 @@ import {
   Users,
   Database,
   Crosshair,
+  Radio,
+  Bot,
 } from 'lucide-react';
 import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
@@ -313,10 +317,16 @@ export default function ThreatIntel() {
 
         {/* Tabs */}
         <Tabs defaultValue="iocs">
-          <TabsList>
-            <TabsTrigger value="iocs">IOC Database</TabsTrigger>
-            <TabsTrigger value="actors">Threat Actors</TabsTrigger>
-            <TabsTrigger value="enrichments">Enrichment Log</TabsTrigger>
+          <TabsList className="flex-wrap h-auto gap-1">
+            <TabsTrigger value="iocs" className="text-xs">IOC Database</TabsTrigger>
+            <TabsTrigger value="actors" className="text-xs">Threat Actors</TabsTrigger>
+            <TabsTrigger value="enrichments" className="text-xs">Enrichment Log</TabsTrigger>
+            <TabsTrigger value="live-feed" className="text-xs gap-1.5">
+              <Radio className="h-3 w-3 text-destructive" /> Live Feed
+            </TabsTrigger>
+            <TabsTrigger value="auto-triage" className="text-xs gap-1.5">
+              <Bot className="h-3 w-3 text-primary" /> AI Auto-Triage
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="iocs" className="mt-4">
@@ -425,8 +435,12 @@ export default function ThreatIntel() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="enrichments" className="mt-4">
-            <EnrichmentLogTab />
+          <TabsContent value="live-feed" className="mt-4">
+            <LiveThreatFeed />
+          </TabsContent>
+
+          <TabsContent value="auto-triage" className="mt-4">
+            <AIAutoTriage />
           </TabsContent>
         </Tabs>
       </div>

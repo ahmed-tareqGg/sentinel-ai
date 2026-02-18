@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Download, Plus, RefreshCw, Shield, XCircle, ArrowUpCircle, CheckCircle2, MoreVertical } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileImportDialog } from '@/components/incidents/FileImportDialog';
+import { SmartFilters, IncidentFilters } from '@/components/incidents/SmartFilters';
 import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
 
@@ -21,6 +22,10 @@ export default function Incidents() {
   const [searchParams] = useSearchParams();
   const searchQuery = searchParams.get('search') || '';
   const [filter, setFilter] = useState<string>('all');
+  const [smartFilters, setSmartFilters] = useState<IncidentFilters>({
+    status: 'all', severity: 'all', riskLevel: 'all', classification: 'all',
+    eventType: 'all', dateRange: 'all', assignedTo: 'all',
+  });
   const { incidents, loading, refetch } = useIncidents();
   const { role, isDemoUser, canModifyData } = useAuth();
   const canModifyIncidents = canModifyData && role && ['soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'ciso', 'admin'].includes(role);
@@ -52,7 +57,7 @@ export default function Incidents() {
     mitreTactic: '',
   });
 
-  // Apply search filter first, then status filter
+  // Apply search filter first, then status filter, then smart filters
   const searchFiltered = searchQuery
     ? incidents.filter(i => 
         i.incident_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -64,9 +69,31 @@ export default function Incidents() {
       )
     : incidents;
 
-  const filteredIncidents = filter === 'all' 
-    ? searchFiltered 
-    : searchFiltered.filter(i => i.status.toLowerCase().replace(' ', '-') === filter);
+  const smartFiltered = useMemo(() => {
+    return searchFiltered.filter(i => {
+      if (smartFilters.riskLevel !== 'all' && i.risk_level !== smartFilters.riskLevel) return false;
+      if (smartFilters.classification !== 'all' && i.classification !== smartFilters.classification) return false;
+      if (smartFilters.eventType !== 'all' && !i.event_type.toLowerCase().includes(smartFilters.eventType.toLowerCase())) return false;
+      if (smartFilters.severity !== 'all') {
+        const sev = i.severity || 0;
+        if (smartFilters.severity === 'critical' && sev < 9) return false;
+        if (smartFilters.severity === 'high' && (sev < 7 || sev > 8)) return false;
+        if (smartFilters.severity === 'medium' && (sev < 4 || sev > 6)) return false;
+        if (smartFilters.severity === 'low' && sev > 3) return false;
+      }
+      if (smartFilters.dateRange !== 'all') {
+        const created = new Date(i.created_at).getTime();
+        const now = Date.now();
+        const ms = { today: 86400000, '7d': 604800000, '30d': 2592000000, '90d': 7776000000 }[smartFilters.dateRange];
+        if (ms && (now - created) > ms) return false;
+      }
+      return true;
+    });
+  }, [searchFiltered, smartFilters]);
+
+  const filteredIncidents = filter === 'all'
+    ? smartFiltered
+    : smartFiltered.filter(i => i.status.toLowerCase().replace(' ', '-') === filter);
 
   const filters = [
     { key: 'all', label: 'All', count: incidents.length },
@@ -275,6 +302,13 @@ export default function Incidents() {
 
           {canModifyIncidents && <FileImportDialog onSuccess={refetch} />}
         </div>
+
+        {/* Row 2: Smart Filters */}
+        <SmartFilters
+          filters={smartFilters}
+          onChange={setSmartFilters}
+          activeCount={Object.values(smartFilters).filter(v => v !== 'all' && v !== '').length}
+        />
       </div>
 
       {/* Create Incident Dialog */}
