@@ -110,8 +110,18 @@ serve(async (req) => {
 
     const analysis = await analyzeResp.json();
 
+    // Normalize classification to allowed DB values
+    const rawClassification = analysis?.classification ?? 'Pending';
+    const allowedClassifications = ['True Positive', 'False Positive', 'Benign', 'Suspicious', 'Pending'];
+    const normalizedClassification = allowedClassifications.includes(rawClassification)
+      ? rawClassification
+      : 'Suspicious';
+
+    // Normalize status to allowed DB values
+    const allowedStatuses = ['new', 'assigned', 'in_progress', 'escalated', 'resolved', 'closed'];
+
     const updatePayload = {
-      classification: analysis?.classification ?? 'Pending',
+      classification: normalizedClassification,
       confidence: analysis?.confidence ?? 0,
       risk_level: analysis?.risk_level ?? 'Low',
       ai_analysis: analysis?.ai_analysis ?? null,
