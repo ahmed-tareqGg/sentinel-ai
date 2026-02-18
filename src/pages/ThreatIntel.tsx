@@ -435,6 +435,10 @@ export default function ThreatIntel() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="enrichments" className="mt-4">
+            <EnrichmentLogTab />
+          </TabsContent>
+
           <TabsContent value="live-feed" className="mt-4">
             <LiveThreatFeed />
           </TabsContent>
