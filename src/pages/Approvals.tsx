@@ -88,30 +88,60 @@ export default function Approvals() {
 
       if (error) throw error;
 
-      // Step 2: If approved, dispatch to agent via execute-playbook AND create soar_action
+      // Step 2: If approved, create a soar_action so the Executor agent can pick it up
       if (approved) {
         try {
-          // Execute playbook action (dispatches to agent)
-          await supabase.functions.invoke('execute-playbook', {
-            body: {
-              incident_id: request.incident_id,
-              specific_action: {
-                type: request.action_type,
-                params: request.action_params,
-              },
-              approval_id: request.id,
-            },
+          const { data: userData } = await supabase.auth.getUser();
+
+          // Find the agent's data_source_id (the executor agent linked to this incident)
+          const { data: dataSources } = await supabase
+            .from('data_sources')
+            .select('id')
+            .eq('status', 'active')
+            .limit(1);
+
+          const dataSourceId = dataSources?.[0]?.id ?? null;
+
+          const actionId = `ACT-${Date.now().toString(36).toUpperCase()}`;
+          const target =
+            request.action_params?.ip ||
+            request.action_params?.user ||
+            request.action_params?.host ||
+            request.action_params?.target ||
+            'unknown';
+
+          // Create the soar_action — this is what the Executor polls for
+          const { error: soarErr } = await supabase.from('soar_actions').insert({
+            action_id: actionId,
+            incident_id: request.incident_id,
+            data_source_id: dataSourceId,
+            action_type: request.action_type,
+            target,
+            target_type: 'ip',
+            parameters: request.action_params ?? {},
+            reason: request.reason || `Approved via Approval Workflow (${request.id.slice(0, 8)})`,
+            status: 'approved',
+            requested_by: userData?.user?.id ?? null,
+            approved_by: userData?.user?.id ?? null,
+            approved_at: new Date().toISOString(),
+            execution_mode: 'real',
+            requires_approval: false,
           });
 
-          // Log execution in timeline
-          await supabase.from('incident_timeline').insert({
-            incident_id: request.incident_id,
-            stage: `Action Executed: ${request.action_type.replace(/_/g, ' ')}`,
-            details: `Approved and dispatched to agent. Approval ID: ${request.id.slice(0, 8)}`,
-          });
+          if (soarErr) {
+            console.error('Failed to create soar_action:', soarErr);
+            toast.error('Approved but failed to dispatch to agent.');
+          } else {
+            // Log execution in timeline
+            await supabase.from('incident_timeline').insert({
+              incident_id: request.incident_id,
+              stage: `Action Dispatched to Agent: ${request.action_type.replace(/_/g, ' ')}`,
+              details: `Action ID: ${actionId} — Agent will pick up and execute within poll interval`,
+            });
+          }
         } catch (execErr) {
           console.error('Execution after approval failed:', execErr);
-          toast.error('Approved but execution failed. Check logs.');
+          toast.error('Approved but dispatch failed. Check logs.');
         }
       }
 
