@@ -26,6 +26,7 @@ import { EvidenceManager } from '@/components/incidents/EvidenceManager';
 import { AIReportGenerator } from '@/components/incidents/AIReportGenerator';
 import { RootCauseAnalysis } from '@/components/incidents/RootCauseAnalysis';
 import { CorrelatedLogs } from '@/components/incidents/CorrelatedLogs';
+import { AIIncidentTimeline } from '@/components/incidents/AIIncidentTimeline';
 
 interface TimelineEntry {
   id: string;
@@ -785,6 +786,7 @@ export default function IncidentDetail() {
         </TabsList>
 
         <TabsContent value="analysis" className="space-y-6">
+          <AIIncidentTimeline incidentId={incident.id} incident={incident} />
           <RootCauseAnalysis incidentId={incident.id} />
           {incident.evidence && incident.evidence.length > 0 && (
             <div className="rounded-xl border border-border bg-card p-5">
