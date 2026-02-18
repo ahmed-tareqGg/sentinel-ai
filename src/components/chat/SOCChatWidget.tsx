@@ -59,6 +59,13 @@ export function SOCChatWidget() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Listen for external open events (e.g. from Dashboard AI Copilot card)
+  useEffect(() => {
+    const handler = () => setIsOpen(true);
+    window.addEventListener('open-soc-chat', handler);
+    return () => window.removeEventListener('open-soc-chat', handler);
+  }, []);
+
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
 
