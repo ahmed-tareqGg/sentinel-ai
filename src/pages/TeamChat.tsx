@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
 import { supabase } from '@/integrations/backend/client';
+import { backendUrl, publishableKey } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield, Pencil, ArrowLeft, Lock, Plus, LogIn, PanelLeftClose, PanelLeftOpen, Paperclip, Image, FileText, Download } from 'lucide-react';
+import { Send, Hash, AtSign, AlertTriangle, Loader2, Edit2, Trash2, X, Check, Pin, Flag, Reply, CornerDownRight, Shield, Pencil, ArrowLeft, Lock, Plus, LogIn, PanelLeftClose, PanelLeftOpen, Paperclip, Image, FileText, Download, Bot } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -120,6 +122,7 @@ export default function TeamChat() {
   const [channel, setChannel] = useState('general');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [aiReplying, setAiReplying] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [userRoles, setUserRoles] = useState<Map<string, string>>(new Map());
   const [showMentions, setShowMentions] = useState(false);
@@ -141,6 +144,10 @@ export default function TeamChat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { signalTyping, stopTyping } = useTypingBroadcast(channel);
+
+  // Detect @AI mention in message text
+  const containsAIMention = (text: string) =>
+    /@(AI|SOCMind|ai|socmind)\b/.test(text) || /@\[SOCMind AI\]\(ai-bot\)/.test(text);
 
   // Private channels state
   const [privateChannels, setPrivateChannels] = useState<PrivateChannel[]>([]);
@@ -306,11 +313,17 @@ export default function TeamChat() {
     return match ? match[2] : null;
   };
 
-  const filteredUsers = users.filter(u => {
-    if (!mentionFilter) return true;
-    const name = (u.display_name || u.full_name || u.email || '').toLowerCase();
-    return name.includes(mentionFilter.toLowerCase()) || u.email.toLowerCase().includes(mentionFilter.toLowerCase());
-  }).slice(0, 6);
+  // AI bot pseudo-user always shown first when filter matches
+  const AI_BOT = { id: 'ai-bot', email: 'ai@socmind', full_name: 'SOCMind AI', display_name: 'SOCMind AI', avatar_url: null };
+  const filteredUsers = (() => {
+    const aiMatches = !mentionFilter || 'socmind ai'.includes(mentionFilter.toLowerCase()) || 'ai'.startsWith(mentionFilter.toLowerCase());
+    const realUsers = users.filter(u => {
+      if (!mentionFilter) return true;
+      const name = (u.display_name || u.full_name || u.email || '').toLowerCase();
+      return name.includes(mentionFilter.toLowerCase()) || u.email.toLowerCase().includes(mentionFilter.toLowerCase());
+    }).slice(0, 5);
+    return aiMatches ? [AI_BOT as UserProfile, ...realUsers] : realUsers;
+  })();
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -361,7 +374,7 @@ export default function TeamChat() {
     const textBefore = newMessage.slice(0, cursorPos);
     const textAfter = newMessage.slice(cursorPos);
     const beforeAt = textBefore.replace(/@\w*$/, '');
-    const displayName = u.full_name || u.email.split('@')[0];
+    const displayName = u.id === 'ai-bot' ? 'SOCMind AI' : (u.full_name || u.email.split('@')[0]);
     const mentionTag = `@[${displayName}](${u.id})`;
     setNewMessage(beforeAt + mentionTag + ' ' + textAfter);
     setShowMentions(false);
@@ -445,6 +458,72 @@ export default function TeamChat() {
     setPendingFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  const triggerAIReply = async (userMessageText: string, currentChannel: string) => {
+    setAiReplying(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const authToken = session?.access_token;
+      // Strip mention tags for clean question to AI
+      const cleanQuestion = userMessageText.replace(/@\[SOCMind AI\]\(ai-bot\)/gi, '').replace(/@(AI|SOCMind)\b/gi, '').trim();
+
+      const resp = await fetch(`${backendUrl}/functions/v1/soc-chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken || publishableKey}`,
+        },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: cleanQuestion || userMessageText }],
+          current_route: '/team-chat',
+        }),
+      });
+
+      if (!resp.ok || !resp.body) return;
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let aiContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex: number;
+        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+          let line = buffer.slice(0, newlineIndex);
+          buffer = buffer.slice(newlineIndex + 1);
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          if (!line.startsWith('data: ')) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === '[DONE]') break;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) aiContent += content;
+          } catch { /* ignore */ }
+        }
+      }
+
+      if (aiContent) {
+        await supabase.from('chat_messages').insert({
+          sender_id: '00000000-0000-0000-0000-000000000000',
+          sender_email: 'ai@socmind',
+          sender_name: 'SOCMind AI',
+          content: aiContent,
+          mentions: [],
+          channel: currentChannel,
+          priority: 'normal',
+          attachments: [],
+        } as any);
+      }
+    } catch (e) {
+      console.error('AI reply error:', e);
+    } finally {
+      setAiReplying(false);
+    }
+  };
+
   const sendMessage = async () => {
     if (isDemoUser) { toast.error('Locked in Demo Mode'); return; }
     if ((!newMessage.trim() && pendingFiles.length === 0) || !user) return;
@@ -461,11 +540,15 @@ export default function TeamChat() {
     const incidentId = extractIncidentId(newMessage);
     const myProfile = users.find(u => u.id === user.id);
     const senderDisplayName = myProfile?.display_name || profile?.full_name || profile?.email?.split('@')[0];
+    const messageText = newMessage.trim() || (attachments.length > 0 ? `📎 ${attachments.length} file(s)` : '');
+    const hasAIMention = containsAIMention(newMessage);
+    const currentChannel = channel;
+
     const { error } = await supabase.from('chat_messages').insert({
       sender_id: user.id,
       sender_email: profile?.email || user.email,
       sender_name: senderDisplayName,
-      content: newMessage.trim() || (attachments.length > 0 ? `📎 ${attachments.length} file(s)` : ''),
+      content: messageText,
       mentions,
       incident_id: incidentId,
       channel,
@@ -480,6 +563,10 @@ export default function TeamChat() {
       setPriority('normal');
       setReplyTo(null);
       setPendingFiles([]);
+      // Trigger AI reply if @AI was mentioned
+      if (hasAIMention && messageText) {
+        triggerAIReply(messageText, currentChannel);
+      }
     }
     setSending(false);
     setUploading(false);
@@ -854,6 +941,7 @@ export default function TeamChat() {
             ) : (
               displayMessages.map((msg) => {
                 const isOwn = msg.sender_id === user?.id;
+                const isAIBot = msg.sender_email === 'ai@socmind';
                 const isMentioned = user && msg.mentions?.includes(user.id);
                 const isUrgent = msg.priority === 'urgent' || msg.priority === 'critical';
                 const nameInfo = getSenderDisplayName(msg.sender_id, msg.sender_name, msg.sender_email);
@@ -863,20 +951,27 @@ export default function TeamChat() {
                     key={msg.id}
                     className={cn(
                       'group flex gap-3 rounded-lg px-3 py-2 transition-colors',
-                      isMentioned && 'bg-primary/5 border border-primary/20',
-                      isUrgent && !isMentioned && 'border border-destructive/20 bg-destructive/5',
-                      msg.is_pinned && !isMentioned && !isUrgent && 'border border-yellow-500/20 bg-yellow-500/5',
-                      !isMentioned && !isUrgent && !msg.is_pinned && 'hover:bg-secondary/30'
+                      isAIBot && 'bg-primary/5 border border-primary/20',
+                      isMentioned && !isAIBot && 'bg-primary/5 border border-primary/20',
+                      isUrgent && !isMentioned && !isAIBot && 'border border-destructive/20 bg-destructive/5',
+                      msg.is_pinned && !isMentioned && !isUrgent && !isAIBot && 'border border-yellow-500/20 bg-yellow-500/5',
+                      !isMentioned && !isUrgent && !msg.is_pinned && !isAIBot && 'hover:bg-secondary/30'
                     )}
                   >
-                    <Avatar className="h-8 w-8 shrink-0 mt-0.5">
-                      {users.find(u => u.id === msg.sender_id)?.avatar_url && (
-                        <AvatarImage src={users.find(u => u.id === msg.sender_id)!.avatar_url!} className="object-cover" />
-                      )}
-                      <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                        {getInitials(nameInfo.displayName, msg.sender_email)}
-                      </AvatarFallback>
-                    </Avatar>
+                    {isAIBot ? (
+                      <div className="h-8 w-8 shrink-0 mt-0.5 rounded-full bg-primary/20 flex items-center justify-center">
+                        <Bot className="h-4 w-4 text-primary" />
+                      </div>
+                    ) : (
+                      <Avatar className="h-8 w-8 shrink-0 mt-0.5">
+                        {users.find(u => u.id === msg.sender_id)?.avatar_url && (
+                          <AvatarImage src={users.find(u => u.id === msg.sender_id)!.avatar_url!} className="object-cover" />
+                        )}
+                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                          {getInitials(nameInfo.displayName, msg.sender_email)}
+                        </AvatarFallback>
+                      </Avatar>
+                    )}
                     <div className="flex-1 min-w-0">
                       {/* Reply quote */}
                       {msg.reply_to_id && (() => {
@@ -894,7 +989,12 @@ export default function TeamChat() {
                         );
                       })()}
                       <div className="flex items-center gap-2 flex-wrap">
-                        {myRoleLevel > (ROLE_HIERARCHY[getSenderRole(msg.sender_id) || ''] || 0) && msg.sender_id !== user?.id ? (
+                        {isAIBot ? (
+                          <>
+                            <span className="text-sm font-semibold text-primary">SOCMind AI</span>
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-primary/20 text-primary border-primary/30">AI Bot</Badge>
+                          </>
+                        ) : myRoleLevel > (ROLE_HIERARCHY[getSenderRole(msg.sender_id) || ''] || 0) && msg.sender_id !== user?.id ? (
                           <Link to={`/profile/${msg.sender_id}`} className="text-sm font-semibold text-foreground hover:text-primary hover:underline transition-colors">
                             {nameInfo.displayName}
                           </Link>
@@ -903,10 +1003,10 @@ export default function TeamChat() {
                             {nameInfo.displayName}
                           </span>
                         )}
-                        {nameInfo.showRealName && nameInfo.realName !== nameInfo.displayName && (
+                        {!isAIBot && nameInfo.showRealName && nameInfo.realName !== nameInfo.displayName && (
                           <span className="text-[10px] text-muted-foreground">({nameInfo.realName})</span>
                         )}
-                        {senderRole && (
+                        {!isAIBot && senderRole && (
                           <Badge variant="outline" className={cn('text-[9px] px-1.5 py-0', ROLE_BADGE_COLORS[senderRole] || 'bg-muted text-muted-foreground')}>
                             {ROLE_LABELS[senderRole] || senderRole}
                           </Badge>
@@ -923,7 +1023,7 @@ export default function TeamChat() {
                         {msg.priority === 'critical' && (
                           <Badge variant="outline" className="text-[9px] px-1 py-0 border-red-500/30 text-red-400">🚨 Critical</Badge>
                         )}
-                        {isMentioned && (
+                        {isMentioned && !isAIBot && (
                           <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-primary/20 text-primary">mentioned you</Badge>
                         )}
                       </div>
@@ -943,6 +1043,10 @@ export default function TeamChat() {
                           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingId(null)}>
                             <X className="h-3.5 w-3.5" />
                           </Button>
+                        </div>
+                      ) : isAIBot ? (
+                        <div className="prose prose-sm max-w-none text-foreground/90 text-sm [&>p]:mb-1.5 [&>ul]:mb-1.5 [&>ol]:mb-1.5 [&>h1]:text-base [&>h2]:text-sm [&>h3]:text-sm [&>code]:bg-secondary [&>code]:px-1 [&>code]:rounded [&>pre]:bg-secondary [&>pre]:p-2 [&>pre]:rounded-md [&>pre]:overflow-x-auto">
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
                         </div>
                       ) : (
                         <p className="text-sm text-foreground/90 break-words" dir="auto">{renderContent(msg.content)}</p>
@@ -1024,7 +1128,20 @@ export default function TeamChat() {
           {/* Typing indicator */}
           <TypingIndicator channel={channel} />
 
-          {/* Input area */}
+          {/* AI thinking indicator */}
+          {aiReplying && (
+            <div className="px-5 pb-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                <Bot className="h-3.5 w-3.5 text-primary" />
+              </div>
+              <span className="text-primary font-medium">SOCMind AI</span>
+              <span className="flex gap-0.5">
+                <span className="animate-bounce" style={{ animationDelay: '0ms' }}>·</span>
+                <span className="animate-bounce" style={{ animationDelay: '150ms' }}>·</span>
+                <span className="animate-bounce" style={{ animationDelay: '300ms' }}>·</span>
+              </span>
+            </div>
+          )}
           <div className="border-t border-border/50 shrink-0 relative">
             {/* Reply preview */}
             {replyTo && (
@@ -1047,6 +1164,7 @@ export default function TeamChat() {
                   <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Mention User</span>
                 </div>
                 {filteredUsers.map((u, idx) => {
+                  const isAI = u.id === 'ai-bot';
                   const uRole = userRoles.get(u.id);
                   return (
                     <button
@@ -1057,21 +1175,29 @@ export default function TeamChat() {
                         idx === mentionIndex && 'bg-secondary/60'
                       )}
                     >
-                      <Avatar className="h-6 w-6">
-                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                          {getInitials(u.display_name || u.full_name, u.email)}
-                        </AvatarFallback>
-                      </Avatar>
+                      {isAI ? (
+                        <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                          <Bot className="h-3.5 w-3.5 text-primary" />
+                        </div>
+                      ) : (
+                        <Avatar className="h-6 w-6 shrink-0">
+                          <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                            {getInitials(u.display_name || u.full_name, u.email)}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
                       <div className="text-left flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="font-medium text-foreground">{u.display_name || u.full_name || u.email.split('@')[0]}</p>
-                          {uRole && (
+                          {isAI ? (
+                            <Badge variant="outline" className="text-[8px] px-1 py-0 bg-primary/20 text-primary border-primary/30">AI Bot</Badge>
+                          ) : uRole && (
                             <Badge variant="outline" className={cn('text-[8px] px-1 py-0', ROLE_BADGE_COLORS[uRole] || '')}>
                               {ROLE_LABELS[uRole] || uRole}
                             </Badge>
                           )}
                         </div>
-                        <p className="text-[10px] text-muted-foreground">{u.email}</p>
+                        <p className="text-[10px] text-muted-foreground">{isAI ? 'Ask the AI anything' : u.email}</p>
                       </div>
                     </button>
                   );
