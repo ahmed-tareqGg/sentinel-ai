@@ -3,10 +3,11 @@ import { AnimatedPage, AnimatedCard, AnimatedSection } from '@/components/ui/ani
 import { useIncidents } from '@/hooks/useIncidents';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { AnalystLeaderboard } from '@/components/gamification/AnalystLeaderboard';
-import { Shield, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Clock, Target, Activity, BarChart3, PieChart } from 'lucide-react';
+import { Shield, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Clock, Target, Activity, BarChart3, PieChart, DollarSign, Flame, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, RadialBarChart, RadialBar, Legend } from 'recharts';
+import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, RadialBarChart, RadialBar, Legend, LineChart, Line } from 'recharts';
 import { motion } from 'framer-motion';
+import { Badge } from '@/components/ui/badge';
 
 function KPICard({ title, value, subtitle, trend, icon, color }: { title: string; value: string | number; subtitle?: string; trend?: { value: number; up: boolean }; icon: React.ReactNode; color: string }) {
   return (
@@ -56,6 +57,23 @@ export default function ExecutiveDashboard() {
   ];
   const overallReadiness = Math.round(readinessFactors.reduce((s, f) => s + f.value, 0) / readinessFactors.length);
 
+  // Financial risk estimate: $50K per critical, $15K per high, $5K per medium
+  const financialRisk = metrics.criticalIncidents * 50000 + metrics.highIncidents * 15000 +
+    incidents.filter(i => i.risk_level === 'Medium').length * 5000;
+
+  const formatMoney = (n: number) =>
+    n >= 1000000 ? `$${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `$${(n / 1000).toFixed(0)}K` : `$${n}`;
+
+  // Top threat types
+  const threatTypes = incidents.reduce<Record<string, number>>((acc, i) => {
+    acc[i.event_type] = (acc[i.event_type] || 0) + 1;
+    return acc;
+  }, {});
+  const topThreats = Object.entries(threatTypes)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([name, count]) => ({ name, count }));
+
   return (
     <AppLayout title="Executive Dashboard" subtitle="Strategic overview for leadership">
       <AnimatedPage>
@@ -72,6 +90,53 @@ export default function ExecutiveDashboard() {
           </AnimatedCard>
           <AnimatedCard index={3}>
             <KPICard title="SOC Readiness" value={`${overallReadiness}%`} subtitle="Overall security posture" icon={<Shield className="h-5 w-5 text-emerald-400" />} color="bg-emerald-500/20" trend={{ value: 5, up: overallReadiness >= 50 }} />
+          </AnimatedCard>
+        </div>
+
+        {/* Financial Risk + SLA + Open */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <AnimatedCard index={4}>
+            <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Estimated Financial Risk</p>
+                  <p className="mt-2 text-3xl font-black text-destructive tabular-nums">{formatMoney(financialRisk)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Based on incident severity distribution</p>
+                </div>
+                <div className="p-3 rounded-xl bg-destructive/20"><DollarSign className="h-5 w-5 text-destructive" /></div>
+              </div>
+            </div>
+          </AnimatedCard>
+          <AnimatedCard index={5}>
+            <div className="rounded-xl border border-warning/20 bg-warning/5 p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">SLA Compliance</p>
+                  <p className="mt-2 text-3xl font-black text-foreground tabular-nums">{metrics.slaCompliance}%</p>
+                  <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
+                    <motion.div
+                      className="h-full rounded-full bg-warning"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${metrics.slaCompliance}%` }}
+                      transition={{ duration: 1.2 }}
+                    />
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-warning/20"><Lock className="h-5 w-5 text-warning" /></div>
+              </div>
+            </div>
+          </AnimatedCard>
+          <AnimatedCard index={6}>
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Open Incidents</p>
+                  <p className="mt-2 text-3xl font-black text-primary tabular-nums">{metrics.openIncidents}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{metrics.criticalIncidents} critical need immediate action</p>
+                </div>
+                <div className="p-3 rounded-xl bg-primary/20"><Flame className="h-5 w-5 text-primary" /></div>
+              </div>
+            </div>
           </AnimatedCard>
         </div>
 
@@ -92,20 +157,22 @@ export default function ExecutiveDashboard() {
               </ResponsiveContainer>
             </div>
 
-            {/* Status Breakdown */}
+            {/* Top Threat Types */}
             <div className="rounded-xl border border-border bg-card p-5">
-              <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><BarChart3 className="h-4 w-4 text-muted-foreground" /> Incident Status</h3>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={statusData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }} />
-                  <YAxis dataKey="name" type="category" width={80} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }} />
-                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' }} />
-                  <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                    {statusData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><Flame className="h-4 w-4 text-muted-foreground" /> Top Threat Types</h3>
+              {topThreats.length === 0 ? (
+                <div className="flex items-center justify-center h-[200px] text-muted-foreground text-sm">No data</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={topThreats} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis type="number" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }} />
+                    <YAxis dataKey="name" type="category" width={90} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} />
+                    <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' }} />
+                    <Bar dataKey="count" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             {/* Readiness Gauge */}
