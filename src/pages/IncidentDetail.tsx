@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket, Clock, CheckCheck } from 'lucide-react';
+import { ArrowLeft, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket, Clock, CheckCheck, Swords } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -640,6 +640,15 @@ export default function IncidentDetail() {
           <Button variant="outline" size="sm" onClick={exportIncident}>
             <Download className="h-4 w-4 mr-2" />
             Export
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={() => navigate(`/war-room/${incident.id}`)}
+            className="bg-destructive/90 hover:bg-destructive text-destructive-foreground border-0 gap-2 font-semibold shadow-lg"
+          >
+            <Swords className="h-4 w-4" />
+            ⚔️ Open War Room
           </Button>
         </div>
       </div>
