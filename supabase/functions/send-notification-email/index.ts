@@ -21,6 +21,15 @@ serve(async (req) => {
   }
 
   try {
+    // Auth: service role only (called internally by DB triggers/other functions)
+    const authHeader = req.headers.get('Authorization');
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    if (authHeader !== `Bearer ${serviceKey}`) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     const payload: EmailPayload = await req.json();
     const { to, subject, body, severity, link, type } = payload;
 

@@ -388,12 +388,18 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get authenticated user
+    // Auth: require authenticated user with SOC role
     let currentUserId: string | null = null;
     let currentUserEmail: string | null = null;
     let currentUserRole: string | null = null;
     const authHeader = req.headers.get('Authorization');
-    if (authHeader?.startsWith('Bearer ')) {
+    
+    // Allow service role calls
+    if (authHeader === `Bearer ${supabaseKey}`) {
+      currentUserId = 'system';
+      currentUserEmail = 'system@socmind.com';
+      currentUserRole = 'admin';
+    } else if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.slice(7);
       const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
       if (token !== anonKey) {
@@ -404,11 +410,16 @@ serve(async (req) => {
         if (user) {
           currentUserId = user.id;
           currentUserEmail = user.email || null;
-          // Fetch role
           const { data: roleData } = await supabase.from('user_roles').select('role').eq('user_id', user.id).single();
           if (roleData) currentUserRole = roleData.role;
         }
       }
+    }
+    
+    if (!currentUserId) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     const { messages, current_route, chat_channel, reply_to_id } = await req.json();

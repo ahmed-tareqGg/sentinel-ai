@@ -20,6 +20,26 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const GEMINI_API_KEY = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+
+    // Auth: service role or authenticated user with SOC role
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader !== `Bearer ${supabaseKey}`) {
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+      const authClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
+      const { data: { user }, error: authError } = await authClient.auth.getUser();
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const { data: roleData } = await authClient.from('user_roles').select('role').eq('user_id', user.id).single();
+      const allowedRoles = ['admin', 'soc_analyst', 'soc_tier_1', 'soc_tier_2', 'soc_tier_3', 'soc_manager', 'grc_engineer', 'ciso'];
+      if (!roleData || !allowedRoles.includes(roleData.role)) {
+        return new Response(JSON.stringify({ error: 'Insufficient permissions' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { incident_id, analyze_patterns } = await req.json() as RecommendationRequest;
