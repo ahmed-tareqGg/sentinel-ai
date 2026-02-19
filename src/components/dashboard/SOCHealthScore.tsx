@@ -23,36 +23,51 @@ export function SOCHealthScore({
   mttd, mttr, slaCompliance, falsePositiveRate, automationRate, openIncidents, criticalIncidents,
 }: SOCHealthScoreProps) {
   const { overallScore, metrics, grade, gradeColor } = useMemo(() => {
+    // Helper: treat 0 as "no data" → neutral good score
+    const mttdScore = mttd === 0 ? 90 : mttd <= 1 ? 100 : mttd <= 5 ? 85 : mttd <= 15 ? 60 : 30;
+    const mttdStatus: 'good' | 'warning' | 'critical' = mttd === 0 ? 'good' : mttd <= 5 ? 'good' : mttd <= 15 ? 'warning' : 'critical';
+
+    const mttrScore = mttr === 0 ? 90 : mttr <= 10 ? 100 : mttr <= 30 ? 80 : mttr <= 60 ? 55 : 25;
+    const mttrStatus: 'good' | 'warning' | 'critical' = mttr === 0 ? 'good' : mttr <= 30 ? 'good' : mttr <= 60 ? 'warning' : 'critical';
+
+    // SLA: if 0 incidents resolved yet → treat as neutral 85
+    const slaScore = openIncidents === 0 && slaCompliance === 0 ? 85 : slaCompliance;
+    const slaStatus: 'good' | 'warning' | 'critical' = slaScore >= 90 ? 'good' : slaScore >= 70 ? 'warning' : 'critical';
+
+    // False positive rate: if no classified incidents → treat as good
+    const fpScore = falsePositiveRate === 0 && automationRate === 0 ? 85 : Math.max(0, 100 - falsePositiveRate * 2);
+    const fpStatus: 'good' | 'warning' | 'critical' = falsePositiveRate <= 20 ? 'good' : falsePositiveRate <= 40 ? 'warning' : 'critical';
+
     const metrics: HealthMetric[] = [
       {
         label: 'Detection Speed',
-        score: mttd <= 1 ? 100 : mttd <= 5 ? 85 : mttd <= 15 ? 60 : 30,
+        score: mttdScore,
         weight: 0.2,
-        status: mttd <= 5 ? 'good' : mttd <= 15 ? 'warning' : 'critical',
+        status: mttdStatus,
       },
       {
         label: 'Response Time',
-        score: mttr <= 10 ? 100 : mttr <= 30 ? 80 : mttr <= 60 ? 55 : 25,
+        score: mttrScore,
         weight: 0.2,
-        status: mttr <= 30 ? 'good' : mttr <= 60 ? 'warning' : 'critical',
+        status: mttrStatus,
       },
       {
         label: 'SLA Compliance',
-        score: slaCompliance,
+        score: slaScore,
         weight: 0.2,
-        status: slaCompliance >= 90 ? 'good' : slaCompliance >= 70 ? 'warning' : 'critical',
+        status: slaStatus,
       },
       {
         label: 'AI Accuracy',
-        score: Math.max(0, 100 - falsePositiveRate * 2),
+        score: fpScore,
         weight: 0.15,
-        status: falsePositiveRate <= 20 ? 'good' : falsePositiveRate <= 40 ? 'warning' : 'critical',
+        status: fpStatus,
       },
       {
         label: 'Automation',
-        score: automationRate,
+        score: automationRate === 0 ? 80 : automationRate,
         weight: 0.15,
-        status: automationRate >= 70 ? 'good' : automationRate >= 40 ? 'warning' : 'critical',
+        status: automationRate === 0 ? 'good' : automationRate >= 70 ? 'good' : automationRate >= 40 ? 'warning' : 'critical',
       },
       {
         label: 'Threat Posture',
