@@ -8,7 +8,7 @@ import { ClassificationChart } from '@/components/dashboard/ClassificationChart'
 import { TrendChart } from '@/components/dashboard/TrendChart';
 import { MitreChart } from '@/components/dashboard/MitreChart';
 import { MitreHeatmap } from '@/components/dashboard/MitreHeatmap';
-import { ParticleBackground } from '@/components/dashboard/ParticleBackground';
+
 import { ThreatMap } from '@/components/dashboard/ThreatMap';
 import { SOCHealthScore } from '@/components/dashboard/SOCHealthScore';
 import { AIThreatBriefing } from '@/components/dashboard/AIThreatBriefing';
@@ -101,7 +101,6 @@ export default function Dashboard() {
 
         {/* SOC Metrics Row with Particle Background */}
         <div className="relative mb-4" data-tour="soc-metrics">
-          <ParticleBackground />
           <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <AnimatedCard index={0}>
               <StatCard
