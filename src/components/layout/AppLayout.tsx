@@ -17,9 +17,6 @@ interface AppLayoutProps {
 export function AppLayout({ children, title, subtitle }: AppLayoutProps) {
   return (
     <div className="relative min-h-screen bg-background flex flex-col overflow-hidden">
-      {/* Lightweight CSS-only background — no WebGL overhead */}
-      <div className="fixed inset-0 pointer-events-none z-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_0%,hsl(var(--primary)/0.07)_0%,transparent_70%)]" />
-      <div className="fixed inset-0 pointer-events-none z-0 bg-grid opacity-25" />
 
       {/* Content layer */}
       <div className="relative z-10 flex flex-col flex-1">
