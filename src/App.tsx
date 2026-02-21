@@ -9,6 +9,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { CommandPalette } from "./components/CommandPalette";
 import { PageLoadingSkeleton } from "@/components/ui/page-loading-skeleton";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // Lazy load all pages
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -44,18 +45,28 @@ const AttackSimulator = lazy(() => import("./pages/AttackSimulator"));
 const ExecutiveDashboard = lazy(() => import("./pages/ExecutiveDashboard"));
 const AgentPlatform = lazy(() => import("./pages/AgentPlatform"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
-          <CommandPalette />
-          <Suspense fallback={<PageLoadingSkeleton />}>
-            <Routes>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AuthProvider>
+            <CommandPalette />
+            <Suspense fallback={<PageLoadingSkeleton />}>
+              <Routes>
               {/* Public Routes with PublicLayout */}
               <Route element={<PublicLayout />}>
                 <Route path="/" element={<Landing />} />
@@ -99,13 +110,14 @@ const App = () => (
               <Route path="/admin/cloud" element={<ProtectedRoute requiredRole="ciso"><CloudAdmin /></ProtectedRoute>} />
               
               {/* Fallback */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;

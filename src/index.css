@@ -183,18 +183,14 @@
     animation: glow 2s ease-in-out infinite alternate;
   }
 
-  /* Glass card — used on top of the 3D background */
+  /* Glass card — solid for performance */
   .glass {
-    background: hsl(var(--card) / 0.75);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: hsl(var(--card));
     border: 1px solid hsl(var(--border) / 0.6);
   }
 
   .glass-strong {
-    background: hsl(var(--card) / 0.88);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    background: hsl(var(--card));
     border: 1px solid hsl(var(--primary) / 0.15);
   }
 
