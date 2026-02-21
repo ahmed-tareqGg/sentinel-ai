@@ -275,7 +275,7 @@ export function AppNavbar() {
                 {isOpen && (
                   <>
                     <div className="absolute top-full left-0 w-full h-2" />
-                    <div className="absolute top-full left-0 z-50 mt-1.5 min-w-[190px] rounded-xl border border-border/60 bg-popover/98 backdrop-blur-sm p-1.5 shadow-lg shadow-black/10 animate-in fade-in-0 zoom-in-95 slide-in-from-top-1">
+                    <div className="absolute top-full left-0 z-50 mt-1.5 min-w-[190px] rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg shadow-black/10 animate-in fade-in-0 zoom-in-95 slide-in-from-top-1">
                       {visibleItems.map((item) => {
                         const isActive = location.pathname === item.path;
                         return (
