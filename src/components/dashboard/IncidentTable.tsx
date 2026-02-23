@@ -5,9 +5,11 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { RelatedIncidentsBadge } from '@/components/incidents/RelatedIncidentsBadge';
 
 interface IncidentTableProps {
   incidents: Incident[];
+  allIncidents?: Incident[];
   limit?: number;
   selectable?: boolean;
   selectedIds?: Set<string>;
@@ -34,9 +36,10 @@ const classificationColors: Record<string, string> = {
   'Pending': 'bg-muted text-muted-foreground border-border',
 };
 
-export function IncidentTable({ incidents, limit, selectable, selectedIds, onSelectionChange }: IncidentTableProps) {
+export function IncidentTable({ incidents, allIncidents, limit, selectable, selectedIds, onSelectionChange }: IncidentTableProps) {
   const navigate = useNavigate();
   const displayedIncidents = limit ? incidents.slice(0, limit) : incidents;
+  const relatedPool = allIncidents || incidents;
 
   const allSelected = displayedIncidents.length > 0 && selectedIds && displayedIncidents.every(i => selectedIds.has(i.id));
   const someSelected = selectedIds && displayedIncidents.some(i => selectedIds.has(i.id)) && !allSelected;
@@ -89,6 +92,7 @@ export function IncidentTable({ incidents, limit, selectable, selectedIds, onSel
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Classification</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Confidence</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Related</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Action</th>
             </tr>
           </thead>
@@ -151,6 +155,9 @@ export function IncidentTable({ incidents, limit, selectable, selectedIds, onSel
                   ) : (
                     <span className="text-sm text-muted-foreground">—</span>
                   )}
+                </td>
+                <td className="px-4 py-3">
+                  <RelatedIncidentsBadge incident={incident} allIncidents={relatedPool} />
                 </td>
                 <td className="px-4 py-3">
                   <Badge variant="outline" className={cn(statusColors[incident.status])}>

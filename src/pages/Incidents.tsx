@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Download, Plus, RefreshCw, Shield, XCircle, ArrowUpCircle, CheckCircle2, MoreVertical } from 'lucide-react';
+import { Download, Plus, RefreshCw, Shield, XCircle, ArrowUpCircle, CheckCircle2, MoreVertical, UserCheck, Tag } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { IncidentTable } from '@/components/dashboard/IncidentTable';
 import { useIncidents } from '@/hooks/useIncidents';
@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileImportDialog } from '@/components/incidents/FileImportDialog';
 import { SmartFilters, IncidentFilters } from '@/components/incidents/SmartFilters';
+import { SmartAssignButton } from '@/components/incidents/SmartAssignButton';
 import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
 
@@ -195,7 +196,7 @@ export default function Incidents() {
     }
   };
 
-  const handleBulkAction = async (action: 'close' | 'escalate' | 'resolve') => {
+  const handleBulkAction = async (action: 'close' | 'escalate' | 'resolve' | 'assign_me' | 'false_positive') => {
     if (selectedIds.size === 0) return;
     setBulkProcessing(true);
     try {
@@ -209,6 +210,17 @@ export default function Incidents() {
       } else if (action === 'resolve') {
         updates.status = 'Resolved';
         updates.resolved_at = new Date().toISOString();
+      } else if (action === 'assign_me') {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Not authenticated');
+        updates.incident_owner_id = user.id;
+        updates.status = 'Assigned';
+        updates.assigned_at = new Date().toISOString();
+      } else if (action === 'false_positive') {
+        updates.classification = 'False Positive';
+        updates.status = 'Closed';
+        updates.closed_at = new Date().toISOString();
+        updates.closed_reason = 'Bulk marked as False Positive';
       }
 
       const { error } = await supabase
@@ -218,7 +230,11 @@ export default function Incidents() {
 
       if (error) throw error;
 
-      toast.success(`✅ ${selectedIds.size} incidents ${action === 'close' ? 'closed' : action === 'escalate' ? 'escalated' : 'resolved'}`);
+      const labels: Record<string, string> = {
+        close: 'closed', escalate: 'escalated', resolve: 'resolved',
+        assign_me: 'assigned to you', false_positive: 'marked as False Positive',
+      };
+      toast.success(`✅ ${selectedIds.size} incident${selectedIds.size > 1 ? 's' : ''} ${labels[action]}`);
       setSelectedIds(new Set());
       refetch();
     } catch (err: any) {
@@ -498,17 +514,28 @@ export default function Incidents() {
         <div data-tour="incidents-table">
           {/* Bulk Action Bar */}
           {selectedIds.size > 0 && (
-            <div className="mb-4 flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
+            <div className="mb-4 flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex-wrap">
               <span className="text-sm font-medium text-primary">{selectedIds.size} selected</span>
               <div className="h-4 w-px bg-border" />
-              <Button size="sm" variant="outline" disabled={bulkProcessing} onClick={() => handleBulkAction('close')}>
-                <XCircle className="h-4 w-4 mr-1" /> Close
+              <Button size="sm" variant="outline" disabled={bulkProcessing} onClick={() => handleBulkAction('assign_me')} className="gap-1">
+                <UserCheck className="h-4 w-4" /> Assign to me
               </Button>
-              <Button size="sm" variant="outline" disabled={bulkProcessing} onClick={() => handleBulkAction('escalate')}>
-                <ArrowUpCircle className="h-4 w-4 mr-1" /> Escalate
+              <SmartAssignButton
+                incidentIds={Array.from(selectedIds)}
+                onSuccess={() => { setSelectedIds(new Set()); refetch(); }}
+                disabled={bulkProcessing}
+              />
+              <Button size="sm" variant="outline" disabled={bulkProcessing} onClick={() => handleBulkAction('escalate')} className="gap-1">
+                <ArrowUpCircle className="h-4 w-4" /> Escalate
               </Button>
-              <Button size="sm" variant="outline" disabled={bulkProcessing} onClick={() => handleBulkAction('resolve')}>
-                <CheckCircle2 className="h-4 w-4 mr-1" /> Resolve
+              <Button size="sm" variant="outline" disabled={bulkProcessing} onClick={() => handleBulkAction('resolve')} className="gap-1">
+                <CheckCircle2 className="h-4 w-4" /> Resolve
+              </Button>
+              <Button size="sm" variant="outline" disabled={bulkProcessing} onClick={() => handleBulkAction('false_positive')} className="gap-1 text-muted-foreground">
+                <Tag className="h-4 w-4" /> False Positive
+              </Button>
+              <Button size="sm" variant="outline" disabled={bulkProcessing} onClick={() => handleBulkAction('close')} className="gap-1 text-muted-foreground">
+                <XCircle className="h-4 w-4" /> Close
               </Button>
               <div className="ml-auto">
                 <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear</Button>
@@ -517,6 +544,7 @@ export default function Incidents() {
           )}
           <IncidentTable
             incidents={filteredIncidents}
+            allIncidents={incidents}
             selectable={!!canModifyIncidents}
             selectedIds={selectedIds}
             onSelectionChange={setSelectedIds}
