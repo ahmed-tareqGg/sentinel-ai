@@ -14,6 +14,7 @@ import { SOCHealthScore } from '@/components/dashboard/SOCHealthScore';
 import { AIThreatBriefing } from '@/components/dashboard/AIThreatBriefing';
 import { NaturalLanguageSearch } from '@/components/dashboard/NaturalLanguageSearch';
 import { TrendPredictions } from '@/components/dashboard/TrendPredictions';
+import { LiveActivityFeed } from '@/components/dashboard/LiveActivityFeed';
 import { useIncidents } from '@/hooks/useIncidents';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { Link } from 'react-router-dom';
@@ -242,6 +243,13 @@ export default function Dashboard() {
             <div className="lg:col-span-2">
               <ThreatMap incidents={incidents} />
             </div>
+          </div>
+        </AnimatedSection>
+
+        {/* Live Activity Feed */}
+        <AnimatedSection>
+          <div className="mb-6">
+            <LiveActivityFeed />
           </div>
         </AnimatedSection>
 
