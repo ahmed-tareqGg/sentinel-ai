@@ -834,7 +834,7 @@ function Invoke-Configure {
     Write-Host "============================================" -ForegroundColor Cyan
     Write-Host ""
     $existing = Read-Config
-    $apiEndpoint = Read-Host "API Endpoint"
+    $apiEndpoint = Read-Host "API Endpoint (https://...supabase.co/functions/v1)"
     if ([string]::IsNullOrWhiteSpace($apiEndpoint) -and $existing) { $apiEndpoint = $existing["api_endpoint"] }
     $apiKey = Read-Host "API Key (socm_...)"
     if ([string]::IsNullOrWhiteSpace($apiKey) -and $existing) { $apiKey = $existing["api_key"] }
@@ -842,6 +842,21 @@ function Invoke-Configure {
     if ([string]::IsNullOrWhiteSpace($licenseKey) -and $existing) { $licenseKey = $existing["license_key"] }
     if ([string]::IsNullOrWhiteSpace($apiEndpoint) -or [string]::IsNullOrWhiteSpace($apiKey) -or [string]::IsNullOrWhiteSpace($licenseKey)) {
         Write-Host "[FATAL] All fields are required!" -ForegroundColor Red; return
+    }
+
+    # Auto-detect swapped Endpoint / API Key
+    if ($apiEndpoint -match '^socm_' -and $apiKey -match '^https?://') {
+        Write-Host "[WARN] Detected swapped Endpoint and API Key — auto-correcting..." -ForegroundColor Yellow
+        $tmp = $apiEndpoint; $apiEndpoint = $apiKey; $apiKey = $tmp
+    }
+
+    # Validate endpoint format
+    if ($apiEndpoint -notmatch '^https?://') {
+        Write-Host "[FATAL] API Endpoint must start with https:// (you may have pasted the API Key here)" -ForegroundColor Red; return
+    }
+    # Validate API key format
+    if ($apiKey -notmatch '^socm_') {
+        Write-Host "[WARN] API Key should start with 'socm_' — double-check your input" -ForegroundColor Yellow
     }
     Write-Config -ApiKey $apiKey -ApiEndpoint $apiEndpoint -LicenseKey $licenseKey -Mode "executor"
     Write-Host "[INFO] Validating license..." -ForegroundColor Cyan
