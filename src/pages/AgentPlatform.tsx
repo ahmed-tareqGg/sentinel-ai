@@ -128,8 +128,6 @@ const MODULE_INFO = [
   },
 ];
 
-const AGENT_PASSWORD = '1592002Aa?';
-
 export default function AgentPlatform() {
   const { isManager, isCISO, isAdmin } = useAuth();
   const canManage = isManager || isCISO || isAdmin;
@@ -138,6 +136,7 @@ export default function AgentPlatform() {
   const [downloadPwdDialog, setDownloadPwdDialog] = useState(false);
   const [downloadPwd, setDownloadPwd] = useState('');
   const [pendingDownload, setPendingDownload] = useState({ url: '', name: '' });
+  const [isVerifying, setIsVerifying] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
   // Fetch agents
@@ -164,8 +163,18 @@ export default function AgentPlatform() {
     setDownloadPwdDialog(true);
   };
 
-  const confirmDownload = () => {
-    if (downloadPwd === AGENT_PASSWORD) {
+  const confirmDownload = async () => {
+    setIsVerifying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('authorize-agent-download', {
+        body: { password: downloadPwd },
+      });
+
+      if (error || !data?.authorized) {
+        toast.error(data?.error || 'Incorrect password');
+        return;
+      }
+
       const link = document.createElement('a');
       link.href = pendingDownload.url;
       link.download = pendingDownload.name;
@@ -174,8 +183,10 @@ export default function AgentPlatform() {
       document.body.removeChild(link);
       setDownloadPwdDialog(false);
       toast.success(`Downloading ${pendingDownload.name}`);
-    } else {
-      toast.error('Incorrect password');
+    } catch {
+      toast.error('Verification failed');
+    } finally {
+      setIsVerifying(false);
     }
   };
 
