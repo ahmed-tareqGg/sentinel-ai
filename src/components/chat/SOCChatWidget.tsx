@@ -63,9 +63,24 @@ export function SOCChatWidget() {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [loadingConvos, setLoadingConvos] = useState(true);
+  const [historySearch, setHistorySearch] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Context-aware prompts based on current route
+  const quickPrompts = useMemo(() => {
+    const path = location.pathname;
+    // Check for incident detail page
+    if (path.match(/^\/incidents\/[^/]+$/)) {
+      return ['Summarize this incident', 'Suggest a playbook', 'Root cause analysis?', 'Related threats'];
+    }
+    // Check for exact or prefix match
+    for (const [route, prompts] of Object.entries(CONTEXT_PROMPTS)) {
+      if (path === route || path.startsWith(route + '/')) return prompts;
+    }
+    return DEFAULT_PROMPTS;
+  }, [location.pathname]);
 
   // Listen for external open events (e.g. from Dashboard AI Copilot card)
   useEffect(() => {
