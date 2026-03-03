@@ -44,6 +44,7 @@ const WarRoom = lazy(() => import("./pages/WarRoom"));
 const AttackSimulator = lazy(() => import("./pages/AttackSimulator"));
 const ExecutiveDashboard = lazy(() => import("./pages/ExecutiveDashboard"));
 const AgentPlatform = lazy(() => import("./pages/AgentPlatform"));
+const SOARActions = lazy(() => import("./pages/SOARActions"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
