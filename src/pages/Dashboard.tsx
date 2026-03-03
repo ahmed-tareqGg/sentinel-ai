@@ -10,6 +10,9 @@ import { MitreChart } from '@/components/dashboard/MitreChart';
 import { MitreHeatmap } from '@/components/dashboard/MitreHeatmap';
 
 import { ThreatMap } from '@/components/dashboard/ThreatMap';
+import { TopAttackers } from '@/components/dashboard/TopAttackers';
+import { RiskScoreGauge } from '@/components/dashboard/RiskScoreGauge';
+import { IncidentHeatmap } from '@/components/dashboard/IncidentHeatmap';
 import { SOCHealthScore } from '@/components/dashboard/SOCHealthScore';
 import { AIThreatBriefing } from '@/components/dashboard/AIThreatBriefing';
 import { NaturalLanguageSearch } from '@/components/dashboard/NaturalLanguageSearch';
