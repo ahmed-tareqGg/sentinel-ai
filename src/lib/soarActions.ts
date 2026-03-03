@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
+import { validateSOARTarget, isValidIP } from '@/lib/validators';
 
 export type ActionType = 
   | 'isolate_host' 
@@ -94,6 +95,11 @@ export async function executeRecommendedAction({ action, incidentId, targetIp, t
 // Specific action handlers — all route through the approval workflow
 export const soarActions = {
   isolateHost: async (incidentId: string, hostIp: string) => {
+    const check = validateSOARTarget('isolate_host', hostIp);
+    if (!check.valid) {
+      toast.error(check.error);
+      return { success: false, error: check.error };
+    }
     toast.info('🔒 Submitting host isolation for approval...', { duration: 2000 });
     const result = await createApprovalRequest(
       'isolate_host',
@@ -110,6 +116,11 @@ export const soarActions = {
   },
 
   blockIp: async (incidentId: string, ip: string) => {
+    const check = validateSOARTarget('block_ip', ip);
+    if (!check.valid) {
+      toast.error(check.error);
+      return { success: false, error: check.error };
+    }
     toast.info('🚫 Submitting IP block for approval...', { duration: 2000 });
     const result = await createApprovalRequest(
       'block_ip',
@@ -173,6 +184,11 @@ export const soarActions = {
   },
 
   geoBlockIp: async (incidentId: string, ip: string) => {
+    const check = validateSOARTarget('geo_block', ip);
+    if (!check.valid) {
+      toast.error(check.error);
+      return { success: false, error: check.error };
+    }
     toast.info('🌍 Submitting geo-block for approval...', { duration: 2000 });
     const result = await createApprovalRequest(
       'geo_block',

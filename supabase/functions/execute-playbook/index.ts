@@ -313,7 +313,8 @@ async function executeAction(
     case 'block_ip':
       // Fallback: log to soar_actions when no agent available
       const ipToBlock = (incident.src_ip || action.params?.ip) as string;
-      if (ipToBlock) {
+      const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+      if (ipToBlock && (ipv4Regex.test(ipToBlock) || ipToBlock.includes(':'))) {
         await supabase.from('soar_actions').insert({
           incident_id: incident.id,
           action_type: 'block_ip',
@@ -330,6 +331,10 @@ async function executeAction(
         results.ip = ipToBlock;
         results.status = 'logged';
         results.note = 'No active agent found - action logged for manual execution';
+      } else if (ipToBlock) {
+        console.error(`❌ Invalid IP target for block_ip: "${ipToBlock}"`);
+        results.status = 'skipped';
+        results.reason = `Invalid IP address format: ${ipToBlock}`;
       }
       break;
 
@@ -357,7 +362,8 @@ async function executeAction(
 
     case 'isolate_host':
       const hostToIsolate = (incident.src_ip || action.params?.host) as string;
-      if (hostToIsolate) {
+      const hostIsValid = hostToIsolate && (ipv4Regex.test(hostToIsolate) || hostToIsolate.includes(':') || /^[a-zA-Z0-9\-\.]+$/.test(hostToIsolate));
+      if (hostIsValid) {
         await supabase.from('soar_actions').insert({
           incident_id: incident.id,
           action_type: 'isolate_host',
@@ -372,6 +378,10 @@ async function executeAction(
         });
         results.host = hostToIsolate;
         results.status = 'logged';
+      } else if (hostToIsolate) {
+        console.error(`❌ Invalid target for isolate_host: "${hostToIsolate}"`);
+        results.status = 'skipped';
+        results.reason = `Invalid target format: ${hostToIsolate}`;
       }
       break;
 
