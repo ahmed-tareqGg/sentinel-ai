@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket, Clock, CheckCheck, Swords, Zap, Lock, Ban, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket, Clock, CheckCheck, Swords, Zap, Lock, Ban, RefreshCw, Sparkles } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
