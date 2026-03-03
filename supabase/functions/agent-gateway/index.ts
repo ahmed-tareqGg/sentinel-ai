@@ -817,6 +817,66 @@ serve(async (req) => {
         });
       }
 
+      // === TARGET VALIDATION ===
+      const ipActions = ['block_ip', 'unblock_ip', 'geo_block', 'isolate_host', 'unisolate_host'];
+      if (ipActions.includes(action_type)) {
+        const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+        const ipv6Regex = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
+        const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
+        const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/;
+
+        let resolvedTarget = target?.trim();
+
+        if (!resolvedTarget) {
+          return new Response(JSON.stringify({ error: `Target is required for ${action_type}` }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const isIP = ipv4Regex.test(resolvedTarget) || ipv6Regex.test(resolvedTarget) || cidrRegex.test(resolvedTarget);
+        const isHostname = hostnameRegex.test(resolvedTarget) && !isIP;
+
+        if (!isIP && !isHostname) {
+          console.error(`❌ Invalid target for ${action_type}: "${resolvedTarget}"`);
+          return new Response(JSON.stringify({
+            error: `Invalid target "${resolvedTarget}" for ${action_type}. Must be a valid IP address or hostname.`,
+          }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // If hostname, try to resolve to IP via DNS
+        if (isHostname) {
+          try {
+            const records = await Deno.resolveDns(resolvedTarget, 'A');
+            if (records && records.length > 0) {
+              console.log(`🔍 DNS resolved ${resolvedTarget} → ${records[0]}`);
+              // Keep original hostname in parameters, use resolved IP as target
+              body.parameters = { ...(parameters || {}), original_hostname: resolvedTarget };
+              resolvedTarget = records[0];
+            }
+          } catch (dnsErr) {
+            console.warn(`⚠️ DNS resolution failed for ${resolvedTarget}: ${dnsErr}`);
+            // Allow through — agent may handle it
+          }
+        }
+
+        // Validate IPv4 octets
+        if (ipv4Regex.test(resolvedTarget)) {
+          const valid = resolvedTarget.split('.').every((o: string) => {
+            const n = parseInt(o, 10);
+            return n >= 0 && n <= 255;
+          });
+          if (!valid) {
+            return new Response(JSON.stringify({ error: `Invalid IP address: ${resolvedTarget}` }), {
+              status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        }
+
+        body.target = resolvedTarget;
+      }
+
       // High-risk actions require approval
       const highRiskActions = ['block_ip', 'disable_user', 'isolate_host', 'kill_process', 'quarantine_file', 'delete_file'];
       const needsApproval = requires_approval ?? highRiskActions.includes(action_type);
