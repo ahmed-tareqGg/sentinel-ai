@@ -494,7 +494,7 @@ export function SOCChatWidget() {
                   <p className="text-xs text-muted-foreground mt-1">Ask me anything about incidents, compliance, threats & more</p>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
-                  {QUICK_PROMPTS.map((prompt, i) => (
+                  {quickPrompts.map((prompt, i) => (
                     <button
                       key={i}
                       onClick={() => sendMessage(prompt)}
