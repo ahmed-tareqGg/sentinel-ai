@@ -95,6 +95,11 @@ export async function executeRecommendedAction({ action, incidentId, targetIp, t
 // Specific action handlers — all route through the approval workflow
 export const soarActions = {
   isolateHost: async (incidentId: string, hostIp: string) => {
+    const check = validateSOARTarget('isolate_host', hostIp);
+    if (!check.valid) {
+      toast.error(check.error);
+      return { success: false, error: check.error };
+    }
     toast.info('🔒 Submitting host isolation for approval...', { duration: 2000 });
     const result = await createApprovalRequest(
       'isolate_host',
