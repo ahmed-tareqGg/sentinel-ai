@@ -175,9 +175,9 @@ export function generateDemoGuidePDF() {
   y = 200;
   const stats = [
     ['98%', 'MTTR Reduction'],
-    ['92%', 'FP Elimination'],
+    ['6+', 'AI Models'],
     ['< 1 min', 'Detection Time'],
-    ['100%', 'Audit Coverage'],
+    ['Real-Time', 'SOAR Engine'],
   ];
   const cardW = 36;
   const gap = 6;
