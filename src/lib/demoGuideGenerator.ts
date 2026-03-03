@@ -626,10 +626,14 @@ export function generateDemoGuidePDF() {
     'Authentication — JWT-based auth with role-based access control and session management',
   ]);
 
-  y = subHeader(pdf, y, 'AI Models', C.purple);
+  y = subHeader(pdf, y, 'Multi-Model AI Orchestration', C.purple);
   y = bulletList(pdf, y, [
-    'Google Gemini 2.5 Flash — Primary AI engine for threat classification and report generation',
-    'Multi-Model Reasoning — Evaluates multiple classification hypotheses with confidence scoring',
+    'Smart AI Router — Intent-based routing across 6+ AI models with automatic fallback',
+    'GPT-5 / GPT-5 Mini / GPT-5 Nano — Complex reasoning, balanced performance, high-speed tasks',
+    'Gemini 2.5 Pro / Flash / Flash Lite — Multimodal analysis, SOC queries, classification',
+    'Gemini 3 Pro / Flash Preview — Next-generation models for advanced reasoning',
+    'Rule Engine + Cache Layers — Instant responses for known queries, 50% AI call reduction',
+    'Quality Guard — Automatic escalation to stronger model if response confidence is low',
     'Continuous Learning — Analyst feedback loop improves AI accuracy over time',
   ]);
 
