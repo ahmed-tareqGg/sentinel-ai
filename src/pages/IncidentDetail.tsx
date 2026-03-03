@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket, Clock, CheckCheck, Swords, Zap, Lock, Ban, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Shield, AlertTriangle, CheckCircle, XCircle, ExternalLink, Play, Filter, Download, Loader2, FileText, Ticket, Clock, CheckCheck, Swords, Zap, Lock, Ban, RefreshCw, Sparkles } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/backend/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -60,6 +60,8 @@ export default function IncidentDetail() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [executingAction, setExecutingAction] = useState<string | null>(null);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [generatingAiSummary, setGeneratingAiSummary] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [creatingTicket, setCreatingTicket] = useState(false);
   const [jiraTicketUrl, setJiraTicketUrl] = useState<string | null>(null);
@@ -644,6 +646,66 @@ export default function IncidentDetail() {
           </Button>
 
           <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              if (!incident) return;
+              setGeneratingAiSummary(true);
+              try {
+                const { data: { session } } = await supabase.auth.getSession();
+                const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/soc-chat`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+                  },
+                  body: JSON.stringify({
+                    messages: [{
+                      role: 'user',
+                      content: `Provide a concise executive summary of incident ${incident.incident_number}. Event: ${incident.event_type}, Severity: ${incident.severity}, Risk: ${incident.risk_level}, Classification: ${incident.classification}, Status: ${incident.status}, Source: ${incident.src_ip || 'N/A'}, Dest: ${incident.dst_ip || 'N/A'}, MITRE: ${incident.mitre_technique || 'N/A'}. Message: ${incident.message || 'N/A'}. Include key findings, impact assessment, and recommended next steps.`
+                    }],
+                    current_route: `/incidents/${incident.id}`,
+                  }),
+                });
+                if (!resp.ok || !resp.body) throw new Error('Failed');
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let result = '';
+                let buffer = '';
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  buffer += decoder.decode(value, { stream: true });
+                  let idx: number;
+                  while ((idx = buffer.indexOf('\n')) !== -1) {
+                    let line = buffer.slice(0, idx);
+                    buffer = buffer.slice(idx + 1);
+                    if (line.endsWith('\r')) line = line.slice(0, -1);
+                    if (!line.startsWith('data: ')) continue;
+                    const json = line.slice(6).trim();
+                    if (json === '[DONE]') break;
+                    try {
+                      const parsed = JSON.parse(json);
+                      const c = parsed.choices?.[0]?.delta?.content;
+                      if (c) { result += c; setAiSummary(result); }
+                    } catch { /* skip */ }
+                  }
+                }
+                if (result) setAiSummary(result);
+              } catch {
+                toast.error('Failed to generate AI summary');
+              } finally {
+                setGeneratingAiSummary(false);
+              }
+            }}
+            disabled={generatingAiSummary}
+            className="border-primary/30 text-primary hover:bg-primary/10"
+          >
+            {generatingAiSummary ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+            AI Summary
+          </Button>
+
+          <Button
             size="sm"
             onClick={() => navigate(`/war-room/${incident.id}`)}
             className="bg-destructive/90 hover:bg-destructive text-destructive-foreground border-0 gap-2 font-semibold shadow-lg"
@@ -653,6 +715,22 @@ export default function IncidentDetail() {
           </Button>
         </div>
       </div>
+
+      {/* AI Summary Panel */}
+      {aiSummary && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 lg:p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">AI Summary</h3>
+            </div>
+            <Button variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground" onClick={() => setAiSummary(null)}>Dismiss</Button>
+          </div>
+          <div className="prose prose-sm prose-invert max-w-none text-foreground/90 text-sm leading-relaxed whitespace-pre-wrap">
+            {aiSummary}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-border bg-card p-4 lg:p-6 mb-6">
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">

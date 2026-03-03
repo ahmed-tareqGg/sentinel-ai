@@ -1,11 +1,14 @@
 import { useNavigate } from 'react-router-dom';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, MoreHorizontal, UserCheck, ArrowUpCircle, XCircle, Clock } from 'lucide-react';
 import { Incident } from '@/hooks/useIncidents';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { RelatedIncidentsBadge } from '@/components/incidents/RelatedIncidentsBadge';
+import { supabase } from '@/integrations/backend/client';
+import { toast } from 'sonner';
 
 interface IncidentTableProps {
   incidents: Incident[];
@@ -14,6 +17,22 @@ interface IncidentTableProps {
   selectable?: boolean;
   selectedIds?: Set<string>;
   onSelectionChange?: (ids: Set<string>) => void;
+  onRefresh?: () => void;
+}
+
+const SLA_MINUTES: Record<string, number> = {
+  Critical: 15, High: 30, Medium: 60, Low: 240, Info: 480,
+};
+
+function getSlaStatus(incident: Incident) {
+  if (incident.status === 'Closed' || incident.status === 'Resolved') return null;
+  const slaMin = SLA_MINUTES[incident.risk_level] || 60;
+  const elapsed = (Date.now() - new Date(incident.created_at).getTime()) / 60000;
+  const remaining = slaMin - elapsed;
+  const pct = Math.max(0, Math.min(100, (remaining / slaMin) * 100));
+  const breached = remaining <= 0;
+  const warning = pct <= 20 && !breached;
+  return { pct, remaining, breached, warning, slaMin };
 }
 
 const severityColors: Record<number, string> = {
@@ -36,7 +55,7 @@ const classificationColors: Record<string, string> = {
   'Pending': 'bg-muted text-muted-foreground border-border',
 };
 
-export function IncidentTable({ incidents, allIncidents, limit, selectable, selectedIds, onSelectionChange }: IncidentTableProps) {
+export function IncidentTable({ incidents, allIncidents, limit, selectable, selectedIds, onSelectionChange, onRefresh }: IncidentTableProps) {
   const navigate = useNavigate();
   const displayedIncidents = limit ? incidents.slice(0, limit) : incidents;
   const relatedPool = allIncidents || incidents;
@@ -92,8 +111,9 @@ export function IncidentTable({ incidents, allIncidents, limit, selectable, sele
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Classification</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Confidence</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">SLA</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Related</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Action</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -165,17 +185,93 @@ export function IncidentTable({ incidents, allIncidents, limit, selectable, sele
                   </Badge>
                 </td>
                 <td className="px-4 py-3">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="text-primary hover:text-primary hover:bg-primary/10"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/incidents/${incident.id}`);
-                    }}
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
+                  {(() => {
+                    const sla = getSlaStatus(incident);
+                    if (!sla) return <span className="text-xs text-muted-foreground">—</span>;
+                    return (
+                      <div className="flex items-center gap-1.5 min-w-[80px]">
+                        <div className="h-1.5 w-14 rounded-full bg-secondary overflow-hidden">
+                          <div
+                            className={cn(
+                              'h-full rounded-full transition-all',
+                              sla.breached ? 'bg-destructive' : sla.warning ? 'bg-warning' : 'bg-success'
+                            )}
+                            style={{ width: `${sla.pct}%` }}
+                          />
+                        </div>
+                        <span className={cn('text-[10px] font-mono', sla.breached ? 'text-destructive' : sla.warning ? 'text-warning' : 'text-muted-foreground')}>
+                          {sla.breached ? 'Breached' : `${Math.ceil(sla.remaining)}m`}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </td>
+                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="text-primary hover:text-primary hover:bg-primary/10 h-7 w-7 p-0"
+                      onClick={() => navigate(`/incidents/${incident.id}`)}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Button>
+                    {incident.status !== 'Closed' && incident.status !== 'Resolved' && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="bg-card border-border w-44">
+                          <DropdownMenuItem
+                            className="gap-2 cursor-pointer text-xs"
+                            onClick={async () => {
+                              const { data: { user } } = await supabase.auth.getUser();
+                              if (!user) return;
+                              const { error } = await supabase.from('incidents').update({
+                                incident_owner_id: user.id,
+                                status: 'Assigned',
+                                assigned_at: new Date().toISOString(),
+                              }).eq('id', incident.id);
+                              if (error) toast.error('Failed to assign');
+                              else { toast.success(`Assigned ${incident.incident_number} to you`); onRefresh?.(); }
+                            }}
+                          >
+                            <UserCheck className="h-3.5 w-3.5" /> Assign to me
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="gap-2 cursor-pointer text-xs"
+                            onClick={async () => {
+                              const { error } = await supabase.from('incidents').update({
+                                status: 'Escalated',
+                                escalated_at: new Date().toISOString(),
+                              }).eq('id', incident.id);
+                              if (error) toast.error('Failed to escalate');
+                              else { toast.success(`Escalated ${incident.incident_number}`); onRefresh?.(); }
+                            }}
+                          >
+                            <ArrowUpCircle className="h-3.5 w-3.5" /> Escalate
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="gap-2 cursor-pointer text-xs text-muted-foreground"
+                            onClick={async () => {
+                              const { error } = await supabase.from('incidents').update({
+                                classification: 'False Positive',
+                                status: 'Closed',
+                                closed_at: new Date().toISOString(),
+                                closed_reason: 'Closed as False Positive from table',
+                              }).eq('id', incident.id);
+                              if (error) toast.error('Failed to close');
+                              else { toast.success(`${incident.incident_number} closed as FP`); onRefresh?.(); }
+                            }}
+                          >
+                            <XCircle className="h-3.5 w-3.5" /> Close as FP
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

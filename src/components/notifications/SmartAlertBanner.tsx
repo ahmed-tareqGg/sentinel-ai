@@ -11,6 +11,8 @@ interface AlertItem {
   risk_level: string;
   event_type: string;
   message: string | null;
+  src_ip: string | null;
+  mitre_technique: string | null;
   receivedAt: number;
 }
 
@@ -54,10 +56,23 @@ export function SmartAlertBanner() {
             risk_level: inc.risk_level,
             event_type: inc.event_type,
             message: inc.message,
+            src_ip: inc.src_ip || null,
+            mitre_technique: inc.mitre_technique || null,
             receivedAt: Date.now(),
           };
           setAlerts(prev => [alert, ...prev].slice(0, 3));
           playAlertSound(inc.risk_level === 'Critical');
+
+          // Browser push notification
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            try {
+              new Notification(`${inc.risk_level === 'Critical' ? '🚨' : '⚠️'} ${inc.incident_number}`, {
+                body: `${inc.event_type}${inc.src_ip ? ` — ${inc.src_ip}` : ''}`,
+                icon: '/favicon.png',
+                tag: inc.id,
+              });
+            } catch { /* ignore */ }
+          }
 
           // auto dismiss
           setTimeout(() => dismiss(inc.id), ALERT_DURATION);
@@ -127,11 +142,17 @@ export function SmartAlertBanner() {
                       <span className="text-xs text-muted-foreground font-mono">{alert.incident_number}</span>
                     </div>
                     <p className="text-sm font-semibold text-foreground mt-1 truncate">{alert.event_type}</p>
+                    {alert.src_ip && (
+                      <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{alert.src_ip}</p>
+                    )}
+                    {alert.mitre_technique && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">🎯 {alert.mitre_technique}</p>
+                    )}
                     {alert.message && (
                       <p className="text-xs text-muted-foreground truncate mt-0.5">{alert.message}</p>
                     )}
                     <div className="flex items-center gap-1 mt-1.5 text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span>View incident</span>
+                      <span>Investigate</span>
                       <ArrowRight className="h-3 w-3" />
                     </div>
                   </div>

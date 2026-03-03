@@ -10,6 +10,9 @@ import { MitreChart } from '@/components/dashboard/MitreChart';
 import { MitreHeatmap } from '@/components/dashboard/MitreHeatmap';
 
 import { ThreatMap } from '@/components/dashboard/ThreatMap';
+import { TopAttackers } from '@/components/dashboard/TopAttackers';
+import { RiskScoreGauge } from '@/components/dashboard/RiskScoreGauge';
+import { IncidentHeatmap } from '@/components/dashboard/IncidentHeatmap';
 import { SOCHealthScore } from '@/components/dashboard/SOCHealthScore';
 import { AIThreatBriefing } from '@/components/dashboard/AIThreatBriefing';
 import { NaturalLanguageSearch } from '@/components/dashboard/NaturalLanguageSearch';
@@ -243,6 +246,15 @@ export default function Dashboard() {
             <div className="lg:col-span-2">
               <ThreatMap incidents={incidents} />
             </div>
+          </div>
+        </AnimatedSection>
+
+        {/* Risk Score + Top Attackers + Heatmap */}
+        <AnimatedSection>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+            <RiskScoreGauge incidents={incidents} />
+            <TopAttackers incidents={incidents} />
+            <IncidentHeatmap incidents={incidents} />
           </div>
         </AnimatedSection>
 

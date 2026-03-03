@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
-import { X, Send, Bot, User, Loader2, Minimize2, Maximize2, Plus, History, ArrowLeft, Trash2, Paperclip, Image as ImageIcon, FileText } from 'lucide-react';
+import { X, Send, Bot, User, Loader2, Minimize2, Maximize2, Plus, History, ArrowLeft, Trash2, Paperclip, Image as ImageIcon, FileText, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { backendUrl, publishableKey, supabase } from '@/integrations/backend/client';
@@ -24,7 +24,15 @@ interface Conversation {
 
 const CHAT_URL = `${backendUrl}/functions/v1/soc-chat`;
 
-const QUICK_PROMPTS = [
+const CONTEXT_PROMPTS: Record<string, string[]> = {
+  '/dashboard': ['Daily briefing', 'Top threats right now', 'SLA compliance status', 'Open critical incidents'],
+  '/incidents': ['Summarize open incidents', 'Which incidents need triage?', 'Show false positive trends', 'Unassigned incidents'],
+  '/compliance': ['Coverage gaps analysis', 'Next audit preparation', 'Non-compliant controls', 'Evidence status'],
+  '/threat-intel': ['Active threat actors', 'Trending IOCs', 'OSINT summary', 'Malware campaigns'],
+  '/playbooks': ['Suggest playbook for latest incident', 'Automation rate', 'Failed playbook runs', 'Create new playbook'],
+};
+
+const DEFAULT_PROMPTS = [
   'Current security posture summary',
   'What are the open critical incidents?',
   'Show me compliance coverage status',
@@ -55,9 +63,24 @@ export function SOCChatWidget() {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [loadingConvos, setLoadingConvos] = useState(true);
+  const [historySearch, setHistorySearch] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Context-aware prompts based on current route
+  const quickPrompts = useMemo(() => {
+    const path = location.pathname;
+    // Check for incident detail page
+    if (path.match(/^\/incidents\/[^/]+$/)) {
+      return ['Summarize this incident', 'Suggest a playbook', 'Root cause analysis?', 'Related threats'];
+    }
+    // Check for exact or prefix match
+    for (const [route, prompts] of Object.entries(CONTEXT_PROMPTS)) {
+      if (path === route || path.startsWith(route + '/')) return prompts;
+    }
+    return DEFAULT_PROMPTS;
+  }, [location.pathname]);
 
   // Listen for external open events (e.g. from Dashboard AI Copilot card)
   useEffect(() => {
@@ -410,6 +433,17 @@ export function SOCChatWidget() {
       {/* History View */}
       {showHistory ? (
         <div className="flex-1 overflow-y-auto p-3 space-y-1">
+          {/* Search */}
+          <div className="relative mb-2">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              type="text"
+              value={historySearch}
+              onChange={(e) => setHistorySearch(e.target.value)}
+              placeholder="Search conversations..."
+              className="w-full pl-8 pr-3 py-2 text-sm rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
           {loadingConvos ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -420,7 +454,7 @@ export function SOCChatWidget() {
               <p className="text-sm">No previous conversations</p>
             </div>
           ) : (
-            conversations.map(convo => (
+            conversations.filter(c => !historySearch || c.title.toLowerCase().includes(historySearch.toLowerCase())).map(convo => (
               <button
                 key={convo.id}
                 onClick={() => openConvo(convo.id)}
@@ -471,7 +505,7 @@ export function SOCChatWidget() {
                   <p className="text-xs text-muted-foreground mt-1">Ask me anything about incidents, compliance, threats & more</p>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
-                  {QUICK_PROMPTS.map((prompt, i) => (
+                  {quickPrompts.map((prompt, i) => (
                     <button
                       key={i}
                       onClick={() => sendMessage(prompt)}

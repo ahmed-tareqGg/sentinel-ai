@@ -184,6 +184,32 @@ export function NotificationPreferences() {
         />
       </div>
 
+      {/* Browser Push Notifications */}
+      <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 border border-border">
+        <div className="flex items-center gap-3">
+          <Bell className="h-5 w-5 text-primary" />
+          <div>
+            <p className="font-medium text-foreground">Browser Push Notifications</p>
+            <p className="text-xs text-muted-foreground">Get desktop notifications for critical alerts</p>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={async () => {
+            if (typeof Notification === 'undefined') {
+              toast.error('Browser does not support notifications');
+              return;
+            }
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') toast.success('Browser notifications enabled');
+            else toast.info('Notifications were denied');
+          }}
+        >
+          {typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 'Enabled ✓' : 'Enable'}
+        </Button>
+      </div>
+
       {/* Email Digest */}
       <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/30 border border-border">
         <div className="flex items-center gap-3">
