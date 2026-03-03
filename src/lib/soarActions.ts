@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
+import { validateSOARTarget, isValidIP } from '@/lib/validators';
 
 export type ActionType = 
   | 'isolate_host' 
