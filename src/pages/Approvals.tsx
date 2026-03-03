@@ -95,6 +95,9 @@ export default function Approvals() {
       // Step 2: If approved, create a soar_action so the Executor agent can pick it up
       if (approved) {
         try {
+          const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+          const IP_REQUIRED_ACTIONS = ['block_ip', 'geo_block', 'unblock_ip'];
+          const SELF_TARGET_ACTIONS = ['isolate_host', 'unisolate_host', 'forensic_analysis', 'network_forensics', 'collect_forensics'];
 
           // Find the agent's data_source_id (the executor agent linked to this incident)
           const { data: dataSources } = await supabase
@@ -105,24 +108,35 @@ export default function Approvals() {
 
           const dataSourceId = dataSources?.[0]?.id ?? null;
 
-          // Fetch the incident to get the REAL attacker IP from raw_log
-          let realTarget = request.action_params?.ip || request.action_params?.user || request.action_params?.host || request.action_params?.target || 'unknown';
+          // --- Resolve target with strict IP validation ---
+          let realTarget = '';
           
-          if (request.incident_id) {
+          // Collect all candidate values from action_params
+          const candidates = [
+            request.action_params?.ip,
+            request.action_params?.target,
+            request.action_params?.host,
+            request.action_params?.resolved_target,
+          ].filter(Boolean);
+
+          // Try to find a valid IP from params first
+          const validParamIp = candidates.find((c: string) => ipRegex.test(c));
+
+          if (validParamIp) {
+            realTarget = validParamIp;
+          } else if (request.incident_id) {
+            // Fall back to incident data — extract real attacker IP from raw_log
             const { data: incidentData } = await supabase
               .from('incidents')
               .select('src_ip, raw_log')
               .eq('id', request.incident_id)
               .single();
-            
+
             if (incidentData) {
-              // Try to extract real attacker IP from nested raw_log (not hostname)
               const rawLog = incidentData.raw_log as any;
               const nestedSrcIp = rawLog?.raw_log?.src_ip || rawLog?.srcIP;
               const topSrcIp = incidentData.src_ip;
-              
-              // Use nested src_ip if available and looks like a real IP (not hostname)
-              const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+
               if (nestedSrcIp && ipRegex.test(nestedSrcIp)) {
                 realTarget = nestedSrcIp;
               } else if (topSrcIp && ipRegex.test(topSrcIp)) {
@@ -131,16 +145,41 @@ export default function Approvals() {
             }
           }
 
+          // For self-target actions (isolate_host etc.), target can be empty
+          if (SELF_TARGET_ACTIONS.includes(request.action_type)) {
+            // Keep realTarget as-is (empty is fine — executor acts on itself)
+          } else if (IP_REQUIRED_ACTIONS.includes(request.action_type) && !ipRegex.test(realTarget)) {
+            // FAIL: block_ip/geo_block MUST have a valid IP — don't dispatch garbage
+            console.error(`Cannot dispatch ${request.action_type}: no valid IP found (got "${realTarget}")`);
+            toast.error(`Cannot execute ${request.action_type}: no valid IP address found for this incident.`);
+            
+            // Mark the soar action as failed instead of dispatching
+            await supabase.from('incident_timeline').insert({
+              incident_id: request.incident_id,
+              stage: `Action Failed: ${request.action_type}`,
+              details: `No valid IP target found. Resolved value was "${realTarget || 'empty'}". Action not dispatched.`,
+            });
+
+            setProcessing(null);
+            setDrawerOpen(false);
+            fetchRequests();
+            return;
+          }
+
+          // For non-IP actions (disable_user, etc.), allow any target from params
+          if (!realTarget && !SELF_TARGET_ACTIONS.includes(request.action_type) && !IP_REQUIRED_ACTIONS.includes(request.action_type)) {
+            realTarget = request.action_params?.user || request.action_params?.host || request.action_params?.target || '';
+          }
+
           const actionId = `ACT-${Date.now().toString(36).toUpperCase()}`;
           const target = realTarget;
 
-          // Create the soar_action — this is what the Executor polls for
           // Enrich parameters with the resolved real IP
           const enrichedParams = {
             ...(request.action_params ?? {}),
-            ip: target,
-            host: target,
-            resolved_target: target,
+            ip: target || undefined,
+            host: target || undefined,
+            resolved_target: target || undefined,
           };
 
           const { error: soarErr } = await supabase.from('soar_actions').insert({
@@ -149,7 +188,7 @@ export default function Approvals() {
             data_source_id: dataSourceId,
             action_type: request.action_type,
             target,
-            target_type: 'ip',
+            target_type: IP_REQUIRED_ACTIONS.includes(request.action_type) ? 'ip' : 'host',
             parameters: enrichedParams,
             reason: request.reason || `Approved via Approval Workflow (${request.id.slice(0, 8)})`,
             status: 'approved',
