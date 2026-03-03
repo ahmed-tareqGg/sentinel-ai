@@ -853,7 +853,7 @@ async function tryRuleBasedEngine(
 | **True Positives** | ${tp} |
 | **False Positives** | ${fp} |
 
-> *Data from local database — AI providers unavailable* 🗄️`;
+> *Rule-Based Engine — instant response* 🤖`;
   }
 
   // ── Critical incidents ──
