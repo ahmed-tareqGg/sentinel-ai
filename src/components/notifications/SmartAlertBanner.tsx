@@ -156,7 +156,7 @@ export function SmartAlertBanner() {
                       <p className="text-xs text-muted-foreground truncate mt-0.5">{alert.message}</p>
                     )}
                     <div className="flex items-center gap-1 mt-1.5 text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span>View incident</span>
+                      <span>Investigate</span>
                       <ArrowRight className="h-3 w-3" />
                     </div>
                   </div>
