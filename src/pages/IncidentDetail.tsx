@@ -60,6 +60,8 @@ export default function IncidentDetail() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [executingAction, setExecutingAction] = useState<string | null>(null);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [generatingAiSummary, setGeneratingAiSummary] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [creatingTicket, setCreatingTicket] = useState(false);
   const [jiraTicketUrl, setJiraTicketUrl] = useState<string | null>(null);
