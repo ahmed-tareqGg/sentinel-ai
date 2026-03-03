@@ -1440,6 +1440,47 @@ Use socmind-collector-*.ps1/.sh on endpoints for log collection.
 """)
 
 
+def cmd_test_connection():
+    cfg = read_config()
+    if not cfg.get("api_key") or not cfg.get("api_endpoint"):
+        print("[ERR] Not configured. Run: python3 socmind-executor.py configure")
+        return
+    api_key = cfg["api_key"]
+    api_endpoint = cfg["api_endpoint"].rstrip("/")
+    print(f"\nTesting connection to: {api_endpoint}")
+    print("=" * 50)
+
+    # Test 1: Heartbeat
+    print("\n[1] Heartbeat...")
+    try:
+        resp = requests.post(
+            f"{api_endpoint}/agent-gateway/heartbeat",
+            json={"hostname": platform.node(), "status": "active",
+                  "agent_version": AGENT_VERSION, "role": "executor"},
+            headers=make_headers(api_key), timeout=15)
+        print(f"    HTTP {resp.status_code}")
+        print(f"    Body: {resp.text[:200]}")
+    except Exception as e:
+        print(f"    FAILED: {e}")
+
+    # Test 2: Poll actions
+    print("\n[2] Poll actions...")
+    try:
+        resp = requests.post(
+            f"{api_endpoint}/agent-gateway/poll-actions",
+            json={"role": "executor"},
+            headers=make_headers(api_key), timeout=15)
+        print(f"    HTTP {resp.status_code}")
+        data = resp.json() if resp.status_code == 200 else {}
+        actions = data.get("actions", [])
+        print(f"    Actions waiting: {len(actions)}")
+        for a in actions[:3]:
+            print(f"      - {a.get('action_type')} → {a.get('target')} (id: {a.get('id', a.get('action_id', '?'))[:8]})")
+    except Exception as e:
+        print(f"    FAILED: {e}")
+    print()
+
+
 def main():
     cmd = sys.argv[1].lower() if len(sys.argv) > 1 else "help"
     if cmd == "configure":
@@ -1454,6 +1495,8 @@ def main():
         cmd_status()
     elif cmd == "rollback":
         cmd_rollback()
+    elif cmd in ("test-connection", "testconn", "tc"):
+        cmd_test_connection()
     else:
         show_help()
 
