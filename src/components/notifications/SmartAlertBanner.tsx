@@ -76,12 +76,8 @@ export function SmartAlertBanner() {
 
           // auto dismiss
           setTimeout(() => dismiss(inc.id), ALERT_DURATION);
-        }
-
-          // auto dismiss
-          setTimeout(() => dismiss(inc.id), ALERT_DURATION);
-        }
       })
+      .subscribe();
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
