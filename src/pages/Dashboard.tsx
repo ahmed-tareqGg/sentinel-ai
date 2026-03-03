@@ -249,6 +249,15 @@ export default function Dashboard() {
           </div>
         </AnimatedSection>
 
+        {/* Risk Score + Top Attackers + Heatmap */}
+        <AnimatedSection>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+            <RiskScoreGauge incidents={incidents} />
+            <TopAttackers incidents={incidents} />
+            <IncidentHeatmap incidents={incidents} />
+          </div>
+        </AnimatedSection>
+
         {/* Live Activity Feed */}
         <AnimatedSection>
           <div className="mb-6">
