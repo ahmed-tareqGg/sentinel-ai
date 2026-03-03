@@ -116,6 +116,11 @@ export const soarActions = {
   },
 
   blockIp: async (incidentId: string, ip: string) => {
+    const check = validateSOARTarget('block_ip', ip);
+    if (!check.valid) {
+      toast.error(check.error);
+      return { success: false, error: check.error };
+    }
     toast.info('🚫 Submitting IP block for approval...', { duration: 2000 });
     const result = await createApprovalRequest(
       'block_ip',
