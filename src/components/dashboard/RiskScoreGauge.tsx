@@ -11,7 +11,7 @@ export function RiskScoreGauge({ incidents }: RiskScoreGaugeProps) {
     const open = incidents.filter(i => i.status !== 'Closed' && i.status !== 'Resolved');
     const critical = open.filter(i => i.risk_level === 'Critical').length;
     const high = open.filter(i => i.risk_level === 'High').length;
-    const unassigned = open.filter(i => !i.assigned_to && !i.incident_owner_id).length;
+    const unassigned = open.filter(i => !i.assigned_to && !(i as any).incident_owner_id).length;
 
     // Score: 0-100 (100 = worst)
     let s = 0;
