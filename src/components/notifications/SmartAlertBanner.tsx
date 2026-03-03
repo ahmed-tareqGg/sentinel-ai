@@ -56,10 +56,27 @@ export function SmartAlertBanner() {
             risk_level: inc.risk_level,
             event_type: inc.event_type,
             message: inc.message,
+            src_ip: inc.src_ip || null,
+            mitre_technique: inc.mitre_technique || null,
             receivedAt: Date.now(),
           };
           setAlerts(prev => [alert, ...prev].slice(0, 3));
           playAlertSound(inc.risk_level === 'Critical');
+
+          // Browser push notification
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            try {
+              new Notification(`${inc.risk_level === 'Critical' ? '🚨' : '⚠️'} ${inc.incident_number}`, {
+                body: `${inc.event_type}${inc.src_ip ? ` — ${inc.src_ip}` : ''}`,
+                icon: '/favicon.png',
+                tag: inc.id,
+              });
+            } catch { /* ignore */ }
+          }
+
+          // auto dismiss
+          setTimeout(() => dismiss(inc.id), ALERT_DURATION);
+        }
 
           // auto dismiss
           setTimeout(() => dismiss(inc.id), ALERT_DURATION);
