@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { validateSOARTarget } from '@/lib/validators';
 
 interface Props {
   incident: {
