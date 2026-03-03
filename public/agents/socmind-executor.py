@@ -439,6 +439,13 @@ def _isolate_host(api_endpoint: str, dry_run: bool) -> dict:
             # Save current rules for rollback
             backup_result = subprocess.run(["iptables-save"], capture_output=True, text=True)
             iptables_backup = backup_result.stdout
+            # Persist to file for crash recovery
+            try:
+                with open("/tmp/socmind-iptables-backup.rules", "w") as f:
+                    f.write(iptables_backup)
+                print("  [BACKUP] iptables rules saved to /tmp/socmind-iptables-backup.rules")
+            except Exception as bk_err:
+                print(f"  [WARN] Could not save iptables backup file: {bk_err}")
 
             subprocess.run(["iptables", "-F"], capture_output=True)
             subprocess.run(["iptables", "-P", "INPUT",   "DROP"], capture_output=True)
