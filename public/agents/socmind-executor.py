@@ -1180,7 +1180,21 @@ def execute_action(action: dict, dry_run: bool, api_endpoint: str, api_key: str)
         "revoke_token":       lambda: _revoke_token(target, dry_run, params),
     }
 
-    handler = dispatch.get(action_type)
+    # Resolve aliases for frontend action types that don't have direct handlers
+    ACTION_ALIASES = {
+        "forensic_analysis":  "collect_forensics",
+        "reset_credentials":  "rotate_credentials",
+        "geo_block":          "block_ip",
+        "create_ticket":      "notify_user",
+        "investigate_data":   "notify_user",
+        "interview_user":     "notify_user",
+        "network_forensics":  "collect_forensics",
+    }
+    resolved_type = ACTION_ALIASES.get(action_type, action_type)
+    if resolved_type != action_type:
+        print(f"  [ALIAS] '{action_type}' → '{resolved_type}'")
+
+    handler = dispatch.get(resolved_type)
     if not handler:
         result = {"success": False, "details": f"Unknown action type: '{action_type}'. Supported: {', '.join(sorted(dispatch.keys()))}"}
     else:
