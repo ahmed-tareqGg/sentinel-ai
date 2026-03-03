@@ -75,13 +75,17 @@ export default function Approvals() {
   const handleApproval = async (request: ApprovalRequest, approved: boolean, reason?: string) => {
     setProcessing(request.id);
     try {
+      // Get real user UUID first
+      const { data: userData } = await supabase.auth.getUser();
+      const realUserId = userData?.user?.id ?? 'unknown';
+
       // Step 1: Update approval status
       const { error } = await supabase
         .from('approval_requests')
         .update({
           status: approved ? 'approved' : 'rejected',
           approved_at: new Date().toISOString(),
-          approved_by: 'current_user',
+          approved_by: realUserId,
           reason: reason || (approved ? 'Approved by analyst' : 'Rejected by analyst'),
         })
         .eq('id', request.id);
@@ -91,7 +95,6 @@ export default function Approvals() {
       // Step 2: If approved, create a soar_action so the Executor agent can pick it up
       if (approved) {
         try {
-          const { data: userData } = await supabase.auth.getUser();
 
           // Find the agent's data_source_id (the executor agent linked to this incident)
           const { data: dataSources } = await supabase

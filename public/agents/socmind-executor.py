@@ -439,6 +439,13 @@ def _isolate_host(api_endpoint: str, dry_run: bool) -> dict:
             # Save current rules for rollback
             backup_result = subprocess.run(["iptables-save"], capture_output=True, text=True)
             iptables_backup = backup_result.stdout
+            # Persist to file for crash recovery
+            try:
+                with open("/tmp/socmind-iptables-backup.rules", "w") as f:
+                    f.write(iptables_backup)
+                print("  [BACKUP] iptables rules saved to /tmp/socmind-iptables-backup.rules")
+            except Exception as bk_err:
+                print(f"  [WARN] Could not save iptables backup file: {bk_err}")
 
             subprocess.run(["iptables", "-F"], capture_output=True)
             subprocess.run(["iptables", "-P", "INPUT",   "DROP"], capture_output=True)
@@ -1180,7 +1187,21 @@ def execute_action(action: dict, dry_run: bool, api_endpoint: str, api_key: str)
         "revoke_token":       lambda: _revoke_token(target, dry_run, params),
     }
 
-    handler = dispatch.get(action_type)
+    # Resolve aliases for frontend action types that don't have direct handlers
+    ACTION_ALIASES = {
+        "forensic_analysis":  "collect_forensics",
+        "reset_credentials":  "rotate_credentials",
+        "geo_block":          "block_ip",
+        "create_ticket":      "notify_user",
+        "investigate_data":   "notify_user",
+        "interview_user":     "notify_user",
+        "network_forensics":  "collect_forensics",
+    }
+    resolved_type = ACTION_ALIASES.get(action_type, action_type)
+    if resolved_type != action_type:
+        print(f"  [ALIAS] '{action_type}' → '{resolved_type}'")
+
+    handler = dispatch.get(resolved_type)
     if not handler:
         result = {"success": False, "details": f"Unknown action type: '{action_type}'. Supported: {', '.join(sorted(dispatch.keys()))}"}
     else:
@@ -1284,8 +1305,19 @@ def cmd_configure():
     print("Role: SOAR EXECUTOR ONLY (no log collection)")
     print("Deploy on ONE privileged host (SOC jump server)")
     print()
-    api_key      = input("API Key (socm_...): ").strip()
+    api_key      = input("API Key (starts with socm_...): ").strip()
     api_endpoint = input("API Endpoint (e.g. https://xxxx.supabase.co/functions/v1): ").strip()
+
+    # Auto-detect swapped inputs
+    if api_key.startswith("http") and api_endpoint.startswith("socm_"):
+        print("[AUTO-FIX] Detected swapped API Key and Endpoint — swapping them.")
+        api_key, api_endpoint = api_endpoint, api_key
+
+    # Strip accidental trailing paths
+    for suffix in ["/agent-gateway", "/agent-gateway/", "/ingest-log", "/ingest-log/"]:
+        if api_endpoint.endswith(suffix):
+            api_endpoint = api_endpoint[:-len(suffix)]
+            print(f"[AUTO-FIX] Stripped trailing '{suffix}' from endpoint.")
 
     print("\nVerifying endpoint...")
     try:
@@ -1376,12 +1408,13 @@ Role: SOAR EXECUTOR ONLY — no log collection
 OS  : {platform.system()}
 
 Commands:
-  configure    First-time setup (API key + endpoint)
-  start        Start SOAR execution loop (REAL mode)
-  dryrun       Simulation mode — no real changes made
-  test         Poll once and exit
-  status       Show config + recent action log
-  rollback     Rollback the last reversible action
+  configure        First-time setup (API key + endpoint)
+  start            Start SOAR execution loop (REAL mode)
+  dryrun           Simulation mode — no real changes made
+  test             Poll once and exit
+  test-connection  Test API connectivity (heartbeat + poll)
+  status           Show config + recent action log
+  rollback         Rollback the last reversible action
 
 Supported actions ({len(_get_capabilities())} total):
   ── Network ──────────────────────────────
@@ -1408,6 +1441,47 @@ Use socmind-collector-*.ps1/.sh on endpoints for log collection.
 """)
 
 
+def cmd_test_connection():
+    cfg = read_config()
+    if not cfg.get("api_key") or not cfg.get("api_endpoint"):
+        print("[ERR] Not configured. Run: python3 socmind-executor.py configure")
+        return
+    api_key = cfg["api_key"]
+    api_endpoint = cfg["api_endpoint"].rstrip("/")
+    print(f"\nTesting connection to: {api_endpoint}")
+    print("=" * 50)
+
+    # Test 1: Heartbeat
+    print("\n[1] Heartbeat...")
+    try:
+        resp = requests.post(
+            f"{api_endpoint}/agent-gateway/heartbeat",
+            json={"hostname": platform.node(), "status": "active",
+                  "agent_version": AGENT_VERSION, "role": "executor"},
+            headers=make_headers(api_key), timeout=15)
+        print(f"    HTTP {resp.status_code}")
+        print(f"    Body: {resp.text[:200]}")
+    except Exception as e:
+        print(f"    FAILED: {e}")
+
+    # Test 2: Poll actions
+    print("\n[2] Poll actions...")
+    try:
+        resp = requests.post(
+            f"{api_endpoint}/agent-gateway/poll-actions",
+            json={"role": "executor"},
+            headers=make_headers(api_key), timeout=15)
+        print(f"    HTTP {resp.status_code}")
+        data = resp.json() if resp.status_code == 200 else {}
+        actions = data.get("actions", [])
+        print(f"    Actions waiting: {len(actions)}")
+        for a in actions[:3]:
+            print(f"      - {a.get('action_type')} → {a.get('target')} (id: {a.get('id', a.get('action_id', '?'))[:8]})")
+    except Exception as e:
+        print(f"    FAILED: {e}")
+    print()
+
+
 def main():
     cmd = sys.argv[1].lower() if len(sys.argv) > 1 else "help"
     if cmd == "configure":
@@ -1422,6 +1496,8 @@ def main():
         cmd_status()
     elif cmd == "rollback":
         cmd_rollback()
+    elif cmd in ("test-connection", "testconn", "tc"):
+        cmd_test_connection()
     else:
         show_help()
 
