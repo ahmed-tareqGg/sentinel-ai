@@ -1139,18 +1139,50 @@ serve(async (req) => {
 
         const actions = claimedActions || [];
 
-        // Server-side IP validation: block_ip/geo_block MUST have valid IP target
+        // Server-side IP validation + DNS resolution
         const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
         const ipRequiredActions = ['block_ip', 'geo_block', 'unblock_ip'];
 
+        // DNS resolution helper — resolve hostname to IP if needed
+        async function tryResolveToIp(target: string): Promise<string | null> {
+          if (!target || target === 'Unknown' || target === 'unknown') return null;
+          if (ipRegex.test(target)) return target;
+          try {
+            const records = await Deno.resolveDns(target, 'A');
+            if (records && records.length > 0) {
+              console.log(`🔍 DNS resolved "${target}" → ${records[0]}`);
+              return records[0];
+            }
+          } catch (dnsErr) {
+            console.log(`🔍 DNS resolution failed for "${target}": ${dnsErr}`);
+          }
+          return null;
+        }
+
+        // Resolve hostnames to IPs for IP-required actions
+        for (const a of actions as any[]) {
+          if (ipRequiredActions.includes(a.action_type) && a.target && !ipRegex.test(a.target)) {
+            const originalHostname = a.target;
+            const resolvedIp = await tryResolveToIp(a.target);
+            if (resolvedIp) {
+              a.target = resolvedIp;
+              a.parameters = { ...(a.parameters || {}), original_hostname: originalHostname, resolved_ip: resolvedIp };
+              await supabase.from('soar_actions').update({
+                target: resolvedIp,
+                parameters: a.parameters,
+              }).eq('id', a.id);
+            }
+          }
+        }
+
+        // Filter out IP-required actions that still don't have valid IPs
         const validActions = actions.filter((a: any) => {
           if (ipRequiredActions.includes(a.action_type)) {
             if (!a.target || !ipRegex.test(a.target)) {
-              console.log(`🚫 Rejected ${a.action_type} (${a.action_id}) — invalid target "${a.target}"`);
-              // Mark as failed asynchronously
+              console.log(`🚫 Rejected ${a.action_type} (${a.action_id}) — "${a.target}" not a valid IP, DNS failed`);
               supabase.from('soar_actions').update({
                 status: 'failed',
-                error_message: `Invalid target: "${a.target}" is not a valid IP address`,
+                error_message: `Invalid target: "${a.target}" — not a valid IP and DNS resolution failed`,
                 completed_at: new Date().toISOString(),
               }).eq('id', a.id).then(() => {});
               return false;
