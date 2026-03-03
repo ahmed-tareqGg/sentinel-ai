@@ -75,6 +75,11 @@ export function OneClickResponsePanel({ incident, onAction }: Props) {
       icon: <Ban className="h-4 w-4" />,
       color: 'border-orange-500/30 hover:bg-orange-500/10 text-orange-400',
       action: async () => {
+        const check = validateSOARTarget('block_ip', incident.src_ip);
+        if (!check.valid) {
+          toast.error(check.error);
+          return;
+        }
         await supabase.from('approval_requests').insert({
           action_type: 'block_ip',
           incident_id: incident.id,
