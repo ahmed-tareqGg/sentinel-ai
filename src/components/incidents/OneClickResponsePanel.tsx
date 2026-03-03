@@ -53,6 +53,11 @@ export function OneClickResponsePanel({ incident, onAction }: Props) {
       icon: <Lock className="h-4 w-4" />,
       color: 'border-destructive/30 hover:bg-destructive/10 text-destructive',
       action: async () => {
+        const check = validateSOARTarget('isolate_host', incident.src_ip);
+        if (!check.valid) {
+          toast.error(check.error);
+          return;
+        }
         await supabase.from('approval_requests').insert({
           action_type: 'isolate_host',
           incident_id: incident.id,
