@@ -11,6 +11,8 @@ interface AlertItem {
   risk_level: string;
   event_type: string;
   message: string | null;
+  src_ip: string | null;
+  mitre_technique: string | null;
   receivedAt: number;
 }
 
