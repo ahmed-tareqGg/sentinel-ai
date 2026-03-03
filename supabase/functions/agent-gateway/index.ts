@@ -1139,10 +1139,26 @@ serve(async (req) => {
         const highRiskActions = ['block_ip', 'disable_user', 'isolate_host', 'kill_process', 
           'quarantine_file', 'delete_file', 'lock_account', 'reset_password', 'stop_service'];
         
+        const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+        const ipRequiredActions = ['block_ip', 'geo_block', 'unblock_ip'];
+
         const safeActions = (pendingActions || []).filter((a: any) => {
           if (highRiskActions.includes(a.action_type)) {
             if (!a.approved_by) {
               console.log(`🚫 Blocked auto-execution of ${a.action_type} (${a.action_id}) - requires manual approval`);
+              return false;
+            }
+          }
+          // Server-side IP validation: block_ip/geo_block MUST have a valid IP target
+          if (ipRequiredActions.includes(a.action_type)) {
+            if (!a.target || !ipRegex.test(a.target)) {
+              console.log(`🚫 Skipped ${a.action_type} (${a.action_id}) - invalid target "${a.target}" (not a valid IP)`);
+              // Mark as failed so it doesn't keep appearing
+              supabase.from('soar_actions').update({
+                status: 'failed',
+                error_message: `Invalid target: "${a.target}" is not a valid IP address`,
+                completed_at: new Date().toISOString(),
+              }).eq('id', a.id).then(() => {});
               return false;
             }
           }
@@ -1161,7 +1177,7 @@ serve(async (req) => {
         // Log blocked actions count
         const blockedCount = (pendingActions?.length || 0) - safeActions.length;
         if (blockedCount > 0) {
-          console.log(`⚠️ ${blockedCount} high-risk action(s) blocked - awaiting manual approval`);
+          console.log(`⚠️ ${blockedCount} high-risk action(s) blocked - awaiting manual approval or invalid target`);
         }
 
         console.log(`📋 Agent ${auth.dataSourceName} polled: ${safeActions.length} safe actions (${blockedCount} blocked)`);
