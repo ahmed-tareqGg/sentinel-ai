@@ -1034,7 +1034,9 @@ ${critical > 0 ? `⚠️ **${critical} critical incident(s) require immediate at
 > *Rule-Based Engine — instant response* 🤖`;
   }
 
-
+  // No rule matched — let AI handle it
+  return null;
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 // INTENT DETECTION: Classify user question to route to optimal model
