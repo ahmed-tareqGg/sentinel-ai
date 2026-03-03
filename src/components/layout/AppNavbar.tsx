@@ -86,6 +86,7 @@ const navGroups = [
       { icon: FileText, label: 'Reports', path: '/reports' },
       { icon: FileCheck, label: 'Compliance', path: '/compliance' },
       { icon: Plug, label: 'Integrations', path: '/integrations' },
+      { icon: ScrollText, label: 'Audit Logs', path: '/audit-logs' },
     ],
   },
   {
