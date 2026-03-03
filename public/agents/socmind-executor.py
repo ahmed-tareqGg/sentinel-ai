@@ -1408,12 +1408,13 @@ Role: SOAR EXECUTOR ONLY — no log collection
 OS  : {platform.system()}
 
 Commands:
-  configure    First-time setup (API key + endpoint)
-  start        Start SOAR execution loop (REAL mode)
-  dryrun       Simulation mode — no real changes made
-  test         Poll once and exit
-  status       Show config + recent action log
-  rollback     Rollback the last reversible action
+  configure        First-time setup (API key + endpoint)
+  start            Start SOAR execution loop (REAL mode)
+  dryrun           Simulation mode — no real changes made
+  test             Poll once and exit
+  test-connection  Test API connectivity (heartbeat + poll)
+  status           Show config + recent action log
+  rollback         Rollback the last reversible action
 
 Supported actions ({len(_get_capabilities())} total):
   ── Network ──────────────────────────────
