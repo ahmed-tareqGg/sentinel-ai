@@ -406,11 +406,11 @@ serve(async (req) => {
         const userClient = createClient(supabaseUrl, anonKey, {
           global: { headers: { Authorization: `Bearer ${token}` } },
         });
-        const { data: { user } } = await userClient.auth.getUser(token);
-        if (user) {
-          currentUserId = user.id;
-          currentUserEmail = user.email || null;
-          const { data: roleData } = await supabase.from('user_roles').select('role').eq('user_id', user.id).single();
+        const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
+        if (!claimsError && claimsData?.claims) {
+          currentUserId = claimsData.claims.sub as string;
+          currentUserEmail = (claimsData.claims.email as string) || null;
+          const { data: roleData } = await supabase.from('user_roles').select('role').eq('user_id', currentUserId).single();
           if (roleData) currentUserRole = roleData.role;
         }
       }
