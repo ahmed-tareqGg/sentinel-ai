@@ -638,6 +638,221 @@ export function generateDemoGuidePDF() {
   ]);
 
   // ══════════════════════════════════════════════════════════
+  // SECTION 19: SOAR ACTIONS DASHBOARD
+  // ══════════════════════════════════════════════════════════
+  pdf.addPage();
+  y = 25;
+  y = sectionHeader(pdf, y, '19. SOAR ACTIONS — REAL-TIME PIPELINE MONITOR', C.accent);
+  y = bodyText(pdf, y, 'A dedicated real-time dashboard at /soar-actions providing full visibility into the SOAR execution pipeline. Every action flows through a deterministic state machine with live WebSocket updates.');
+
+  y = featureTable(pdf, y, [
+    ['Live Status Tracking', 'Real-time status for every action: Pending → Approved → Dispatched → Completed/Failed'],
+    ['Agent Assignment', 'See which agent claimed each action with hostname and version details'],
+    ['Retry Tracking', 'Visual retry count badges showing how many times an action has been re-attempted'],
+    ['Timeout Monitoring', 'Countdown timers for dispatched actions showing time until auto-requeue'],
+    ['Action Stats Cards', 'Summary counters for Total, Pending, Approved, Dispatched, Completed, and Failed actions'],
+    ['Tab Filtering', 'Quick-filter tabs: All, Live (dispatched), Completed, Failed with real-time counts'],
+    ['Expandable Details', 'Click any action to see full details: parameters, reason, error messages, execution result, timestamps'],
+    ['Action Types', 'Block IP, Unblock IP, Isolate Host, Kill Process, Disable User, Geo Block, Forensic Analysis, and more'],
+    ['WebSocket Updates', 'Postgres realtime subscriptions auto-refresh the dashboard when any action changes state'],
+  ], C.accent);
+
+  // ══════════════════════════════════════════════════════════
+  // SECTION 20: PRODUCTION SOAR ENGINE
+  // ══════════════════════════════════════════════════════════
+  pdf.addPage();
+  y = 25;
+  y = sectionHeader(pdf, y, '20. PRODUCTION SOAR ENGINE ARCHITECTURE', C.brandDark);
+  y = bodyText(pdf, y, 'The SOAR execution engine (v2.0+) is a production-grade system featuring atomic action claiming, deterministic state machines, and intelligent target resolution — designed for zero double-execution in multi-agent environments.');
+
+  y = subHeader(pdf, y, 'Atomic Action Claiming', C.brandDark);
+  y = featureTable(pdf, y, [
+    ['PostgreSQL RPC', 'claim_soar_actions() uses FOR UPDATE SKIP LOCKED to prevent double-execution by concurrent agents'],
+    ['State Machine', 'Deterministic flow: pending → dispatched → success/failed with strict transition rules'],
+    ['Timeout & Requeue', 'Stale dispatched actions auto-requeue after configurable timeout for retry by another agent'],
+    ['Retry Logic', 'Configurable retry counts with exponential backoff and max-retry enforcement'],
+  ], C.brandDark);
+
+  y = subHeader(pdf, y, 'Target Resolution & Dispatch', C.brand);
+  y = featureTable(pdf, y, [
+    ['DNS Resolution', 'Agent-gateway performs Deno.resolveDns() for hostname targets before dispatch'],
+    ['IP Validation', 'Ensures block_ip/unblock_ip actions always receive valid IP addresses'],
+    ['Agent Routing', 'Actions dispatched to specific agents based on capability and proximity'],
+    ['Execution Modes', 'Support for real, simulation, and dry-run execution modes per action'],
+    ['Rollback Support', 'Every action records rollback availability for safe reversal'],
+    ['Compliance Audit', 'Every state transition logged to compliance_audit_logs for full traceability'],
+  ], C.brand);
+
+  // ══════════════════════════════════════════════════════════
+  // SECTION 21: MULTI-MODEL AI ORCHESTRATION
+  // ══════════════════════════════════════════════════════════
+  pdf.addPage();
+  y = 25;
+  y = sectionHeader(pdf, y, '21. MULTI-MODEL AI ORCHESTRATION (SMART ROUTER)', C.purple);
+  y = bodyText(pdf, y, 'SOCMind implements a Smart AI Router that intelligently routes queries across multiple AI models based on intent detection, complexity scoring, and quality guards — optimizing for accuracy, latency, and cost.');
+
+  y = subHeader(pdf, y, 'Routing Architecture', C.purple);
+  y = featureTable(pdf, y, [
+    ['Layer 1: Rule Engine', 'Known queries matched instantly via keyword rules — zero latency, zero cost'],
+    ['Layer 2: Response Cache', 'Previously answered queries served from cache with hit-count tracking'],
+    ['Layer 3: Intent Detection', 'Classifies queries into: simple, soc_query, compliance, complex — each with optimal model chain'],
+    ['Layer 4: Model Router', 'Routes to best model based on intent: Flash for speed, Pro for accuracy, GPT-5 for complex reasoning'],
+    ['Layer 5: Quality Guard', 'If primary model response is too short or generic, auto-escalates to stronger model'],
+  ], C.purple);
+
+  y = subHeader(pdf, y, 'Supported AI Models', C.cyan);
+  y = featureTable(pdf, y, [
+    ['GPT-5 / GPT-5 Mini', 'Complex reasoning, long context, high accuracy — used for RCA, investigations, threat hunting'],
+    ['GPT-5 Nano', 'Ultra-fast for simple queries — classification, summarization, greetings'],
+    ['Gemini 2.5 Pro', 'Strongest multimodal reasoning — visual + text analysis, big context windows'],
+    ['Gemini 2.5 Flash / Lite', 'Balanced speed-cost for SOC queries — incident lookups, MITRE mapping, log analysis'],
+    ['Gemini 3 Pro Preview', 'Next-generation reasoning for advanced analytical tasks'],
+    ['Gemini 3 Flash Preview', 'Fast next-gen model for efficient balanced workloads'],
+  ], C.cyan);
+
+  // ══════════════════════════════════════════════════════════
+  // SECTION 22: WAR ROOM
+  // ══════════════════════════════════════════════════════════
+  pdf.addPage();
+  y = 25;
+  y = sectionHeader(pdf, y, '22. WAR ROOM — INCIDENT COLLABORATION SPACE', C.danger);
+  y = bodyText(pdf, y, 'Per-incident War Rooms provide a dedicated collaboration workspace for critical incident response, bringing together real-time chat, task management, IOC tracking, and timeline visualization in a single focused environment.');
+
+  y = featureTable(pdf, y, [
+    ['Per-Incident Rooms', 'Each critical incident gets a dedicated War Room at /war-room/:id with full context'],
+    ['Real-Time Chat', 'WebSocket-powered messaging specific to the incident — keeps noise out of general channels'],
+    ['Task Management', 'Create, assign, and track response tasks with status updates and completion tracking'],
+    ['IOC Board', 'Centralized IOC tracking within the War Room — IPs, hashes, domains, URLs'],
+    ['Timeline View', 'Chronological event timeline showing detection, triage, response, and resolution phases'],
+    ['Evidence Attachment', 'Attach screenshots, logs, and forensic artifacts directly in the War Room'],
+    ['Participant Tracking', 'See who is active in the War Room with real-time presence indicators'],
+    ['Escalation Controls', 'Escalate directly from the War Room with full context preservation'],
+  ], C.danger);
+
+  // ══════════════════════════════════════════════════════════
+  // SECTION 23: ATTACK SIMULATOR
+  // ══════════════════════════════════════════════════════════
+  y = sectionHeader(pdf, y, '23. ATTACK SIMULATOR — AI TRAINING SCENARIOS', C.warning);
+  y = bodyText(pdf, y, 'AI-powered attack simulation environment for training SOC analysts with realistic MITRE ATT&CK-aligned scenarios, progressive difficulty levels, and performance scoring.');
+
+  y = featureTable(pdf, y, [
+    ['MITRE-Aligned Scenarios', 'Attack simulations mapped to specific ATT&CK tactics and techniques'],
+    ['Difficulty Levels', 'Progressive difficulty: Beginner, Intermediate, Advanced, Expert'],
+    ['AI-Generated Attacks', 'Dynamic scenario generation using AI for unique, non-repeating training exercises'],
+    ['Performance Scoring', 'Score analysts on detection speed, accuracy, response quality, and completeness'],
+    ['Scenario Library', 'Pre-built scenarios: Brute Force, Lateral Movement, Data Exfiltration, Ransomware, APT'],
+    ['Safe Sandbox', 'All simulations run in isolated environments — zero impact on production systems'],
+    ['Progress Tracking', 'Track analyst improvement over time with historical score comparisons'],
+  ], C.warning);
+
+  // ══════════════════════════════════════════════════════════
+  // SECTION 24: EXECUTIVE DASHBOARD
+  // ══════════════════════════════════════════════════════════
+  pdf.addPage();
+  y = 25;
+  y = sectionHeader(pdf, y, '24. EXECUTIVE DASHBOARD — CISO COMMAND VIEW', C.brand);
+  y = bodyText(pdf, y, 'A dedicated CISO-level dashboard providing strategic security posture overview with high-level KPIs, risk metrics, financial impact analysis, and team performance rankings.');
+
+  y = featureTable(pdf, y, [
+    ['Security KPIs', 'MTTD, MTTR, incident volume trends, SLA compliance rates — all at a glance'],
+    ['Risk Posture Score', 'Composite security risk score with trend indicators and drill-down capability'],
+    ['Financial Impact', 'Estimated cost savings from automated response vs. manual SOC operations'],
+    ['Analyst Leaderboard', 'Top-performing analysts ranked by resolution count, speed, and quality scores'],
+    ['Threat Landscape', 'High-level view of active threat categories, severity distribution, and geographic origins'],
+    ['Compliance Summary', 'Cross-framework compliance status: NCA-ECC, ISO 27001, NIST, PCI-DSS at a glance'],
+    ['Board-Ready Export', 'Export dashboard as PDF for executive briefings and board presentations'],
+  ], C.brand);
+
+  // ══════════════════════════════════════════════════════════
+  // SECTION 25: AGENT PLATFORM
+  // ══════════════════════════════════════════════════════════
+  y = sectionHeader(pdf, y, '25. AGENT PLATFORM — LIFECYCLE MANAGEMENT', C.accent);
+  y = bodyText(pdf, y, 'Full agent lifecycle management platform for deploying, monitoring, configuring, and executing SOAR actions across distributed endpoint agents.');
+
+  y = featureTable(pdf, y, [
+    ['Agent Health Dashboard', 'Real-time health monitoring: CPU, memory, disk, network status for each agent'],
+    ['Deploy & Onboard', 'One-click agent deployment scripts for Linux (Bash) and Windows (PowerShell)'],
+    ['Version Management', 'Track agent versions across fleet with upgrade notifications'],
+    ['Heartbeat Monitoring', 'Real-time heartbeat tracking with automatic offline/stale detection'],
+    ['Remote Configuration', 'Push configuration updates to agents remotely via the platform'],
+    ['SOAR Execution', 'Agents execute SOAR actions (block IP, isolate host) and report results back'],
+    ['License Binding', 'Hardware-bound license validation with per-agent activation tracking'],
+    ['Fleet Overview', 'Bird\'s-eye view of entire agent fleet with status, OS, version, and last activity'],
+  ], C.accent);
+
+  // ══════════════════════════════════════════════════════════
+  // SECTION 26: CORRELATION RULES ENGINE
+  // ══════════════════════════════════════════════════════════
+  pdf.addPage();
+  y = 25;
+  y = sectionHeader(pdf, y, '26. CORRELATION RULES ENGINE — CUSTOM DETECTION', C.cyan);
+  y = bodyText(pdf, y, 'Build custom detection rules that correlate events across multiple log sources, applying thresholds, time windows, and conditional logic to identify complex attack patterns.');
+
+  y = featureTable(pdf, y, [
+    ['Rule Builder', 'Create rules with match fields, operators, values, and configurable thresholds'],
+    ['Time Windows', 'Define time-based correlation windows (e.g., 5 failed logins in 10 minutes)'],
+    ['Event Type Filters', 'Filter rules to specific event types for precision detection'],
+    ['Auto-Incident Creation', 'Rules automatically generate incidents when thresholds are breached'],
+    ['Severity Override', 'Set custom severity levels for rule-generated incidents'],
+    ['Hit Tracking', 'Monitor rule hit counts and last-triggered timestamps'],
+    ['Active/Inactive Toggle', 'Enable or disable rules without deleting them'],
+    ['Rule Templates', 'Pre-built templates for common detection scenarios: brute force, port scanning, data exfiltration'],
+    ['Match History', 'View all historical matches with matched log details and generated incidents'],
+  ], C.cyan);
+
+  // ══════════════════════════════════════════════════════════
+  // SECTION 27: NOTIFICATION CENTER & SLA
+  // ══════════════════════════════════════════════════════════
+  y = sectionHeader(pdf, y, '27. NOTIFICATION CENTER & SLA BREACH MONITOR', C.warning);
+  y = bodyText(pdf, y, 'Comprehensive notification system with real-time alerts, customizable preferences, and proactive SLA breach monitoring to ensure no critical event goes unnoticed.');
+
+  y = subHeader(pdf, y, 'Notification Center', C.warning);
+  y = featureTable(pdf, y, [
+    ['Real-Time Alerts', 'Instant in-app notifications for incidents, assignments, escalations, and approvals'],
+    ['Category Filtering', 'Filter by type: Incidents, Assignments, Escalations, Approvals, System, Mentions'],
+    ['Read/Unread Management', 'Mark individual or bulk notifications as read with visual indicators'],
+    ['Custom Preferences', 'Per-user control over which notification types appear in-app vs. email'],
+    ['Sound Alerts', 'Optional audio notifications for critical alerts'],
+    ['Deep Links', 'Click any notification to navigate directly to the relevant incident or resource'],
+  ], C.warning);
+
+  y = subHeader(pdf, y, 'SLA Breach Monitor', C.danger);
+  y = featureTable(pdf, y, [
+    ['Proactive Monitoring', 'Continuously monitors incident SLA deadlines and alerts before breach occurs'],
+    ['Breach Alerts', 'Automatic notifications when incidents approach or exceed SLA targets'],
+    ['Escalation Triggers', 'Auto-escalate incidents that breach SLA thresholds to senior analysts'],
+    ['SLA Dashboard', 'Visual overview of all active SLA timers with countdown and status indicators'],
+  ], C.danger);
+
+  // ══════════════════════════════════════════════════════════
+  // SECTION 28: COMMAND PALETTE & GAMIFICATION
+  // ══════════════════════════════════════════════════════════
+  pdf.addPage();
+  y = 25;
+  y = sectionHeader(pdf, y, '28. COMMAND PALETTE & ANALYST GAMIFICATION', C.brand);
+
+  y = subHeader(pdf, y, 'Command Palette (⌘K)', C.brand);
+  y = bodyText(pdf, y, 'Lightning-fast keyboard-driven navigation and action execution across the entire platform, inspired by modern developer tools.');
+  y = featureTable(pdf, y, [
+    ['Keyboard Shortcut', 'Press ⌘K (Mac) or Ctrl+K (Windows) to open from anywhere in the platform'],
+    ['Instant Navigation', 'Jump to any page: Dashboard, Incidents, Playbooks, Compliance, Settings, etc.'],
+    ['Quick Actions', 'Create incidents, run playbooks, open reports — all from the command palette'],
+    ['Fuzzy Search', 'Type partial names and the palette intelligently matches pages and actions'],
+    ['Recent History', 'Quick access to recently visited pages and recently executed actions'],
+  ], C.brand);
+
+  y = subHeader(pdf, y, 'Analyst Leaderboard & Gamification', C.purple);
+  y = bodyText(pdf, y, 'Score-based ranking system that motivates SOC analysts through healthy competition, tracking key performance metrics and awarding points for productive actions.');
+  y = featureTable(pdf, y, [
+    ['Performance Scoring', 'Points awarded for: incident resolutions, analyst notes, chat contributions, playbook executions'],
+    ['Leaderboard Rankings', 'Real-time leaderboard showing top analysts by score with profile avatars'],
+    ['Streak Tracking', 'Track consecutive active days and resolution streaks for engagement'],
+    ['Role-Based Tiers', 'Score thresholds unlock tier badges: Bronze, Silver, Gold, Platinum analyst'],
+    ['Team Competition', 'Compare performance across SOC shifts and teams for friendly competition'],
+    ['Performance Insights', 'Personal analytics showing strengths, improvement areas, and historical trends'],
+  ], C.purple);
+
+  // ══════════════════════════════════════════════════════════
   // BACK COVER
   // ══════════════════════════════════════════════════════════
   pdf.addPage();
