@@ -108,6 +108,7 @@ const App = () => (
               <Route path="/attack-simulator" element={<ProtectedRoute><AttackSimulator /></ProtectedRoute>} />
               <Route path="/executive" element={<ProtectedRoute><ExecutiveDashboard /></ProtectedRoute>} />
               <Route path="/agent-platform" element={<ProtectedRoute><AgentPlatform /></ProtectedRoute>} />
+              <Route path="/soar-actions" element={<ProtectedRoute><SOARActions /></ProtectedRoute>} />
               <Route path="/admin/cloud" element={<ProtectedRoute requiredRole="ciso"><CloudAdmin /></ProtectedRoute>} />
               
               {/* Fallback */}

@@ -53,6 +53,7 @@ const navGroups = [
       { icon: Search, label: 'Threat Hunting', path: '/threat-hunting' },
       { icon: Target, label: 'MITRE Coverage', path: '/mitre-coverage' },
       { icon: Zap, label: 'Playbooks', path: '/playbooks' },
+      { icon: Activity, label: 'SOAR Actions', path: '/soar-actions' },
       { icon: Swords, label: 'Attack Simulator', path: '/attack-simulator' },
       { icon: ClipboardCheck, label: 'Approvals', path: '/approvals' },
       { icon: MessageSquare, label: 'Team Chat', path: '/team-chat' },
