@@ -146,6 +146,12 @@ export function SmartAlertBanner() {
                       <span className="text-xs text-muted-foreground font-mono">{alert.incident_number}</span>
                     </div>
                     <p className="text-sm font-semibold text-foreground mt-1 truncate">{alert.event_type}</p>
+                    {alert.src_ip && (
+                      <p className="text-[10px] font-mono text-muted-foreground mt-0.5">{alert.src_ip}</p>
+                    )}
+                    {alert.mitre_technique && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">🎯 {alert.mitre_technique}</p>
+                    )}
                     {alert.message && (
                       <p className="text-xs text-muted-foreground truncate mt-0.5">{alert.message}</p>
                     )}
