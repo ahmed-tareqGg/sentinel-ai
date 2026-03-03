@@ -583,32 +583,74 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // LAYER 3: AI PROVIDERS — Try all available providers
-    // Priority: Lovable Gateway → Ollama (self-hosted) → Direct APIs
+    // LAYER 3: SMART AI ROUTER — Intent Detection + Model Selection
+    // Multi-Model Orchestration with Quality Guard & Fallback
     // ═══════════════════════════════════════════════════════════════
-    const OLLAMA_ENDPOINT = Deno.env.get('OLLAMA_ENDPOINT'); // e.g. http://your-server:11434
+    const OLLAMA_ENDPOINT = Deno.env.get('OLLAMA_ENDPOINT');
     const OLLAMA_MODEL = Deno.env.get('OLLAMA_MODEL') || 'llama3';
-
     const GATEWAY_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
-    const providers: { name: string; url: string; key: string; model: string; isOllama?: boolean }[] = [];
+
+    // ── Intent Detection ──
+    const intent = detectIntent(msgText);
+    console.log(`[soc-chat] 🧠 Intent: ${intent}`);
+
+    // ── Build provider chains per intent (primary → fallbacks) ──
+    type Provider = { name: string; url: string; key: string; model: string; isOllama?: boolean };
+    const allProviders: Record<string, Provider[]> = {
+      // Simple/greeting → cheapest & fastest
+      simple: [],
+      // SOC operational queries → balanced
+      soc_query: [],
+      // Compliance/GRC → balanced with good reasoning
+      compliance: [],
+      // Complex analysis, threat hunting, RCA → most powerful
+      complex: [],
+    };
+
     if (LOVABLE_API_KEY) {
-      providers.push({ name: 'Gemini Flash Lite', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash-lite' });
-      providers.push({ name: 'Gemini 3 Flash', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-3-flash-preview' });
-      providers.push({ name: 'Gemini Flash', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash' });
-      providers.push({ name: 'GPT-5 Nano', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'openai/gpt-5-nano' });
-      providers.push({ name: 'GPT-5 Mini', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'openai/gpt-5-mini' });
+      // Simple: ultra-fast, cheap
+      allProviders.simple.push(
+        { name: 'Gemini Flash Lite', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash-lite' },
+        { name: 'GPT-5 Nano', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'openai/gpt-5-nano' },
+      );
+      // SOC queries: balanced speed + accuracy
+      allProviders.soc_query.push(
+        { name: 'Gemini 3 Flash', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-3-flash-preview' },
+        { name: 'Gemini Flash', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash' },
+        { name: 'GPT-5 Nano', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'openai/gpt-5-nano' },
+      );
+      // Compliance: needs good reasoning
+      allProviders.compliance.push(
+        { name: 'Gemini Flash', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash' },
+        { name: 'GPT-5 Mini', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'openai/gpt-5-mini' },
+        { name: 'Gemini 3 Flash', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-3-flash-preview' },
+      );
+      // Complex: most powerful models first
+      allProviders.complex.push(
+        { name: 'GPT-5 Mini', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'openai/gpt-5-mini' },
+        { name: 'Gemini 2.5 Pro', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-pro' },
+        { name: 'Gemini Flash', url: GATEWAY_URL, key: LOVABLE_API_KEY, model: 'google/gemini-2.5-flash' },
+      );
     }
-    // Self-Hosted Ollama (runs locally, no credits needed)
+
+    // Self-Hosted Ollama fallback for all intents
     if (OLLAMA_ENDPOINT) {
-      providers.push({ name: `Ollama (${OLLAMA_MODEL})`, url: `${OLLAMA_ENDPOINT}/v1/chat/completions`, key: 'ollama', model: OLLAMA_MODEL, isOllama: true });
+      const ollamaProvider: Provider = { name: `Ollama (${OLLAMA_MODEL})`, url: `${OLLAMA_ENDPOINT}/v1/chat/completions`, key: 'ollama', model: OLLAMA_MODEL, isOllama: true };
+      for (const chain of Object.values(allProviders)) chain.push(ollamaProvider);
     }
-    // Direct API fallbacks
+    // Direct API fallbacks for all intents
     if (GEMINI_API_KEY) {
-      providers.push({ name: 'Gemini Direct', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: GEMINI_API_KEY, model: 'gemini-2.0-flash-lite' });
+      const gDirect: Provider = { name: 'Gemini Direct', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', key: GEMINI_API_KEY, model: 'gemini-2.0-flash-lite' };
+      for (const chain of Object.values(allProviders)) chain.push(gDirect);
     }
     if (OPENAI_API_KEY) {
-      providers.push({ name: 'OpenAI Direct', url: 'https://api.openai.com/v1/chat/completions', key: OPENAI_API_KEY, model: 'gpt-4o-mini' });
+      const oDirect: Provider = { name: 'OpenAI Direct', url: 'https://api.openai.com/v1/chat/completions', key: OPENAI_API_KEY, model: 'gpt-4o-mini' };
+      for (const chain of Object.values(allProviders)) chain.push(oDirect);
     }
+
+    // Select provider chain based on intent
+    const providers = allProviders[intent] || allProviders.soc_query;
+    console.log(`[soc-chat] 🔀 Router: ${intent} → [${providers.map(p => p.name).join(' → ')}]`);
 
     const aiMessages = [{ role: 'system', content: systemPrompt }, ...messages];
     const MAX_RETRIES = 2;
@@ -627,7 +669,6 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
           if (!provider.isOllama) {
             headers['Authorization'] = `Bearer ${provider.key}`;
           } else {
-            // ngrok free plan requires this header to skip the browser warning page
             headers['ngrok-skip-browser-warning'] = 'true';
           }
 
@@ -638,12 +679,23 @@ RULES: Answer in user's language. Be specific with data. Use ## headers, bullets
           });
 
           if (response.ok) {
-            console.log(`[soc-chat] ✅ ${provider.name} succeeded`);
-            // Cache the response in background and also save to chat DB
+            console.log(`[soc-chat] ✅ ${provider.name} succeeded (intent: ${intent})`);
+
+            // ── Quality Guard (non-streaming check for simple intents) ──
+            // For complex questions, if the first response is too short, escalate
+            if (intent === 'complex' && provider.model.includes('flash-lite')) {
+              const qualityClone = response.clone();
+              const qualityText = await extractStreamText(qualityClone);
+              if (qualityText.length < 80) {
+                console.log(`[soc-chat] ⚠️ Quality Guard: response too short (${qualityText.length} chars), escalating...`);
+                continue; // Try next (more powerful) provider
+              }
+            }
+
+            // Cache + save to DB
             const responseCloneForCache = response.clone();
             const responseCloneForDB = response.clone();
             cacheAIResponse(supabase, cacheKey, msgText, responseCloneForCache, current_route).catch(() => {});
-            // Save AI message to chat DB using service role (bypasses RLS)
             if (chat_channel) {
               saveAIResponseToDB(supabase, responseCloneForDB, chat_channel, reply_to_id).catch(() => {});
             }
