@@ -55,7 +55,7 @@ const classificationColors: Record<string, string> = {
   'Pending': 'bg-muted text-muted-foreground border-border',
 };
 
-export function IncidentTable({ incidents, allIncidents, limit, selectable, selectedIds, onSelectionChange }: IncidentTableProps) {
+export function IncidentTable({ incidents, allIncidents, limit, selectable, selectedIds, onSelectionChange, onRefresh }: IncidentTableProps) {
   const navigate = useNavigate();
   const displayedIncidents = limit ? incidents.slice(0, limit) : incidents;
   const relatedPool = allIncidents || incidents;
