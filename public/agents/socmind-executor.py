@@ -1298,8 +1298,19 @@ def cmd_configure():
     print("Role: SOAR EXECUTOR ONLY (no log collection)")
     print("Deploy on ONE privileged host (SOC jump server)")
     print()
-    api_key      = input("API Key (socm_...): ").strip()
+    api_key      = input("API Key (starts with socm_...): ").strip()
     api_endpoint = input("API Endpoint (e.g. https://xxxx.supabase.co/functions/v1): ").strip()
+
+    # Auto-detect swapped inputs
+    if api_key.startswith("http") and api_endpoint.startswith("socm_"):
+        print("[AUTO-FIX] Detected swapped API Key and Endpoint — swapping them.")
+        api_key, api_endpoint = api_endpoint, api_key
+
+    # Strip accidental trailing paths
+    for suffix in ["/agent-gateway", "/agent-gateway/", "/ingest-log", "/ingest-log/"]:
+        if api_endpoint.endswith(suffix):
+            api_endpoint = api_endpoint[:-len(suffix)]
+            print(f"[AUTO-FIX] Stripped trailing '{suffix}' from endpoint.")
 
     print("\nVerifying endpoint...")
     try:
