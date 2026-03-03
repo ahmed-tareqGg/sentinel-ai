@@ -1,11 +1,14 @@
 import { useNavigate } from 'react-router-dom';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, MoreHorizontal, UserCheck, ArrowUpCircle, XCircle, Clock } from 'lucide-react';
 import { Incident } from '@/hooks/useIncidents';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { RelatedIncidentsBadge } from '@/components/incidents/RelatedIncidentsBadge';
+import { supabase } from '@/integrations/backend/client';
+import { toast } from 'sonner';
 
 interface IncidentTableProps {
   incidents: Incident[];
