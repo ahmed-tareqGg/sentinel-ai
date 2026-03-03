@@ -716,6 +716,22 @@ export default function IncidentDetail() {
         </div>
       </div>
 
+      {/* AI Summary Panel */}
+      {aiSummary && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 lg:p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">AI Summary</h3>
+            </div>
+            <Button variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground" onClick={() => setAiSummary(null)}>Dismiss</Button>
+          </div>
+          <div className="prose prose-sm prose-invert max-w-none text-foreground/90 text-sm leading-relaxed whitespace-pre-wrap">
+            {aiSummary}
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border border-border bg-card p-4 lg:p-6 mb-6">
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
