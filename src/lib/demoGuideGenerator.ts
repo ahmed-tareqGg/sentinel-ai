@@ -237,6 +237,16 @@ export function generateDemoGuidePDF() {
     '16. Admin & Cloud Management',
     '17. Demo Mode & Guided Experience',
     '18. Architecture & Technical Stack',
+    '19. SOAR Actions — Real-Time Pipeline Monitor',
+    '20. Production SOAR Engine Architecture',
+    '21. Multi-Model AI Orchestration (Smart Router)',
+    '22. War Room — Incident Collaboration Space',
+    '23. Attack Simulator — AI Training Scenarios',
+    '24. Executive Dashboard — CISO Command View',
+    '25. Agent Platform — Lifecycle Management',
+    '26. Correlation Rules Engine — Custom Detection',
+    '27. Notification Center & SLA Breach Monitor',
+    '28. Command Palette & Analyst Gamification',
   ];
   y = bulletList(pdf, y, toc, C.brand);
 
