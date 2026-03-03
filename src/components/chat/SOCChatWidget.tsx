@@ -433,6 +433,17 @@ export function SOCChatWidget() {
       {/* History View */}
       {showHistory ? (
         <div className="flex-1 overflow-y-auto p-3 space-y-1">
+          {/* Search */}
+          <div className="relative mb-2">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              type="text"
+              value={historySearch}
+              onChange={(e) => setHistorySearch(e.target.value)}
+              placeholder="Search conversations..."
+              className="w-full pl-8 pr-3 py-2 text-sm rounded-lg border border-border bg-secondary/30 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
           {loadingConvos ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -443,7 +454,7 @@ export function SOCChatWidget() {
               <p className="text-sm">No previous conversations</p>
             </div>
           ) : (
-            conversations.map(convo => (
+            conversations.filter(c => !historySearch || c.title.toLowerCase().includes(historySearch.toLowerCase())).map(convo => (
               <button
                 key={convo.id}
                 onClick={() => openConvo(convo.id)}
