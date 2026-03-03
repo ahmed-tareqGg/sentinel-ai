@@ -2204,6 +2204,7 @@ export type Database = {
           action_type: string
           approved_at: string | null
           approved_by: string | null
+          assigned_agent: string | null
           completed_at: string | null
           created_at: string
           data_source_id: string | null
@@ -2217,15 +2218,18 @@ export type Database = {
           id: string
           incident_id: string | null
           parameters: Json | null
+          priority: number | null
           reason: string | null
           requested_by: string | null
           requested_by_role: string | null
           requires_approval: boolean | null
+          retry_count: number | null
           rollback_available: boolean | null
           rolled_back_at: string | null
           status: string | null
           target: string | null
           target_type: string | null
+          timeout_at: string | null
           updated_at: string | null
         }
         Insert: {
@@ -2233,6 +2237,7 @@ export type Database = {
           action_type: string
           approved_at?: string | null
           approved_by?: string | null
+          assigned_agent?: string | null
           completed_at?: string | null
           created_at?: string
           data_source_id?: string | null
@@ -2246,15 +2251,18 @@ export type Database = {
           id?: string
           incident_id?: string | null
           parameters?: Json | null
+          priority?: number | null
           reason?: string | null
           requested_by?: string | null
           requested_by_role?: string | null
           requires_approval?: boolean | null
+          retry_count?: number | null
           rollback_available?: boolean | null
           rolled_back_at?: string | null
           status?: string | null
           target?: string | null
           target_type?: string | null
+          timeout_at?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -2262,6 +2270,7 @@ export type Database = {
           action_type?: string
           approved_at?: string | null
           approved_by?: string | null
+          assigned_agent?: string | null
           completed_at?: string | null
           created_at?: string
           data_source_id?: string | null
@@ -2275,15 +2284,18 @@ export type Database = {
           id?: string
           incident_id?: string | null
           parameters?: Json | null
+          priority?: number | null
           reason?: string | null
           requested_by?: string | null
           requested_by_role?: string | null
           requires_approval?: boolean | null
+          retry_count?: number | null
           rollback_available?: boolean | null
           rolled_back_at?: string | null
           status?: string | null
           target?: string | null
           target_type?: string | null
+          timeout_at?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -2651,6 +2663,53 @@ export type Database = {
           total_controls: number
         }[]
       }
+      claim_soar_actions: {
+        Args: {
+          _agent_hostname: string
+          _agent_role?: string
+          _limit?: number
+          _timeout_minutes?: number
+        }
+        Returns: {
+          action_id: string | null
+          action_type: string
+          approved_at: string | null
+          approved_by: string | null
+          assigned_agent: string | null
+          completed_at: string | null
+          created_at: string
+          data_source_id: string | null
+          details: Json | null
+          dispatched_at: string | null
+          duration_seconds: number | null
+          error_message: string | null
+          executed_at: string | null
+          execution_mode: string | null
+          execution_result: Json | null
+          id: string
+          incident_id: string | null
+          parameters: Json | null
+          priority: number | null
+          reason: string | null
+          requested_by: string | null
+          requested_by_role: string | null
+          requires_approval: boolean | null
+          retry_count: number | null
+          rollback_available: boolean | null
+          rolled_back_at: string | null
+          status: string | null
+          target: string | null
+          target_type: string | null
+          timeout_at: string | null
+          updated_at: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "soar_actions"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       create_private_channel: {
         Args: { _name: string; _password: string }
         Returns: string
@@ -2756,6 +2815,14 @@ export type Database = {
           _target_user: string
         }
         Returns: undefined
+      }
+      soar_action_stats: {
+        Args: never
+        Returns: {
+          count: number
+          oldest: string
+          status: string
+        }[]
       }
       user_wants_email: {
         Args: { _type: string; _user_id: string }

@@ -1111,49 +1111,43 @@ serve(async (req) => {
     // ==================== POLL ACTIONS (Agent Auth) ====================
       if (action === 'poll-actions') {
         // Agent polls for actions to execute
-        // CRITICAL: Only return actions that have been MANUALLY approved by a human
-        // Executor agents get ALL approved actions (not filtered by data_source_id)
-        // since there is typically one executor per SOC environment
+        // Uses atomic claim_soar_actions() to prevent race conditions
         const body = await req.json().catch(() => ({})) as any;
+        const agentHostname = body.hostname || auth.dataSourceName || 'unknown';
         const agentRole = body.role || 'collector';
         const isExecutor = agentRole === 'executor';
 
-        let query = supabase
-          .from('soar_actions')
-          .select('*')
-          .eq('status', 'approved')
-          .order('created_at', { ascending: true })
-          .limit(10);
-
-        // Collectors only see their own data_source actions
         if (!isExecutor) {
-          query = query.eq('data_source_id', auth.dataSourceId);
+          // Non-executor agents don't get SOAR actions
+          return new Response(JSON.stringify({ actions: [] }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
 
-        const { data: pendingActions, error: pollErr } = await query;
+        // Atomic claim — FOR UPDATE SKIP LOCKED prevents double execution
+        const { data: claimedActions, error: claimErr } = await supabase.rpc('claim_soar_actions', {
+          _agent_hostname: agentHostname,
+          _agent_role: agentRole,
+          _limit: 10,
+          _timeout_minutes: 10,
+        });
 
-        if (pollErr) throw pollErr;
+        if (claimErr) {
+          console.error('Claim error:', claimErr);
+          throw claimErr;
+        }
 
-        // SECURITY: High-risk actions MUST have approved_by set (human approved)
-        // This prevents auto-created actions from being executed without oversight
-        const highRiskActions = ['block_ip', 'disable_user', 'isolate_host', 'kill_process', 
-          'quarantine_file', 'delete_file', 'lock_account', 'reset_password', 'stop_service'];
-        
+        const actions = claimedActions || [];
+
+        // Server-side IP validation: block_ip/geo_block MUST have valid IP target
         const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
         const ipRequiredActions = ['block_ip', 'geo_block', 'unblock_ip'];
 
-        const safeActions = (pendingActions || []).filter((a: any) => {
-          if (highRiskActions.includes(a.action_type)) {
-            if (!a.approved_by) {
-              console.log(`🚫 Blocked auto-execution of ${a.action_type} (${a.action_id}) - requires manual approval`);
-              return false;
-            }
-          }
-          // Server-side IP validation: block_ip/geo_block MUST have a valid IP target
+        const validActions = actions.filter((a: any) => {
           if (ipRequiredActions.includes(a.action_type)) {
             if (!a.target || !ipRegex.test(a.target)) {
-              console.log(`🚫 Skipped ${a.action_type} (${a.action_id}) - invalid target "${a.target}" (not a valid IP)`);
-              // Mark as failed so it doesn't keep appearing
+              console.log(`🚫 Rejected ${a.action_type} (${a.action_id}) — invalid target "${a.target}"`);
+              // Mark as failed asynchronously
               supabase.from('soar_actions').update({
                 status: 'failed',
                 error_message: `Invalid target: "${a.target}" is not a valid IP address`,
@@ -1165,25 +1159,12 @@ serve(async (req) => {
           return true;
         });
 
-        // Mark approved actions as dispatched (so they aren't polled again)
-        if (safeActions.length > 0) {
-          const ids = safeActions.map((a: any) => a.id);
-          await supabase
-            .from('soar_actions')
-            .update({ status: 'dispatched', dispatched_at: new Date().toISOString() })
-            .in('id', ids);
-        }
-
-        // Log blocked actions count
-        const blockedCount = (pendingActions?.length || 0) - safeActions.length;
-        if (blockedCount > 0) {
-          console.log(`⚠️ ${blockedCount} high-risk action(s) blocked - awaiting manual approval or invalid target`);
-        }
-
-        console.log(`📋 Agent ${auth.dataSourceName} polled: ${safeActions.length} safe actions (${blockedCount} blocked)`);
+        const rejectedCount = actions.length - validActions.length;
+        console.log(`📋 Agent ${agentHostname} claimed: ${validActions.length} actions` + 
+          (rejectedCount > 0 ? ` (${rejectedCount} rejected — invalid target)` : ''));
 
         return new Response(JSON.stringify({
-          actions: safeActions.map((a: any) => ({
+          actions: validActions.map((a: any) => ({
             id: a.id,
             action_id: a.action_id,
             action_type: a.action_type,
@@ -1194,6 +1175,8 @@ serve(async (req) => {
             reason: a.reason,
             execution_mode: a.execution_mode,
             incident_id: a.incident_id,
+            priority: a.priority,
+            retry_count: a.retry_count,
           })),
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
