@@ -184,6 +184,11 @@ export const soarActions = {
   },
 
   geoBlockIp: async (incidentId: string, ip: string) => {
+    const check = validateSOARTarget('geo_block', ip);
+    if (!check.valid) {
+      toast.error(check.error);
+      return { success: false, error: check.error };
+    }
     toast.info('🌍 Submitting geo-block for approval...', { duration: 2000 });
     const result = await createApprovalRequest(
       'geo_block',
