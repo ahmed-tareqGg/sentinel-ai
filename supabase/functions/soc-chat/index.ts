@@ -853,7 +853,7 @@ async function tryRuleBasedEngine(
 | **True Positives** | ${tp} |
 | **False Positives** | ${fp} |
 
-> *Data from local database — AI providers unavailable* 🗄️`;
+> *Rule-Based Engine — instant response* 🤖`;
   }
 
   // ── Critical incidents ──
@@ -979,7 +979,7 @@ ${pendingApprovals.map(a => `- **${a.action_type}** — ${a.reason || 'No reason
 
 ${critical > 0 ? `⚠️ **${critical} critical incident(s) require immediate attention!**` : '✅ No critical incidents.'}
 
-> *Rule-Based Engine — AI providers unavailable* 🤖`;
+> *Rule-Based Engine — instant response* 🤖`;
   }
 
   // No rule matched — let AI handle it
