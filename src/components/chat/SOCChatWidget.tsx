@@ -24,7 +24,15 @@ interface Conversation {
 
 const CHAT_URL = `${backendUrl}/functions/v1/soc-chat`;
 
-const QUICK_PROMPTS = [
+const CONTEXT_PROMPTS: Record<string, string[]> = {
+  '/dashboard': ['Daily briefing', 'Top threats right now', 'SLA compliance status', 'Open critical incidents'],
+  '/incidents': ['Summarize open incidents', 'Which incidents need triage?', 'Show false positive trends', 'Unassigned incidents'],
+  '/compliance': ['Coverage gaps analysis', 'Next audit preparation', 'Non-compliant controls', 'Evidence status'],
+  '/threat-intel': ['Active threat actors', 'Trending IOCs', 'OSINT summary', 'Malware campaigns'],
+  '/playbooks': ['Suggest playbook for latest incident', 'Automation rate', 'Failed playbook runs', 'Create new playbook'],
+};
+
+const DEFAULT_PROMPTS = [
   'Current security posture summary',
   'What are the open critical incidents?',
   'Show me compliance coverage status',
