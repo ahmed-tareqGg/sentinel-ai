@@ -156,7 +156,7 @@ export function generateDemoGuidePDF() {
   pdf.setFontSize(9);
   pdf.setTextColor(...C.dark);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('v3.0 — 2025', PW / 2, y + 4, { align: 'center' });
+  pdf.text('v4.0 — 2025', PW / 2, y + 4, { align: 'center' });
 
   // Subtitle / pitch
   y = 158;
