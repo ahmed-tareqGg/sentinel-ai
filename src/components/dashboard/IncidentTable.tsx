@@ -17,6 +17,22 @@ interface IncidentTableProps {
   selectable?: boolean;
   selectedIds?: Set<string>;
   onSelectionChange?: (ids: Set<string>) => void;
+  onRefresh?: () => void;
+}
+
+const SLA_MINUTES: Record<string, number> = {
+  Critical: 15, High: 30, Medium: 60, Low: 240, Info: 480,
+};
+
+function getSlaStatus(incident: Incident) {
+  if (incident.status === 'Closed' || incident.status === 'Resolved') return null;
+  const slaMin = SLA_MINUTES[incident.risk_level] || 60;
+  const elapsed = (Date.now() - new Date(incident.created_at).getTime()) / 60000;
+  const remaining = slaMin - elapsed;
+  const pct = Math.max(0, Math.min(100, (remaining / slaMin) * 100));
+  const breached = remaining <= 0;
+  const warning = pct <= 20 && !breached;
+  return { pct, remaining, breached, warning, slaMin };
 }
 
 const severityColors: Record<number, string> = {
