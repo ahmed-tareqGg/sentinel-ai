@@ -1034,8 +1034,75 @@ ${critical > 0 ? `⚠️ **${critical} critical incident(s) require immediate at
 > *Rule-Based Engine — instant response* 🤖`;
   }
 
-  // No rule matched — let AI handle it
-  return null;
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// INTENT DETECTION: Classify user question to route to optimal model
+// ═══════════════════════════════════════════════════════════════════════
+function detectIntent(msg: string): 'simple' | 'soc_query' | 'compliance' | 'complex' {
+  const q = msg.toLowerCase();
+  const len = q.length;
+
+  // Simple: greetings, short questions, basic queries
+  if (len < 20 || /^(hi|hello|hey|مرحبا|اهلا|شكرا|thanks|ok|yes|no|صباح|مساء)/.test(q)) {
+    return 'simple';
+  }
+
+  // Complex: analysis, investigation, RCA, threat hunting, strategy
+  if (/analyz|investigat|root cause|rca|threat hunt|correlat|campaign|attack chain|forensic|تحليل|تحقيق|سبب جذري|صيد التهديد|حملة|هجوم/.test(q)) {
+    return 'complex';
+  }
+  if (/why|لماذا|ليه|explain.*detail|شرح.*تفصيل|recommend.*strateg|how.*prevent|كيف.*منع/.test(q)) {
+    return 'complex';
+  }
+  if (/compare|مقارنة|trend.*analys|predict|forecast|توقع|benchmark/.test(q)) {
+    return 'complex';
+  }
+
+  // Compliance: GRC, ISO, NCA, audit, risk, policy
+  if (/compliance|grc|iso.*27|nca|ecc|nist|audit|risk.*register|control|gap|policy|سياس|امتثال|تدقيق|مخاطر|ضوابط/.test(q)) {
+    return 'compliance';
+  }
+
+  // SOC query: incidents, alerts, IPs, MITRE, playbooks, agents
+  if (/incident|alert|ip|mitre|playbook|agent|siem|soar|حادث|تنبيه|وكيل/.test(q)) {
+    return 'soc_query';
+  }
+
+  // Default: if longer question → soc_query, otherwise simple
+  return len > 60 ? 'soc_query' : 'simple';
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// HELPER: Extract full text from an SSE stream (for Quality Guard)
+// ═══════════════════════════════════════════════════════════════════════
+async function extractStreamText(response: Response): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const decoder = new TextDecoder();
+  let content = '';
+  let buffer = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nlIdx: number;
+      while ((nlIdx = buffer.indexOf('\n')) !== -1) {
+        let line = buffer.slice(0, nlIdx);
+        buffer = buffer.slice(nlIdx + 1);
+        if (!line.startsWith('data: ')) continue;
+        const json = line.slice(6).trim();
+        if (json === '[DONE]') return content;
+        try {
+          const p = JSON.parse(json);
+          const delta = p.choices?.[0]?.delta?.content;
+          if (delta) content += delta;
+        } catch {}
+      }
+    }
+  } catch {}
+  return content;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
