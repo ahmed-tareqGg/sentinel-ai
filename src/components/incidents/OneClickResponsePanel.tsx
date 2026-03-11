@@ -85,49 +85,74 @@ export function OneClickResponsePanel({ incident, onAction }: Props) {
     }
   };
 
+  const attackerIp = extractAttackerIp(incident);
+
+  const dispatchToAgent = async (actionType: string, target: string | null, reason: string, params: Record<string, any> = {}) => {
+    const { backendUrl, publishableKey } = await import('@/integrations/backend/client');
+    const session = (await supabase.auth.getSession()).data.session;
+
+    // First try dispatch-action (goes directly to soar_actions → executor picks it up)
+    const res = await fetch(`${backendUrl}/functions/v1/agent-gateway/dispatch-action`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token || publishableKey}`,
+        'apikey': publishableKey,
+      },
+      body: JSON.stringify({
+        incident_id: incident.id,
+        data_source_id: await getActiveDataSourceId(),
+        action_type: actionType,
+        target: target || undefined,
+        parameters: params,
+        reason,
+        requires_approval: true,
+        execution_mode: 'real',
+      }),
+    });
+
+    if (!res.ok) {
+      // Fallback: insert into approval_requests
+      await supabase.from('approval_requests').insert({
+        action_type: actionType,
+        incident_id: incident.id,
+        reason,
+        action_params: { ip: target, ...params },
+        status: 'pending',
+      });
+    }
+  };
+
+  const getActiveDataSourceId = async (): Promise<string | null> => {
+    const { data } = await supabase.from('data_sources').select('id').eq('status', 'active').limit(1);
+    return data?.[0]?.id ?? null;
+  };
+
   const actions: ResponseAction[] = [
     {
       id: 'isolate',
       label: 'Isolate Host',
-      description: incident.src_ip ? `Block ${incident.src_ip}` : 'Block source IP',
+      description: attackerIp ? `Isolate ${attackerIp}` : 'Isolate source host',
       icon: <Lock className="h-4 w-4" />,
       color: 'border-destructive/30 hover:bg-destructive/10 text-destructive',
       action: async () => {
-        const check = validateSOARTarget('isolate_host', incident.src_ip);
-        if (!check.valid) {
-          toast.error(check.error);
-          return;
-        }
-        await supabase.from('approval_requests').insert({
-          action_type: 'isolate_host',
-          incident_id: incident.id,
-          reason: `One-click isolation for ${incident.incident_number}`,
-          action_params: { ip: incident.src_ip, incident_number: incident.incident_number },
-          status: 'pending',
-        });
-        toast.success('Isolation request submitted for approval');
+        await dispatchToAgent('isolate_host', attackerIp, `One-click isolation for ${incident.incident_number}`, { ip: attackerIp });
+        toast.success(attackerIp ? `Isolation request for ${attackerIp} submitted` : 'Isolation request submitted');
       },
     },
     {
       id: 'block_ip',
       label: 'Block IP',
-      description: incident.src_ip ? `Firewall block ${incident.src_ip}` : 'Block on firewall',
+      description: attackerIp ? `Firewall block ${attackerIp}` : 'No valid IP found',
       icon: <Ban className="h-4 w-4" />,
       color: 'border-orange-500/30 hover:bg-orange-500/10 text-orange-400',
       action: async () => {
-        const check = validateSOARTarget('block_ip', incident.src_ip);
-        if (!check.valid) {
-          toast.error(check.error);
+        if (!attackerIp) {
+          toast.error('Cannot block IP: no valid attacker IP found in this incident');
           return;
         }
-        await supabase.from('approval_requests').insert({
-          action_type: 'block_ip',
-          incident_id: incident.id,
-          reason: `One-click IP block for ${incident.incident_number}`,
-          action_params: { ip: incident.src_ip },
-          status: 'pending',
-        });
-        toast.success('Block IP request submitted for approval');
+        await dispatchToAgent('block_ip', attackerIp, `One-click IP block for ${incident.incident_number}`, { ip: attackerIp });
+        toast.success(`Block IP ${attackerIp} submitted for approval`);
       },
     },
     {
