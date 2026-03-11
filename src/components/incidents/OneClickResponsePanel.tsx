@@ -16,8 +16,48 @@ interface Props {
     event_type: string;
     mitre_technique: string | null;
     status: string;
+    raw_log?: any;
   };
   onAction: () => void;
+}
+
+// Extract real attacker IP from incident data — never use hostname as IP
+function extractAttackerIp(incident: Props['incident']): string | null {
+  const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+  
+  // 1. Check src_ip directly
+  if (incident.src_ip && ipRegex.test(incident.src_ip)) {
+    return incident.src_ip;
+  }
+  
+  // 2. Dig into raw_log for the real source IP
+  const raw = incident.raw_log;
+  if (raw) {
+    const candidates = [
+      raw?.raw_log?.src_ip,
+      raw?.raw_log?.srcIP,
+      raw?.srcIP,
+      raw?.src_ip,
+      raw?.source_ip,
+      raw?.host_ip,
+      raw?.ip_address,
+    ];
+    for (const c of candidates) {
+      if (c && typeof c === 'string' && ipRegex.test(c)) {
+        return c;
+      }
+    }
+    // Try regex extraction from message fields
+    const msgFields = [raw?.msg, raw?.message, raw?.raw_log?.msg, raw?.raw_log?.message];
+    for (const msg of msgFields) {
+      if (msg && typeof msg === 'string') {
+        const match = msg.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+        if (match) return match[1];
+      }
+    }
+  }
+  
+  return null;
 }
 
 interface ResponseAction {
