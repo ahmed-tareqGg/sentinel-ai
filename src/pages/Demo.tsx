@@ -302,7 +302,7 @@ export default function Demo() {
   }, [metrics, incidentsLoading]);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (isRunning && startTime) {
       interval = setInterval(() => {
         setTotalTime(Date.now() - startTime);
