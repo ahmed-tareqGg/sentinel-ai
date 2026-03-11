@@ -45,7 +45,7 @@ export function Header({ title, subtitle }: HeaderProps) {
 
   // Debounce search for real-time filtering
   const debounce = useCallback((func: Function, delay: number) => {
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout>;
     return (...args: any[]) => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => func(...args), delay);

@@ -59,7 +59,7 @@ export function TypingIndicator({ channel }: TypingIndicatorProps) {
 export function useTypingBroadcast(channel: string) {
   const { user, profile } = useAuth();
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const chan = supabase.channel(`typing-${channel}`, {

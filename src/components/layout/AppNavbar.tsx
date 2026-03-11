@@ -125,7 +125,7 @@ export function AppNavbar() {
 
   // Search logic
   const debounce = useCallback((func: Function, delay: number) => {
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout>;
     return (...args: any[]) => {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => func(...args), delay);
