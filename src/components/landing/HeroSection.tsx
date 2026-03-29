@@ -30,12 +30,23 @@ export function HeroSection() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.1 }}
-            className="text-4xl sm:text-5xl md:text-7xl font-bold text-foreground mb-6 leading-tight tracking-tight"
+            className="text-4xl sm:text-5xl md:text-7xl font-bold text-foreground mb-4 leading-tight tracking-tight"
           >
             Security Operations
             <br />
             <span className="text-gradient">Redefined by AI</span>
           </motion.h1>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.15 }}
+            className="mb-8"
+          >
+            <span className="text-lg md:text-2xl font-semibold tracking-widest uppercase bg-gradient-to-r from-cyan-400 via-teal-300 to-emerald-400 bg-clip-text text-transparent">
+              Next-Generation Autonomous SOC
+            </span>
+          </motion.div>
 
           <motion.p
             initial={{ opacity: 0, y: 20 }}
