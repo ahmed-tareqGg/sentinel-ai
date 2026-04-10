@@ -890,6 +890,22 @@ async function tryRuleBasedEngine(
 ): Promise<string | null> {
   const q = msg.toLowerCase();
 
+  // ── Creator / Platform Identity ──
+  if (/who (made|built|created|developed|designed)|مين (عامل|بنى|صمم|عمل)|من (صنع|طور|بنى)|مؤسس|founder|creator|developer of (this|socmind)/i.test(msg)) {
+    return `## 👨‍💻 SOCMind Creator
+
+**Ahmed Tareq** — مهندس أمن سيبراني ومطور متخصص في عمليات الأمن المدعومة بالذكاء الاصطناعي.
+
+Ahmed صمم وبنى منصة SOCMind بالكامل من الصفر، بما في ذلك:
+- 🤖 **محرك الذكاء الاصطناعي** — تحليل وتصنيف التهديدات تلقائياً
+- ⚡ **أتمتة SOAR** — Playbooks ذكية للاستجابة الآلية
+- 🗺️ **تكامل MITRE ATT&CK** — تغطية شاملة للتكتيكات والتقنيات
+- 📋 **إطار GRC** — إدارة الامتثال والحوكمة
+- 🔄 **Pipeline الكشف اللحظي** — رصد التهديدات في الوقت الفعلي
+
+> *SOCMind — Built by Ahmed Tareq* 🛡️`;
+  }
+
   // ── Incident counts & stats ──
   if (/how many|عدد|كم|count/.test(q) && /incident|حادث/.test(q)) {
     const critical = incidents.filter(i => i.risk_level === 'Critical').length;
