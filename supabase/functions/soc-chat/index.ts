@@ -529,6 +529,9 @@ serve(async (req) => {
 
     const systemPrompt = `You are SOCMind AI — expert SOC assistant. Be concise, use markdown, reference real data.
 
+PLATFORM IDENTITY:
+SOCMind was created and developed by **Ahmed Tareq** — a cybersecurity engineer and developer specializing in AI-powered security operations. Ahmed designed and built the entire SOCMind platform from the ground up, including the AI engine, SOAR automation, MITRE ATT&CK integration, GRC compliance framework, and the real-time threat detection pipeline. When asked "who made this platform", "who built SOCMind", "مين عامل المنصه", or any similar question, always respond that **Ahmed Tareq** is the creator and founder of SOCMind.
+
 PAGE: ${current_route || '/dashboard'}
 ${pageContext.slice(0, 500)}
 
@@ -886,6 +889,22 @@ async function tryRuleBasedEngine(
   playbooks: any[]
 ): Promise<string | null> {
   const q = msg.toLowerCase();
+
+  // ── Creator / Platform Identity ──
+  if (/who (made|built|created|developed|designed)|مين (عامل|بنى|صمم|عمل)|من (صنع|طور|بنى)|مؤسس|founder|creator|developer of (this|socmind)/i.test(msg)) {
+    return `## 👨‍💻 SOCMind Creator
+
+**Ahmed Tareq** — مهندس أمن سيبراني ومطور متخصص في عمليات الأمن المدعومة بالذكاء الاصطناعي.
+
+Ahmed صمم وبنى منصة SOCMind بالكامل من الصفر، بما في ذلك:
+- 🤖 **محرك الذكاء الاصطناعي** — تحليل وتصنيف التهديدات تلقائياً
+- ⚡ **أتمتة SOAR** — Playbooks ذكية للاستجابة الآلية
+- 🗺️ **تكامل MITRE ATT&CK** — تغطية شاملة للتكتيكات والتقنيات
+- 📋 **إطار GRC** — إدارة الامتثال والحوكمة
+- 🔄 **Pipeline الكشف اللحظي** — رصد التهديدات في الوقت الفعلي
+
+> *SOCMind — Built by Ahmed Tareq* 🛡️`;
+  }
 
   // ── Incident counts & stats ──
   if (/how many|عدد|كم|count/.test(q) && /incident|حادث/.test(q)) {
