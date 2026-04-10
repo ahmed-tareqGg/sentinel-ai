@@ -891,19 +891,60 @@ async function tryRuleBasedEngine(
   const q = msg.toLowerCase();
 
   // ── Creator / Platform Identity ──
-  if (/who (made|built|created|developed|designed)|مين (عامل|بنى|صمم|عمل)|من (صنع|طور|بنى)|مؤسس|founder|creator|developer of (this|socmind)/i.test(msg)) {
-    return `## 👨‍💻 SOCMind Creator
+  if (/who (made|built|created|developed|designed|is behind)|مين (عامل|بنى|صمم|عمل)|من (صنع|طور|بنى)|مؤسس|founder|creator|developer of (this|socmind)|ahmed.?tareq|أحمد.?طارق|about.?(the )?(creator|developer|founder|builder|owner)/i.test(msg)) {
+    return `## 👨‍💻 Ahmed Tareq Abdelhady Alieldin
+### SOC Analyst | Cybersecurity Professional | Top 4% TryHackMe
 
-**Ahmed Tareq** — مهندس أمن سيبراني ومطور متخصص في عمليات الأمن المدعومة بالذكاء الاصطناعي.
+---
 
-Ahmed صمم وبنى منصة SOCMind بالكامل من الصفر، بما في ذلك:
-- 🤖 **محرك الذكاء الاصطناعي** — تحليل وتصنيف التهديدات تلقائياً
-- ⚡ **أتمتة SOAR** — Playbooks ذكية للاستجابة الآلية
-- 🗺️ **تكامل MITRE ATT&CK** — تغطية شاملة للتكتيكات والتقنيات
-- 📋 **إطار GRC** — إدارة الامتثال والحوكمة
-- 🔄 **Pipeline الكشف اللحظي** — رصد التهديدات في الوقت الفعلي
+**Ahmed Tareq** هو مؤسس ومطور منصة **SOCMind** بالكامل من الصفر — مهندس أمن سيبراني معتمد (CCNA) بخبرة **600+ ساعة** تدريب عملي في Threat Detection و Incident Response و SIEM Operations.
 
-> *SOCMind — Built by Ahmed Tareq* 🛡️`;
+### 🎓 التعليم
+- **بكالوريوس علوم حاسب** — كلية الحاسبات والمعلومات، جامعة المنوفية (2025)
+
+### 💼 الخبرة المهنية
+- **SOC & Penetration Testing Trainee** — المعهد القومي للاتصالات (NTI) — 600 ساعة
+  - مراقبة **500+ حدث أمني يومياً** عبر FortiSIEM و IBM QRadar
+  - تنفيذ **15+ Red Team Exercise** على بيئات حية
+  - تحليل حركة الشبكة عبر Wireshark والتحقيق في **20+ محاولة اختراق**
+  - تقليل وقت الاستجابة للحوادث بنسبة **30%**
+- **Frontend Developer Trainee** — معهد تكنولوجيا المعلومات (ITI)
+  - تطوير **5+ تطبيقات ويب** بـ React JS مع **95%+ Lighthouse Score**
+
+### 🚀 المشاريع
+| المشروع | التقنيات | الإنجاز |
+|---------|----------|---------|
+| **SOCMind Platform** | React, TypeScript, AI, SOAR | معالجة **1,000+ حدث أمني** لحظياً |
+| **Business Management** | React, Supabase | إدارة **200+ سجل** بدقة **99.9%** |
+| **Competition System** | React, Supabase, RBAC | **2,000+ تسجيل** مع 3 أدوار إدارية |
+
+### 🛡️ ماذا بنى في SOCMind؟
+- 🤖 **محرك AI متعدد النماذج** — Smart Router بين GPT-5 و Gemini و Edge AI
+- ⚡ **SOAR Engine** — أتمتة الاستجابة بـ Playbooks ذكية
+- 🗺️ **MITRE ATT&CK Integration** — تغطية شاملة مع Heatmap تفاعلية
+- 📋 **GRC & Compliance** — ISO 27001, NCA-ECC, NIST Framework
+- 🔍 **Threat Intelligence Pipeline** — ربط مع AbuseIPDB و VirusTotal
+- 💬 **War Room & Team Chat** — تعاون لحظي مع @mentions و AI Bot
+- 📊 **Executive Reporting** — تقارير PDF احترافية للإدارة
+
+### 🏆 الشهادات والتدريب
+\`CCNA v7\` \`eCIR (In Progress)\` \`Fortinet NSE4 (In Progress)\` \`CompTIA Security+\` \`eJPT\` \`SANS SEC450\` \`Red Hat RH124\` \`Ethical Hacker - Cisco\`
+
+### 🔧 المهارات التقنية
+**Security:** FortiSIEM, QRadar, Wireshark, Nmap, Metasploit, Burp Suite
+**Network:** TCP/IP, OSI, Firewall, VPN, IDS/IPS, Cisco
+**Programming:** Python, Bash, JavaScript, React, TypeScript, SQL
+**GRC:** NIST, ISO 27001, GDPR, Risk Assessment
+
+### 📞 التواصل
+- 📧 ahmed.tareq.alieldin@gmail.com
+- 💼 [LinkedIn](https://www.linkedin.com/in/ah-m-ed-tareq-48069523b/)
+- 🐙 [GitHub](https://github.com/Palestine-1)
+- 🛡️ [TryHackMe — Top 4%](https://tryhackme.com/p/ahmedtareq)
+- 📱 [WhatsApp](https://wa.me/201559181558)
+- 📄 [Download CV (PDF)](/Ahmed_Tareq_CV.pdf)
+
+> *SOCMind — Designed & Built by Ahmed Tareq* 🛡️`;
   }
 
   // ── Incident counts & stats ──
