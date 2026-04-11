@@ -1,4 +1,5 @@
-import { Shield, Target, Zap, BarChart3, Server, Brain, Database, AlertTriangle, Play, Linkedin, Github, Mail, MessageCircle, Award, GraduationCap, BadgeCheck, Trophy } from 'lucide-react';
+import { Shield, Target, Zap, BarChart3, Server, Brain, Database, AlertTriangle, Play, Linkedin, Github, Mail, MessageCircle, Award, GraduationCap, BadgeCheck, Trophy, FileText, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import founderImage from '@/assets/founder-ahmed-tarek.png';
 

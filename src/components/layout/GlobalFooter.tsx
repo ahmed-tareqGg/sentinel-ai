@@ -76,6 +76,13 @@ export function GlobalFooter() {
               >
                 Trust & Security
               </Link>
+              <Link 
+                to="/resume" 
+                onClick={scrollToTop}
+                className="text-sm text-muted-foreground hover:text-primary transition-colors"
+              >
+                Resume
+              </Link>
             </nav>
           </div>
 
