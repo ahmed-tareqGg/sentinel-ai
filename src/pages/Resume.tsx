@@ -159,6 +159,7 @@ export default function Resume() {
                   {[
                     { icon: Linkedin, href: 'https://www.linkedin.com/in/ah-m-ed-tareq-48069523b/', label: 'LinkedIn' },
                     { icon: Github, href: 'https://github.com/Palestine-1', label: 'GitHub' },
+                    { icon: Shield, href: 'https://tryhackme.com/p/ahmedtareq', label: 'TryHackMe' },
                     { icon: MessageCircle, href: 'https://wa.me/201559181558', label: 'WhatsApp' },
                   ].map(link => (
                     <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer"

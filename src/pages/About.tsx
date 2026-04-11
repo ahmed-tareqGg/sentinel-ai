@@ -1,4 +1,5 @@
-import { Shield, Target, Zap, BarChart3, Server, Brain, Database, AlertTriangle, Play, Linkedin, Github, Mail, MessageCircle, Award, GraduationCap, BadgeCheck, Trophy } from 'lucide-react';
+import { Shield, Target, Zap, BarChart3, Server, Brain, Database, AlertTriangle, Play, Linkedin, Github, Mail, MessageCircle, Award, GraduationCap, BadgeCheck, Trophy, FileText, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import founderImage from '@/assets/founder-ahmed-tarek.png';
 
@@ -28,6 +29,7 @@ const socialLinks = [
   { icon: Mail, href: 'mailto:tarekaboya2019@gmail.com', label: 'Email' },
   { icon: Linkedin, href: 'https://www.linkedin.com/in/ah-m-ed-tareq-48069523b/', label: 'LinkedIn' },
   { icon: Github, href: 'https://github.com/Palestine-1', label: 'GitHub' },
+  { icon: Shield, href: 'https://tryhackme.com/p/ahmedtareq', label: 'TryHackMe' },
   { icon: MessageCircle, href: 'https://wa.me/201559181558', label: 'WhatsApp' },
 ];
 
@@ -188,11 +190,16 @@ export default function About() {
               />
             </div>
             <h3 className="text-2xl font-bold text-foreground mb-2">Ahmed Tarek</h3>
-            <p className="text-primary font-medium mb-4">Security Engineer & SOC Automation Architect</p>
-            <p className="text-muted-foreground max-w-lg mx-auto mb-8 leading-relaxed">
+            <p className="text-primary font-medium mb-2">Security Engineer & SOC Automation Architect</p>
+            <div className="flex items-center gap-2 justify-center mb-4">
+              <span className="px-3 py-1 rounded-full bg-accent/10 border border-accent/20 text-xs font-bold text-accent flex items-center gap-1">
+                <Trophy className="h-3 w-3" /> Top 4% — TryHackMe
+              </span>
+            </div>
+            <p className="text-muted-foreground max-w-lg mx-auto mb-6 leading-relaxed">
               Passionate about building intelligent security solutions that empower SOC teams to work smarter, not harder.
             </p>
-            <div className="flex gap-3 justify-center">
+            <div className="flex gap-3 justify-center mb-6">
               {socialLinks.map((link) => (
                 <a
                   key={link.label}
@@ -206,6 +213,13 @@ export default function About() {
                 </a>
               ))}
             </div>
+            <Link
+              to="/resume"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition-all duration-300 text-sm font-medium group"
+            >
+              <FileText className="h-4 w-4" /> View Full Resume
+              <ExternalLink className="h-3.5 w-3.5 opacity-50 group-hover:opacity-100 transition-opacity" />
+            </Link>
           </motion.div>
         </div>
       </section>
