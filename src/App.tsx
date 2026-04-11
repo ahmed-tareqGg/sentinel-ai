@@ -78,6 +78,7 @@ const App = () => (
                 <Route path="/trust" element={<Trust />} />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/privacy" element={<Privacy />} />
+                <Route path="/resume" element={<Resume />} />
               </Route>
               
               {/* Demo Landing (standalone - no layout) */}
