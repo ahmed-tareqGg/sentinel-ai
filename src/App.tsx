@@ -46,6 +46,7 @@ const ExecutiveDashboard = lazy(() => import("./pages/ExecutiveDashboard"));
 const AgentPlatform = lazy(() => import("./pages/AgentPlatform"));
 const SOARActions = lazy(() => import("./pages/SOARActions"));
 const AuditLogs = lazy(() => import("./pages/AuditLogs"));
+const Resume = lazy(() => import("./pages/Resume"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
