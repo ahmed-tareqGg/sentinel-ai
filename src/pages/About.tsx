@@ -29,6 +29,7 @@ const socialLinks = [
   { icon: Mail, href: 'mailto:tarekaboya2019@gmail.com', label: 'Email' },
   { icon: Linkedin, href: 'https://www.linkedin.com/in/ah-m-ed-tareq-48069523b/', label: 'LinkedIn' },
   { icon: Github, href: 'https://github.com/Palestine-1', label: 'GitHub' },
+  { icon: Shield, href: 'https://tryhackme.com/p/ahmedtareq', label: 'TryHackMe' },
   { icon: MessageCircle, href: 'https://wa.me/201559181558', label: 'WhatsApp' },
 ];
 
