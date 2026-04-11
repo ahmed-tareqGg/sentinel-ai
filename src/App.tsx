@@ -46,6 +46,7 @@ const ExecutiveDashboard = lazy(() => import("./pages/ExecutiveDashboard"));
 const AgentPlatform = lazy(() => import("./pages/AgentPlatform"));
 const SOARActions = lazy(() => import("./pages/SOARActions"));
 const AuditLogs = lazy(() => import("./pages/AuditLogs"));
+const Resume = lazy(() => import("./pages/Resume"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -77,6 +78,7 @@ const App = () => (
                 <Route path="/trust" element={<Trust />} />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/privacy" element={<Privacy />} />
+                <Route path="/resume" element={<Resume />} />
               </Route>
               
               {/* Demo Landing (standalone - no layout) */}
