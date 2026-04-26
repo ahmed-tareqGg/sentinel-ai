@@ -195,7 +195,7 @@ export default function KnowledgeHub() {
 
           {/* FORENSICS */}
           <TabsContent value="forensics">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredBlogs.map((blog, idx) => (
                 <motion.div
                   key={blog.id}
@@ -203,60 +203,83 @@ export default function KnowledgeHub() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.4, delay: idx * 0.05 }}
                 >
-                  <Card
-                    className="group p-6 h-full cursor-pointer hover:border-emerald-500/50 transition-all hover:shadow-lg hover:shadow-emerald-500/10 bg-gradient-to-br from-card to-card/50 relative overflow-hidden"
-                    onClick={() => setOpenBlog(blog)}
+                  <Link
+                    to={`/knowledge-hub/blog/${blog.slug}`}
+                    className="group block rounded-xl overflow-hidden border border-border bg-card hover:border-emerald-500/50 transition-all hover:shadow-xl hover:shadow-emerald-500/10 h-full flex flex-col"
                   >
-                    <div className="absolute -top-12 -right-12 w-40 h-40 bg-emerald-500/5 rounded-full blur-3xl group-hover:bg-emerald-500/10 transition-all" />
-                    <div className="relative">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Badge variant="outline" className="text-xs">{blog.category}</Badge>
-                        <Badge variant="outline" className={`text-xs border ${difficultyColor[blog.difficulty]}`}>
+                    {/* Cover image */}
+                    <div className="aspect-video relative overflow-hidden">
+                      <img
+                        src={blog.coverImage}
+                        alt={blog.title}
+                        loading="lazy"
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent" />
+                      <div className="absolute top-3 left-3 flex gap-1.5">
+                        <Badge variant="outline" className="text-[10px] bg-background/70 backdrop-blur">
+                          {blog.category}
+                        </Badge>
+                        <Badge variant="outline" className={`text-[10px] backdrop-blur bg-background/70 border ${difficultyColor[blog.difficulty]}`}>
                           {blog.difficulty}
                         </Badge>
                       </div>
-                      <h3 className="text-xl font-bold mb-2 group-hover:text-emerald-400 transition-colors leading-snug">
+                    </div>
+
+                    <div className="p-5 flex-1 flex flex-col">
+                      <h3 className="text-lg font-bold mb-2 group-hover:text-emerald-400 transition-colors leading-snug line-clamp-2">
                         {blog.title}
                       </h3>
-                      <p className="text-sm text-muted-foreground line-clamp-3 mb-4">{blog.scenario}</p>
+                      <p className="text-sm text-muted-foreground line-clamp-2 mb-4 flex-1">{blog.scenario}</p>
 
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4">
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
                         <span className="flex items-center gap-1">
-                          <Activity className="h-3 w-3" /> {blog.readingTime} min read
+                          <Activity className="h-3 w-3" /> {blog.readingTime} min
                         </span>
                         <span>·</span>
                         <span>{blog.publishedAt}</span>
+                        <span>·</span>
+                        <span className="text-primary">{blog.labProvider}</span>
                       </div>
-
-                      <a
-                        href={blog.labUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-2 text-xs text-primary hover:underline mb-4"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        {blog.labProvider} · {blog.labName}
-                      </a>
 
                       <div className="flex items-center justify-between pt-3 border-t border-border">
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          Read investigation <ChevronRight className="h-3 w-3" />
+                        <span className="text-xs text-emerald-400 flex items-center gap-1 font-medium">
+                          Read investigation <ChevronRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
                         </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-xs"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            generateForensicsBlogPDF(blog);
-                          }}
-                        >
-                          <Download className="h-3 w-3 mr-1" /> PDF
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <a
+                              href={`/knowledge-hub/blog/${blog.slug}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Open in new tab"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              generateForensicsBlogPDF(blog);
+                            }}
+                            title="Download PDF"
+                          >
+                            <Download className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
-                  </Card>
+                  </Link>
                 </motion.div>
               ))}
             </div>
