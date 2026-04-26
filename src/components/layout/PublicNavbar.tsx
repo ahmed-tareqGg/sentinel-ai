@@ -8,6 +8,7 @@ import logo from '@/assets/socmind-logo.png';
 const navLinks = [
   { label: 'About', path: '/about' },
   { label: 'How It Works', path: '/how-it-works' },
+  { label: 'Knowledge Hub', path: '/knowledge-hub' },
   { label: 'Trust & Security', path: '/trust' },
 ];
 
