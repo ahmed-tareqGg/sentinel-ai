@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield,
@@ -25,7 +26,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { attackEntries, forensicsBlogs, type AttackEntry, type ForensicsBlog } from '@/data/knowledgeHub';
+import { attackEntries, forensicsBlogs, type AttackEntry } from '@/data/knowledgeHub';
 import { generateAttackPDF, generateForensicsBlogPDF } from '@/lib/knowledgeHubPdf';
 
 const severityColor: Record<string, string> = {
@@ -45,7 +46,7 @@ const difficultyColor: Record<string, string> = {
 export default function KnowledgeHub() {
   const [search, setSearch] = useState('');
   const [openAttack, setOpenAttack] = useState<AttackEntry | null>(null);
-  const [openBlog, setOpenBlog] = useState<ForensicsBlog | null>(null);
+  
 
   const filteredAttacks = useMemo(
     () =>
@@ -195,7 +196,7 @@ export default function KnowledgeHub() {
 
           {/* FORENSICS */}
           <TabsContent value="forensics">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredBlogs.map((blog, idx) => (
                 <motion.div
                   key={blog.id}
@@ -203,60 +204,83 @@ export default function KnowledgeHub() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.4, delay: idx * 0.05 }}
                 >
-                  <Card
-                    className="group p-6 h-full cursor-pointer hover:border-emerald-500/50 transition-all hover:shadow-lg hover:shadow-emerald-500/10 bg-gradient-to-br from-card to-card/50 relative overflow-hidden"
-                    onClick={() => setOpenBlog(blog)}
+                  <Link
+                    to={`/knowledge-hub/blog/${blog.slug}`}
+                    className="group block rounded-xl overflow-hidden border border-border bg-card hover:border-emerald-500/50 transition-all hover:shadow-xl hover:shadow-emerald-500/10 h-full flex flex-col"
                   >
-                    <div className="absolute -top-12 -right-12 w-40 h-40 bg-emerald-500/5 rounded-full blur-3xl group-hover:bg-emerald-500/10 transition-all" />
-                    <div className="relative">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Badge variant="outline" className="text-xs">{blog.category}</Badge>
-                        <Badge variant="outline" className={`text-xs border ${difficultyColor[blog.difficulty]}`}>
+                    {/* Cover image */}
+                    <div className="aspect-video relative overflow-hidden">
+                      <img
+                        src={blog.coverImage}
+                        alt={blog.title}
+                        loading="lazy"
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent" />
+                      <div className="absolute top-3 left-3 flex gap-1.5">
+                        <Badge variant="outline" className="text-[10px] bg-background/70 backdrop-blur">
+                          {blog.category}
+                        </Badge>
+                        <Badge variant="outline" className={`text-[10px] backdrop-blur bg-background/70 border ${difficultyColor[blog.difficulty]}`}>
                           {blog.difficulty}
                         </Badge>
                       </div>
-                      <h3 className="text-xl font-bold mb-2 group-hover:text-emerald-400 transition-colors leading-snug">
+                    </div>
+
+                    <div className="p-5 flex-1 flex flex-col">
+                      <h3 className="text-lg font-bold mb-2 group-hover:text-emerald-400 transition-colors leading-snug line-clamp-2">
                         {blog.title}
                       </h3>
-                      <p className="text-sm text-muted-foreground line-clamp-3 mb-4">{blog.scenario}</p>
+                      <p className="text-sm text-muted-foreground line-clamp-2 mb-4 flex-1">{blog.scenario}</p>
 
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4">
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
                         <span className="flex items-center gap-1">
-                          <Activity className="h-3 w-3" /> {blog.readingTime} min read
+                          <Activity className="h-3 w-3" /> {blog.readingTime} min
                         </span>
                         <span>·</span>
                         <span>{blog.publishedAt}</span>
+                        <span>·</span>
+                        <span className="text-primary">{blog.labProvider}</span>
                       </div>
-
-                      <a
-                        href={blog.labUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-2 text-xs text-primary hover:underline mb-4"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        {blog.labProvider} · {blog.labName}
-                      </a>
 
                       <div className="flex items-center justify-between pt-3 border-t border-border">
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          Read investigation <ChevronRight className="h-3 w-3" />
+                        <span className="text-xs text-emerald-400 flex items-center gap-1 font-medium">
+                          Read investigation <ChevronRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
                         </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-xs"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            generateForensicsBlogPDF(blog);
-                          }}
-                        >
-                          <Download className="h-3 w-3 mr-1" /> PDF
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <a
+                              href={`/knowledge-hub/blog/${blog.slug}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Open in new tab"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              generateForensicsBlogPDF(blog);
+                            }}
+                            title="Download PDF"
+                          >
+                            <Download className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
-                  </Card>
+                  </Link>
                 </motion.div>
               ))}
             </div>
@@ -333,127 +357,6 @@ export default function KnowledgeHub() {
                 <Button onClick={() => generateAttackPDF(openAttack)} className="w-full gap-2">
                   <FileText className="h-4 w-4" /> Generate PDF Report
                 </Button>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Forensics Blog Dialog */}
-      <Dialog open={!!openBlog} onOpenChange={(o) => !o && setOpenBlog(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          {openBlog && (
-            <>
-              <DialogHeader>
-                <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="outline">{openBlog.category}</Badge>
-                  <Badge variant="outline" className={`border ${difficultyColor[openBlog.difficulty]}`}>
-                    {openBlog.difficulty}
-                  </Badge>
-                  <Badge variant="outline" className="border-primary/30 text-primary">
-                    {openBlog.labProvider}
-                  </Badge>
-                </div>
-                <DialogTitle className="text-2xl leading-tight">{openBlog.title}</DialogTitle>
-                <p className="text-xs text-muted-foreground mt-1">
-                  by {openBlog.author} · {openBlog.publishedAt} · {openBlog.readingTime} min read
-                </p>
-              </DialogHeader>
-
-              <div className="space-y-6 mt-4">
-                <a
-                  href={openBlog.labUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block p-4 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 transition"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-muted-foreground">{openBlog.labProvider} Lab</div>
-                      <div className="font-semibold">{openBlog.labName}</div>
-                    </div>
-                    <ExternalLink className="h-5 w-5 text-primary" />
-                  </div>
-                </a>
-
-                <Section title="Scenario" icon={<AlertTriangle className="h-4 w-4 text-yellow-400" />}>
-                  <p className="text-sm leading-relaxed">{openBlog.scenario}</p>
-                </Section>
-
-                <Section title="Investigation Overview" icon={<Brain className="h-4 w-4 text-primary" />}>
-                  <p className="text-sm leading-relaxed text-muted-foreground">{openBlog.overview}</p>
-                </Section>
-
-                <Section title="Investigation Steps" icon={<Search className="h-4 w-4 text-cyan-400" />}>
-                  <div className="space-y-4">
-                    {openBlog.investigationSteps.map((step, i) => (
-                      <div key={i} className="border-l-2 border-primary/30 pl-4">
-                        <h5 className="font-semibold text-sm mb-1">{step.title}</h5>
-                        <p className="text-xs text-muted-foreground mb-2">{step.description}</p>
-                        {step.commands && (
-                          <pre className="text-xs bg-muted/50 rounded p-2 font-mono overflow-x-auto">
-                            {step.commands.map((c) => `$ ${c}`).join('\n')}
-                          </pre>
-                        )}
-                        {step.findings && (
-                          <p className="text-xs italic text-emerald-400 mt-2">→ {step.findings}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </Section>
-
-                <Section title="TTPs (MITRE ATT&CK)" icon={<Target className="h-4 w-4 text-primary" />}>
-                  <div className="space-y-2">
-                    {openBlog.ttps.map((t) => (
-                      <div key={t.techniqueId} className="flex gap-3 text-sm">
-                        <span className="font-mono text-xs text-primary px-2 py-0.5 rounded bg-primary/10 h-fit">
-                          {t.techniqueId}
-                        </span>
-                        <div>
-                          <div className="font-medium">{t.tactic} — {t.technique}</div>
-                          <div className="text-xs text-muted-foreground">{t.description}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </Section>
-
-                <Section title="Indicators of Compromise" icon={<Network className="h-4 w-4 text-red-400" />}>
-                  <div className="space-y-1 font-mono text-xs">
-                    {openBlog.iocs.map((ioc, i) => (
-                      <div key={i} className="flex gap-2 p-2 rounded bg-muted/30">
-                        <Badge variant="outline" className="text-[10px]">{ioc.type}</Badge>
-                        <span className="text-foreground">{ioc.value}</span>
-                        <span className="text-muted-foreground">— {ioc.context}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Section>
-
-                <Section title="Conclusion" icon={<Sparkles className="h-4 w-4 text-emerald-400" />}>
-                  <p className="text-sm leading-relaxed">{openBlog.conclusion}</p>
-                </Section>
-
-                <Section title="Lessons Learned" icon={<BookOpen className="h-4 w-4 text-cyan-400" />}>
-                  <ul className="space-y-1.5 text-sm">
-                    {openBlog.lessonsLearned.map((l, i) => (
-                      <li key={i} className="flex gap-2">
-                        <span className="text-emerald-400">▸</span>
-                        <span>{l}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </Section>
-
-                <Button onClick={() => generateForensicsBlogPDF(openBlog)} className="w-full gap-2">
-                  <FileText className="h-4 w-4" /> Generate PDF Report
-                </Button>
-
-                <p className="text-center text-xs text-muted-foreground pt-2">
-                  Investigated & written by{' '}
-                  <span className="text-foreground font-semibold">Ahmed Tareq</span> · SOCMind Platform
-                </p>
               </div>
             </>
           )}

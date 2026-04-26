@@ -1,5 +1,8 @@
 // Knowledge Hub data — Attack summaries, mitigations, response playbooks, and forensics blogs
 // Curated by Ahmed Tareq for SOCMind
+import forensicsMemoryImg from '@/assets/forensics-memory.jpg';
+import forensicsLogsImg from '@/assets/forensics-logs.jpg';
+import forensicsNetworkImg from '@/assets/forensics-network.jpg';
 
 export interface MitreTechnique {
   id: string;
@@ -34,6 +37,7 @@ export interface ForensicsBlog {
   labProvider: 'HackTheBox' | 'TryHackMe';
   labUrl: string;
   labName: string;
+  coverImage: string;
   overview: string;
   investigationSteps: {
     title: string;
@@ -311,6 +315,7 @@ export const forensicsBlogs: ForensicsBlog[] = [
     labProvider: 'HackTheBox',
     labName: 'Perfection — Sherlocks',
     labUrl: 'https://app.hackthebox.com/sherlocks/Perfection',
+    coverImage: forensicsMemoryImg,
     overview:
       'This Sherlock simulates a real DLP investigation. We are handed a Windows 10 memory dump (.mem) and a single question: "Did the user exfiltrate the Q3 revenue spreadsheet, and if so, how?" I worked the case with Volatility 3, Bulk Extractor, and a touch of strings-fu.',
     investigationSteps: [
@@ -401,6 +406,7 @@ export const forensicsBlogs: ForensicsBlog[] = [
     labProvider: 'HackTheBox',
     labName: 'Brutus — Sherlocks',
     labUrl: 'https://app.hackthebox.com/sherlocks/Brutus',
+    coverImage: forensicsLogsImg,
     overview:
       'A pure log-analysis Sherlock — no binaries, no memory, just text files. The lesson: 90% of intrusions can be reconstructed from auth.log if you know what to grep for.',
     investigationSteps: [
@@ -488,6 +494,7 @@ export const forensicsBlogs: ForensicsBlog[] = [
     labProvider: 'HackTheBox',
     labName: 'Tracer — Sherlocks',
     labUrl: 'https://app.hackthebox.com/sherlocks/Tracer',
+    coverImage: forensicsNetworkImg,
     overview:
       'A network-only Sherlock that mimics a real Cobalt Strike investigation. We worked the PCAP with Wireshark, Zeek, RITA, and a custom Python decoder for the obfuscated metadata.',
     investigationSteps: [
