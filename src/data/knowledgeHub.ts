@@ -34,6 +34,7 @@ export interface ForensicsBlog {
   labProvider: 'HackTheBox' | 'TryHackMe';
   labUrl: string;
   labName: string;
+  coverImage: string;
   overview: string;
   investigationSteps: {
     title: string;
