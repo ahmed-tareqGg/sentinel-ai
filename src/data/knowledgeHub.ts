@@ -406,6 +406,7 @@ export const forensicsBlogs: ForensicsBlog[] = [
     labProvider: 'HackTheBox',
     labName: 'Brutus — Sherlocks',
     labUrl: 'https://app.hackthebox.com/sherlocks/Brutus',
+    coverImage: forensicsLogsImg,
     overview:
       'A pure log-analysis Sherlock — no binaries, no memory, just text files. The lesson: 90% of intrusions can be reconstructed from auth.log if you know what to grep for.',
     investigationSteps: [
@@ -493,6 +494,7 @@ export const forensicsBlogs: ForensicsBlog[] = [
     labProvider: 'HackTheBox',
     labName: 'Tracer — Sherlocks',
     labUrl: 'https://app.hackthebox.com/sherlocks/Tracer',
+    coverImage: forensicsNetworkImg,
     overview:
       'A network-only Sherlock that mimics a real Cobalt Strike investigation. We worked the PCAP with Wireshark, Zeek, RITA, and a custom Python decoder for the obfuscated metadata.',
     investigationSteps: [
