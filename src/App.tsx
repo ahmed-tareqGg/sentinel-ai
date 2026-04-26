@@ -47,6 +47,7 @@ const AgentPlatform = lazy(() => import("./pages/AgentPlatform"));
 const SOARActions = lazy(() => import("./pages/SOARActions"));
 const AuditLogs = lazy(() => import("./pages/AuditLogs"));
 const Resume = lazy(() => import("./pages/Resume"));
+const KnowledgeHub = lazy(() => import("./pages/KnowledgeHub"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -79,6 +80,7 @@ const App = () => (
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="/resume" element={<Resume />} />
+                <Route path="/knowledge-hub" element={<KnowledgeHub />} />
               </Route>
               
               {/* Demo Landing (standalone - no layout) */}
