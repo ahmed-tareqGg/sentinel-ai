@@ -56,3 +56,6 @@ verify_jwt = false
 
 [functions.authorize-agent-download]
 verify_jwt = false
+
+[functions.agent-download-otp]
+verify_jwt = false
