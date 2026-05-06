@@ -137,6 +137,8 @@ export default function AgentPlatform() {
   const [downloadPwd, setDownloadPwd] = useState('');
   const [pendingDownload, setPendingDownload] = useState({ url: '', name: '' });
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
   // Fetch agents
@@ -157,21 +159,52 @@ export default function AgentPlatform() {
   const inactiveAgents = agents?.filter(a => a.status !== 'active') || [];
   const totalLogs = agents?.reduce((sum, a) => sum + (a.logs_received_total || 0), 0) || 0;
 
-  const handleDownload = (url: string, filename: string) => {
+  const handleDownload = async (url: string, filename: string) => {
     setPendingDownload({ url, name: filename });
     setDownloadPwd('');
+    setCodeSent(false);
     setDownloadPwdDialog(true);
+    // Auto-send code
+    setIsSendingCode(true);
+    try {
+      const { error } = await supabase.functions.invoke('agent-download-otp', {
+        body: { action: 'send' },
+      });
+      if (error) throw error;
+      setCodeSent(true);
+      toast.success('Verification code sent to the platform owner');
+    } catch {
+      toast.error('Failed to send verification code');
+    } finally {
+      setIsSendingCode(false);
+    }
+  };
+
+  const resendCode = async () => {
+    setIsSendingCode(true);
+    try {
+      const { error } = await supabase.functions.invoke('agent-download-otp', {
+        body: { action: 'send' },
+      });
+      if (error) throw error;
+      setCodeSent(true);
+      toast.success('A new code was sent');
+    } catch {
+      toast.error('Failed to resend code');
+    } finally {
+      setIsSendingCode(false);
+    }
   };
 
   const confirmDownload = async () => {
     setIsVerifying(true);
     try {
-      const { data, error } = await supabase.functions.invoke('authorize-agent-download', {
-        body: { password: downloadPwd },
+      const { data, error } = await supabase.functions.invoke('agent-download-otp', {
+        body: { action: 'verify', code: downloadPwd },
       });
 
       if (error || !data?.authorized) {
-        toast.error(data?.error || 'Incorrect password');
+        toast.error(data?.error || 'Invalid or expired code');
         return;
       }
 
