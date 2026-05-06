@@ -676,33 +676,44 @@ export default function AgentPlatform() {
         </TabsContent>
       </Tabs>
 
-      {/* Password Dialog */}
+      {/* OTP Verification Dialog */}
       <Dialog open={downloadPwdDialog} onOpenChange={setDownloadPwdDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Lock className="h-5 w-5 text-primary" />
-              Agent Download Authentication
+              Agent Download — Verification
             </DialogTitle>
             <DialogDescription>
-              Enter the platform agent access password to download.
+              A 6-digit verification code was sent to the platform owner's email. Enter it below to authorize the download.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label>Password</Label>
+            <Label>Verification code</Label>
             <Input
-              type="password"
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
               value={downloadPwd}
-              onChange={(e) => setDownloadPwd(e.target.value)}
+              onChange={(e) => setDownloadPwd(e.target.value.replace(/\D/g, ''))}
               onKeyDown={(e) => e.key === 'Enter' && confirmDownload()}
-              placeholder="Enter agent access password"
+              placeholder="000000"
+              className="tracking-[0.5em] text-center text-lg font-mono"
             />
+            <button
+              type="button"
+              onClick={resendCode}
+              disabled={isSendingCode}
+              className="text-xs text-primary hover:underline disabled:opacity-50"
+            >
+              {isSendingCode ? 'Sending…' : codeSent ? 'Resend code' : 'Send code'}
+            </button>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDownloadPwdDialog(false)}>Cancel</Button>
-            <Button onClick={confirmDownload} className="gap-2">
+            <Button onClick={confirmDownload} disabled={isVerifying || downloadPwd.length !== 6} className="gap-2">
               <Download className="h-4 w-4" />
-              Download
+              {isVerifying ? 'Verifying…' : 'Download'}
             </Button>
           </DialogFooter>
         </DialogContent>
