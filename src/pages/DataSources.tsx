@@ -1596,37 +1596,47 @@ python socmind-executor.py start`}</pre>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* Download Password Dialog */}
+      {/* Download OTP Dialog */}
       <Dialog open={downloadPasswordDialog} onOpenChange={setDownloadPasswordDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-primary" />
-              Agent Download - Authentication
+              Agent Download — Verification
             </DialogTitle>
             <DialogDescription>
-              Enter the download password to access agent files.
+              A 6-digit code was emailed to the platform owner. Enter it below to authorize this download.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="download-password">Password</Label>
+              <Label htmlFor="download-code">Verification code</Label>
               <Input
-                id="download-password"
-                type="password"
-                placeholder="Enter download password..."
+                id="download-code"
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="000000"
                 value={downloadPassword}
                 onChange={(e) => {
-                  setDownloadPassword(e.target.value);
+                  setDownloadPassword(e.target.value.replace(/\D/g, ''));
                   setDownloadPasswordError(false);
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && confirmDownload()}
-                className={downloadPasswordError ? 'border-red-500' : ''}
+                className={`tracking-[0.5em] text-center text-lg font-mono ${downloadPasswordError ? 'border-red-500' : ''}`}
               />
+              <button
+                type="button"
+                onClick={resendCode}
+                disabled={isSendingCode}
+                className="text-xs text-primary hover:underline disabled:opacity-50"
+              >
+                {isSendingCode ? 'Sending…' : codeSent ? 'Resend code' : 'Send code'}
+              </button>
               {downloadPasswordError && (
                 <p className="text-xs text-red-500 flex items-center gap-1">
                   <AlertCircle className="h-3 w-3" />
-                  Incorrect password. Please try again.
+                  Invalid or expired code. Try again or resend.
                 </p>
               )}
             </div>
@@ -1639,9 +1649,9 @@ python socmind-executor.py start`}</pre>
             <Button variant="outline" onClick={() => setDownloadPasswordDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={confirmDownload} className="gap-2">
+            <Button onClick={confirmDownload} disabled={isVerifyingCode || downloadPassword.length !== 6} className="gap-2">
               <Download className="h-4 w-4" />
-              Download
+              {isVerifyingCode ? 'Verifying…' : 'Download'}
             </Button>
           </DialogFooter>
         </DialogContent>
