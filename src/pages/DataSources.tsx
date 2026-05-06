@@ -126,25 +126,66 @@ export default function DataSources() {
     count: 5,
   });
 
-  // Agent download password protection
+  // Agent download OTP verification
   const [downloadPasswordDialog, setDownloadPasswordDialog] = useState(false);
   const [downloadPassword, setDownloadPassword] = useState('');
   const [pendingDownloadUrl, setPendingDownloadUrl] = useState('');
   const [pendingDownloadName, setPendingDownloadName] = useState('');
   const [downloadPasswordError, setDownloadPasswordError] = useState(false);
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
 
-  const AGENT_DOWNLOAD_PASSWORD = '1592002Aa?';
-
-  const handleAgentDownload = (url: string, filename: string) => {
+  const handleAgentDownload = async (url: string, filename: string) => {
     setPendingDownloadUrl(url);
     setPendingDownloadName(filename);
     setDownloadPassword('');
     setDownloadPasswordError(false);
+    setCodeSent(false);
     setDownloadPasswordDialog(true);
+    setIsSendingCode(true);
+    try {
+      const { error } = await supabase.functions.invoke('agent-download-otp', {
+        body: { action: 'send' },
+      });
+      if (error) throw error;
+      setCodeSent(true);
+      toast.success('Verification code sent to the platform owner');
+    } catch {
+      toast.error('Failed to send verification code');
+    } finally {
+      setIsSendingCode(false);
+    }
   };
 
-  const confirmDownload = () => {
-    if (downloadPassword === AGENT_DOWNLOAD_PASSWORD) {
+  const resendCode = async () => {
+    setIsSendingCode(true);
+    try {
+      const { error } = await supabase.functions.invoke('agent-download-otp', {
+        body: { action: 'send' },
+      });
+      if (error) throw error;
+      setCodeSent(true);
+      toast.success('A new code was sent');
+    } catch {
+      toast.error('Failed to resend code');
+    } finally {
+      setIsSendingCode(false);
+    }
+  };
+
+  const confirmDownload = async () => {
+    setIsVerifyingCode(true);
+    setDownloadPasswordError(false);
+    try {
+      const { data, error } = await supabase.functions.invoke('agent-download-otp', {
+        body: { action: 'verify', code: downloadPassword },
+      });
+      if (error || !data?.authorized) {
+        setDownloadPasswordError(true);
+        toast.error(data?.error || 'Invalid or expired code');
+        return;
+      }
       const link = document.createElement('a');
       link.href = pendingDownloadUrl;
       link.download = pendingDownloadName;
@@ -153,9 +194,11 @@ export default function DataSources() {
       document.body.removeChild(link);
       setDownloadPasswordDialog(false);
       toast.success(`Downloading ${pendingDownloadName}`);
-    } else {
+    } catch {
       setDownloadPasswordError(true);
-      toast.error('Incorrect password');
+      toast.error('Verification failed');
+    } finally {
+      setIsVerifyingCode(false);
     }
   };
 
