@@ -126,25 +126,66 @@ export default function DataSources() {
     count: 5,
   });
 
-  // Agent download password protection
+  // Agent download OTP verification
   const [downloadPasswordDialog, setDownloadPasswordDialog] = useState(false);
   const [downloadPassword, setDownloadPassword] = useState('');
   const [pendingDownloadUrl, setPendingDownloadUrl] = useState('');
   const [pendingDownloadName, setPendingDownloadName] = useState('');
   const [downloadPasswordError, setDownloadPasswordError] = useState(false);
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
 
-  const AGENT_DOWNLOAD_PASSWORD = '1592002Aa?';
-
-  const handleAgentDownload = (url: string, filename: string) => {
+  const handleAgentDownload = async (url: string, filename: string) => {
     setPendingDownloadUrl(url);
     setPendingDownloadName(filename);
     setDownloadPassword('');
     setDownloadPasswordError(false);
+    setCodeSent(false);
     setDownloadPasswordDialog(true);
+    setIsSendingCode(true);
+    try {
+      const { error } = await supabase.functions.invoke('agent-download-otp', {
+        body: { action: 'send' },
+      });
+      if (error) throw error;
+      setCodeSent(true);
+      toast.success('Verification code sent to the platform owner');
+    } catch {
+      toast.error('Failed to send verification code');
+    } finally {
+      setIsSendingCode(false);
+    }
   };
 
-  const confirmDownload = () => {
-    if (downloadPassword === AGENT_DOWNLOAD_PASSWORD) {
+  const resendCode = async () => {
+    setIsSendingCode(true);
+    try {
+      const { error } = await supabase.functions.invoke('agent-download-otp', {
+        body: { action: 'send' },
+      });
+      if (error) throw error;
+      setCodeSent(true);
+      toast.success('A new code was sent');
+    } catch {
+      toast.error('Failed to resend code');
+    } finally {
+      setIsSendingCode(false);
+    }
+  };
+
+  const confirmDownload = async () => {
+    setIsVerifyingCode(true);
+    setDownloadPasswordError(false);
+    try {
+      const { data, error } = await supabase.functions.invoke('agent-download-otp', {
+        body: { action: 'verify', code: downloadPassword },
+      });
+      if (error || !data?.authorized) {
+        setDownloadPasswordError(true);
+        toast.error(data?.error || 'Invalid or expired code');
+        return;
+      }
       const link = document.createElement('a');
       link.href = pendingDownloadUrl;
       link.download = pendingDownloadName;
@@ -153,9 +194,11 @@ export default function DataSources() {
       document.body.removeChild(link);
       setDownloadPasswordDialog(false);
       toast.success(`Downloading ${pendingDownloadName}`);
-    } else {
+    } catch {
       setDownloadPasswordError(true);
-      toast.error('Incorrect password');
+      toast.error('Verification failed');
+    } finally {
+      setIsVerifyingCode(false);
     }
   };
 
@@ -1553,37 +1596,47 @@ python socmind-executor.py start`}</pre>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* Download Password Dialog */}
+      {/* Download OTP Dialog */}
       <Dialog open={downloadPasswordDialog} onOpenChange={setDownloadPasswordDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-primary" />
-              Agent Download - Authentication
+              Agent Download — Verification
             </DialogTitle>
             <DialogDescription>
-              Enter the download password to access agent files.
+              A 6-digit code was emailed to the platform owner. Enter it below to authorize this download.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="download-password">Password</Label>
+              <Label htmlFor="download-code">Verification code</Label>
               <Input
-                id="download-password"
-                type="password"
-                placeholder="Enter download password..."
+                id="download-code"
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="000000"
                 value={downloadPassword}
                 onChange={(e) => {
-                  setDownloadPassword(e.target.value);
+                  setDownloadPassword(e.target.value.replace(/\D/g, ''));
                   setDownloadPasswordError(false);
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && confirmDownload()}
-                className={downloadPasswordError ? 'border-red-500' : ''}
+                className={`tracking-[0.5em] text-center text-lg font-mono ${downloadPasswordError ? 'border-red-500' : ''}`}
               />
+              <button
+                type="button"
+                onClick={resendCode}
+                disabled={isSendingCode}
+                className="text-xs text-primary hover:underline disabled:opacity-50"
+              >
+                {isSendingCode ? 'Sending…' : codeSent ? 'Resend code' : 'Send code'}
+              </button>
               {downloadPasswordError && (
                 <p className="text-xs text-red-500 flex items-center gap-1">
                   <AlertCircle className="h-3 w-3" />
-                  Incorrect password. Please try again.
+                  Invalid or expired code. Try again or resend.
                 </p>
               )}
             </div>
@@ -1596,9 +1649,9 @@ python socmind-executor.py start`}</pre>
             <Button variant="outline" onClick={() => setDownloadPasswordDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={confirmDownload} className="gap-2">
+            <Button onClick={confirmDownload} disabled={isVerifyingCode || downloadPassword.length !== 6} className="gap-2">
               <Download className="h-4 w-4" />
-              Download
+              {isVerifyingCode ? 'Verifying…' : 'Download'}
             </Button>
           </DialogFooter>
         </DialogContent>
