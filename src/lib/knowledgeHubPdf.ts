@@ -208,3 +208,100 @@ export function generateForensicsBlogPDF(blog: ForensicsBlog) {
   footer(doc);
   doc.save(`SOCMind-Forensics-${blog.slug}.pdf`);
 }
+
+import type { AdAttackRoom } from '@/data/knowledgeHub';
+
+export function generateAdAttackRoomPDF(room: AdAttackRoom) {
+  const doc = new jsPDF();
+  header(doc, room.shortName, `${room.category} · Severity: ${room.severity} · Difficulty: ${room.difficulty}`);
+
+  let y = 65;
+  y = section(doc, y, 'Lab Reference');
+  y = paragraph(doc, y, `${room.labProvider}: ${room.labName}`);
+  y = paragraph(doc, y, room.labUrl, { color: BRAND.primary, size: 9 });
+
+  y = section(doc, y, 'Summary');
+  y = paragraph(doc, y, room.summary);
+
+  y = section(doc, y, 'Prerequisites');
+  y = bullets(doc, y, room.prerequisites);
+
+  y = section(doc, y, 'Attack Flow');
+  y = bullets(doc, y, room.attackFlow);
+
+  y = section(doc, y, 'Walkthrough');
+  for (const step of room.walkthrough) {
+    if (y > 255) { doc.addPage(); y = 20; }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...BRAND.dark);
+    doc.text(step.title, 14, y);
+    y += 5;
+    y = paragraph(doc, y, step.description);
+    if (step.commands && step.commands.length) {
+      const cmdLines = step.commands.flatMap((c) => doc.splitTextToSize(`$ ${c}`, 178));
+      doc.setFillColor(245, 247, 250);
+      doc.rect(14, y - 2, 182, cmdLines.length * 4.5 + 4, 'F');
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...BRAND.dark);
+      let cy = y + 2;
+      for (const l of cmdLines) { doc.text(l, 17, cy); cy += 4.5; }
+      y = cy + 2;
+    }
+    if (step.output) {
+      const outLines = doc.splitTextToSize(step.output, 178);
+      doc.setFillColor(20, 30, 40);
+      doc.rect(14, y - 2, 182, outLines.length * 4.5 + 4, 'F');
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(180, 230, 200);
+      let cy = y + 2;
+      for (const l of outLines) {
+        if (cy > 285) { doc.addPage(); cy = 20; }
+        doc.text(l, 17, cy); cy += 4.5;
+      }
+      y = cy + 3;
+    }
+    y += 2;
+  }
+
+  y = section(doc, y, 'Commands Cheatsheet');
+  for (const c of room.commandsCheatsheet) {
+    if (y > 275) { doc.addPage(); y = 20; }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...BRAND.dark);
+    doc.text(`▸ ${c.title}`, 14, y);
+    y += 4;
+    const lines = doc.splitTextToSize(c.command, 176);
+    doc.setFillColor(245, 247, 250);
+    doc.rect(18, y - 2, 178, lines.length * 4.2 + 3, 'F');
+    doc.setFont('courier', 'normal');
+    doc.setFontSize(8);
+    let cy = y + 2;
+    for (const l of lines) { doc.text(l, 21, cy); cy += 4.2; }
+    y = cy + 3;
+  }
+
+  y = section(doc, y, 'Detection Signals');
+  y = bullets(doc, y, room.detection);
+
+  y = section(doc, y, 'Mitigation Controls');
+  y = bullets(doc, y, room.mitigation);
+
+  y = section(doc, y, 'Remediation Steps');
+  y = bullets(doc, y, room.remediation);
+
+  y = section(doc, y, 'MITRE ATT&CK Mapping');
+  y = bullets(doc, y, room.mitre.map((m) => `${m.id} — ${m.name}`));
+
+  y = section(doc, y, 'Tools');
+  y = paragraph(doc, y, room.tools.join(' · '));
+
+  y = section(doc, y, 'References');
+  y = bullets(doc, y, room.references.map((r) => `${r.title} — ${r.url}`));
+
+  footer(doc);
+  doc.save(`SOCMind-AD-${room.slug}.pdf`);
+}
