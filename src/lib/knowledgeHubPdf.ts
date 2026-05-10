@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import type { AttackEntry, ForensicsBlog } from '@/data/knowledgeHub';
+import type { AttackEntry, ForensicsBlog, AdAttackRoom } from '@/data/knowledgeHub';
 
 const BRAND = {
   primary: [34, 197, 194] as [number, number, number], // cyan-emerald
