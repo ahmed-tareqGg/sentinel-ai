@@ -145,9 +145,18 @@ _This ticket was automatically created by SOCMind Autonomous SOC_
 
     if (!createIssueResponse.ok) {
       const errorText = await createIssueResponse.text();
-      console.error('Jira create issue failed:', errorText);
-      return new Response(JSON.stringify({ error: 'Failed to create Jira ticket', details: errorText }), {
-        status: 500,
+      console.error('Jira create issue failed:', createIssueResponse.status, errorText);
+      const isUpstreamUnavailable = createIssueResponse.status >= 500 || errorText.includes('temporarily unavailable');
+      return new Response(JSON.stringify({
+        success: false,
+        fallback: isUpstreamUnavailable,
+        error: isUpstreamUnavailable ? 'JIRA_SERVICE_UNAVAILABLE' : 'Failed to create Jira ticket',
+        message: isUpstreamUnavailable
+          ? 'Jira is temporarily unavailable. Please try again in a few minutes.'
+          : 'Jira rejected the request.',
+        details: errorText,
+      }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
