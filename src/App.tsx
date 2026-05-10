@@ -49,6 +49,7 @@ const AuditLogs = lazy(() => import("./pages/AuditLogs"));
 const Resume = lazy(() => import("./pages/Resume"));
 const KnowledgeHub = lazy(() => import("./pages/KnowledgeHub"));
 const ForensicsBlogDetail = lazy(() => import("./pages/ForensicsBlogDetail"));
+const AdAttackRoomDetail = lazy(() => import("./pages/AdAttackRoomDetail"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -83,6 +84,7 @@ const App = () => (
                 <Route path="/resume" element={<Resume />} />
                 <Route path="/knowledge-hub" element={<KnowledgeHub />} />
                 <Route path="/knowledge-hub/blog/:slug" element={<ForensicsBlogDetail />} />
+                <Route path="/knowledge-hub/ad/:slug" element={<AdAttackRoomDetail />} />
               </Route>
               
               {/* Demo Landing (standalone - no layout) */}

@@ -26,8 +26,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { attackEntries, forensicsBlogs, type AttackEntry } from '@/data/knowledgeHub';
-import { generateAttackPDF, generateForensicsBlogPDF } from '@/lib/knowledgeHubPdf';
+import { attackEntries, forensicsBlogs, adAttackRooms, type AttackEntry } from '@/data/knowledgeHub';
+import { generateAttackPDF, generateForensicsBlogPDF, generateAdAttackRoomPDF } from '@/lib/knowledgeHubPdf';
+import { KeyRound } from 'lucide-react';
 
 const severityColor: Record<string, string> = {
   Low: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
