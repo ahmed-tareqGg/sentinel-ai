@@ -3,6 +3,9 @@
 import forensicsMemoryImg from '@/assets/forensics-memory.jpg';
 import forensicsLogsImg from '@/assets/forensics-logs.jpg';
 import forensicsNetworkImg from '@/assets/forensics-network.jpg';
+import adAsrepHero from '@/assets/ad-asrep-hero.jpg';
+import adAsrepFlow from '@/assets/ad-asrep-flow.jpg';
+import adAsrepCrack from '@/assets/ad-asrep-crack.jpg';
 
 export interface MitreTechnique {
   id: string;
@@ -577,9 +580,6 @@ export const forensicsBlogs: ForensicsBlog[] = [
 ];
 
 // =================== AD ATTACK ROOMS ===================
-import adAsrepHero from '@/assets/ad-asrep-hero.jpg';
-import adAsrepFlow from '@/assets/ad-asrep-flow.jpg';
-import adAsrepCrack from '@/assets/ad-asrep-crack.jpg';
 
 export interface AdAttackImage {
   src: string;
