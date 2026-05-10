@@ -209,8 +209,6 @@ export function generateForensicsBlogPDF(blog: ForensicsBlog) {
   doc.save(`SOCMind-Forensics-${blog.slug}.pdf`);
 }
 
-import type { AdAttackRoom } from '@/data/knowledgeHub';
-
 export function generateAdAttackRoomPDF(room: AdAttackRoom) {
   const doc = new jsPDF();
   header(doc, room.shortName, `${room.category} · Severity: ${room.severity} · Difficulty: ${room.difficulty}`);
