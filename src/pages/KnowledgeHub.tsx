@@ -71,6 +71,17 @@ export default function KnowledgeHub() {
     [search],
   );
 
+  const filteredAdRooms = useMemo(
+    () =>
+      adAttackRooms.filter(
+        (r) =>
+          r.name.toLowerCase().includes(search.toLowerCase()) ||
+          r.category.toLowerCase().includes(search.toLowerCase()) ||
+          r.summary.toLowerCase().includes(search.toLowerCase()),
+      ),
+    [search],
+  );
+
   return (
     <div className="min-h-screen bg-background">
       {/* Hero */}
@@ -130,12 +141,15 @@ export default function KnowledgeHub() {
       {/* Tabs */}
       <section className="container mx-auto px-6 py-12">
         <Tabs defaultValue="attacks" className="w-full">
-          <TabsList className="grid grid-cols-2 max-w-md mx-auto mb-10">
+          <TabsList className="grid grid-cols-3 max-w-2xl mx-auto mb-10">
             <TabsTrigger value="attacks" className="gap-2">
               <AlertTriangle className="h-4 w-4" /> Attack Atlas
             </TabsTrigger>
             <TabsTrigger value="forensics" className="gap-2">
               <BookOpen className="h-4 w-4" /> Forensics Blogs
+            </TabsTrigger>
+            <TabsTrigger value="ad" className="gap-2">
+              <KeyRound className="h-4 w-4" /> AD Attacks
             </TabsTrigger>
           </TabsList>
 
