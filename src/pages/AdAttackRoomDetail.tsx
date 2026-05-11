@@ -324,3 +324,33 @@ function Section({ title, icon, children }: { title: string; icon: React.ReactNo
     </motion.section>
   );
 }
+
+function DetectionCard({ d }: { d: { title: string; description: string; eventIds?: string[]; dataSource?: string; query?: string; queryLanguage?: string; severity?: string } }) {
+  const sevColor: Record<string, string> = {
+    Low: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+    Medium: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
+    High: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+    Critical: 'bg-red-500/10 text-red-400 border-red-500/30',
+  };
+  return (
+    <div className="rounded-xl border border-border bg-card/40 overflow-hidden">
+      <div className="flex items-start justify-between gap-3 p-4 border-b border-border bg-muted/20">
+        <div className="font-bold text-sm">{d.title}</div>
+        {d.severity && <Badge variant="outline" className={`text-[10px] shrink-0 ${sevColor[d.severity] ?? ''}`}>{d.severity}</Badge>}
+      </div>
+      <div className="p-4 space-y-3">
+        <p className="text-sm text-foreground/80 leading-relaxed">{d.description}</p>
+        <div className="flex flex-wrap gap-2 text-[11px]">
+          {d.eventIds?.map((e, i) => <span key={i} className="px-2 py-0.5 rounded bg-primary/10 border border-primary/30 text-primary font-mono">EID {e}</span>)}
+          {d.dataSource && <span className="px-2 py-0.5 rounded bg-muted/40 border border-border text-muted-foreground">{d.dataSource}</span>}
+        </div>
+        {d.query && (
+          <div className="rounded-lg overflow-hidden border border-emerald-500/20">
+            {d.queryLanguage && <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-300">{d.queryLanguage}</div>}
+            <pre className="text-xs font-mono bg-slate-950 text-emerald-300 p-3 overflow-x-auto whitespace-pre-wrap break-all">{d.query}</pre>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
