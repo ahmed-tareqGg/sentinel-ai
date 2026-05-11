@@ -1,305 +1,462 @@
 import jsPDF from 'jspdf';
 import type { AttackEntry, ForensicsBlog, AdAttackRoom } from '@/data/knowledgeHub';
 
-const BRAND = {
-  primary: [34, 197, 194] as [number, number, number], // cyan-emerald
-  dark: [15, 23, 42] as [number, number, number],
-  muted: [100, 116, 139] as [number, number, number],
+// ============================================================
+//  SOCMind — Professional PDF System
+// ============================================================
+const PAGE_W = 210;
+const PAGE_H = 297;
+const MARGIN_X = 16;
+const CONTENT_W = PAGE_W - MARGIN_X * 2;
+
+const C = {
+  ink: [17, 24, 39] as [number, number, number],
+  body: [55, 65, 81] as [number, number, number],
+  muted: [107, 114, 128] as [number, number, number],
+  line: [226, 232, 240] as [number, number, number],
+  primary: [13, 148, 136] as [number, number, number], // teal-600
+  primaryDark: [15, 118, 110] as [number, number, number],
   accent: [16, 185, 129] as [number, number, number],
+  warn: [217, 119, 6] as [number, number, number],
+  danger: [220, 38, 38] as [number, number, number],
+  bgSoft: [248, 250, 252] as [number, number, number],
+  codeBg: [15, 23, 42] as [number, number, number],
+  codeText: [226, 232, 240] as [number, number, number],
+  codeAccent: [94, 234, 212] as [number, number, number],
 };
 
-function header(doc: jsPDF, title: string, subtitle: string) {
-  doc.setFillColor(...BRAND.dark);
-  doc.rect(0, 0, 210, 32, 'F');
-  doc.setFillColor(...BRAND.primary);
-  doc.rect(0, 32, 210, 1.2, 'F');
+const sevColor: Record<string, [number, number, number]> = {
+  Low: C.accent,
+  Medium: [202, 138, 4],
+  High: C.warn,
+  Critical: C.danger,
+};
+
+interface Ctx {
+  doc: jsPDF;
+  y: number;
+  page: number;
+  title: string;
+  subtitle: string;
+}
+
+function newCtx(doc: jsPDF, title: string, subtitle: string): Ctx {
+  return { doc, y: 0, page: 0, title, subtitle };
+}
+
+function pageHeader(ctx: Ctx) {
+  const { doc } = ctx;
+  doc.setFillColor(...C.ink);
+  doc.rect(0, 0, PAGE_W, 14, 'F');
+  doc.setFillColor(...C.primary);
+  doc.rect(0, 14, PAGE_W, 0.6, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('SOCMind', MARGIN_X, 9);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(180, 200, 210);
+  doc.text(ctx.title, PAGE_W / 2, 9, { align: 'center' });
+  doc.text('Knowledge Hub', PAGE_W - MARGIN_X, 9, { align: 'right' });
+}
+
+function pageFooter(ctx: Ctx) {
+  const { doc } = ctx;
+  doc.setDrawColor(...C.line);
+  doc.setLineWidth(0.2);
+  doc.line(MARGIN_X, PAGE_H - 12, PAGE_W - MARGIN_X, PAGE_H - 12);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...C.muted);
+  doc.text('Powered by Ahmed Tareq · SOCMind Autonomous SOC Platform', MARGIN_X, PAGE_H - 7);
+  doc.text(`${ctx.page}`, PAGE_W - MARGIN_X, PAGE_H - 7, { align: 'right' });
+}
+
+function newPage(ctx: Ctx) {
+  if (ctx.page > 0) ctx.doc.addPage();
+  ctx.page += 1;
+  pageHeader(ctx);
+  pageFooter(ctx);
+  ctx.y = 22;
+}
+
+function ensureSpace(ctx: Ctx, needed: number) {
+  if (ctx.y + needed > PAGE_H - 16) newPage(ctx);
+}
+
+function h1(ctx: Ctx, text: string) {
+  ensureSpace(ctx, 16);
+  ctx.doc.setFillColor(...C.primary);
+  ctx.doc.rect(MARGIN_X, ctx.y - 4, 4, 8, 'F');
+  ctx.doc.setFont('helvetica', 'bold');
+  ctx.doc.setFontSize(15);
+  ctx.doc.setTextColor(...C.ink);
+  ctx.doc.text(text, MARGIN_X + 8, ctx.y + 2);
+  ctx.y += 6;
+  ctx.doc.setDrawColor(...C.line);
+  ctx.doc.setLineWidth(0.3);
+  ctx.doc.line(MARGIN_X, ctx.y + 2, PAGE_W - MARGIN_X, ctx.y + 2);
+  ctx.y += 8;
+}
+
+function h2(ctx: Ctx, text: string) {
+  ensureSpace(ctx, 10);
+  ctx.doc.setFont('helvetica', 'bold');
+  ctx.doc.setFontSize(11);
+  ctx.doc.setTextColor(...C.primaryDark);
+  ctx.doc.text(text, MARGIN_X, ctx.y);
+  ctx.y += 5;
+}
+
+function p(ctx: Ctx, text: string, opts?: { size?: number; color?: [number, number, number]; bold?: boolean }) {
+  ctx.doc.setFont('helvetica', opts?.bold ? 'bold' : 'normal');
+  ctx.doc.setFontSize(opts?.size ?? 9.5);
+  ctx.doc.setTextColor(...(opts?.color ?? C.body));
+  const lines = ctx.doc.splitTextToSize(text, CONTENT_W);
+  for (const line of lines) {
+    ensureSpace(ctx, 5);
+    ctx.doc.text(line, MARGIN_X, ctx.y);
+    ctx.y += 4.6;
+  }
+  ctx.y += 1;
+}
+
+function bullets(ctx: Ctx, items: string[]) {
+  ctx.doc.setFont('helvetica', 'normal');
+  ctx.doc.setFontSize(9.5);
+  for (const item of items) {
+    const lines = ctx.doc.splitTextToSize(item, CONTENT_W - 6);
+    ensureSpace(ctx, lines.length * 4.6 + 1);
+    ctx.doc.setTextColor(...C.primary);
+    ctx.doc.text('•', MARGIN_X + 1, ctx.y);
+    ctx.doc.setTextColor(...C.body);
+    ctx.doc.text(lines, MARGIN_X + 6, ctx.y);
+    ctx.y += lines.length * 4.6 + 0.5;
+  }
+  ctx.y += 1;
+}
+
+function codeBlock(ctx: Ctx, code: string, opts?: { language?: string; promptPrefix?: string }) {
+  ctx.doc.setFont('courier', 'normal');
+  ctx.doc.setFontSize(8);
+  const prefix = opts?.promptPrefix ?? '';
+  const raw = code.split('\n').map((l) => (prefix && l.trim() ? prefix + l : l));
+  const wrapped = raw.flatMap((l) => ctx.doc.splitTextToSize(l, CONTENT_W - 8));
+  const boxH = wrapped.length * 4 + 6;
+  ensureSpace(ctx, boxH + 4);
+
+  // header chip
+  if (opts?.language) {
+    ctx.doc.setFillColor(...C.primaryDark);
+    ctx.doc.setFont('helvetica', 'bold');
+    ctx.doc.setFontSize(7);
+    const w = ctx.doc.getTextWidth(opts.language) + 6;
+    ctx.doc.rect(MARGIN_X, ctx.y, w, 4.5, 'F');
+    ctx.doc.setTextColor(255, 255, 255);
+    ctx.doc.text(opts.language, MARGIN_X + 3, ctx.y + 3.2);
+    ctx.y += 4.5;
+  }
+
+  ctx.doc.setFillColor(...C.codeBg);
+  ctx.doc.roundedRect(MARGIN_X, ctx.y, CONTENT_W, boxH, 1.5, 1.5, 'F');
+  ctx.doc.setFont('courier', 'normal');
+  ctx.doc.setFontSize(8);
+  let cy = ctx.y + 4.5;
+  for (const l of wrapped) {
+    if (cy > PAGE_H - 16) {
+      newPage(ctx);
+      ctx.doc.setFillColor(...C.codeBg);
+      ctx.doc.roundedRect(MARGIN_X, ctx.y, CONTENT_W, 6, 1.5, 1.5, 'F');
+      cy = ctx.y + 4.5;
+    }
+    ctx.doc.setTextColor(...(l.startsWith(prefix) && prefix ? C.codeAccent : C.codeText));
+    ctx.doc.text(l, MARGIN_X + 3, cy);
+    cy += 4;
+  }
+  ctx.y = cy + 3;
+}
+
+function badge(ctx: Ctx, text: string, color: [number, number, number], x: number, y: number): number {
+  ctx.doc.setFont('helvetica', 'bold');
+  ctx.doc.setFontSize(7.5);
+  const w = ctx.doc.getTextWidth(text) + 4;
+  ctx.doc.setFillColor(...color);
+  ctx.doc.roundedRect(x, y - 3.2, w, 4.6, 1, 1, 'F');
+  ctx.doc.setTextColor(255, 255, 255);
+  ctx.doc.text(text, x + 2, y);
+  return x + w + 2;
+}
+
+function infoCard(ctx: Ctx, label: string, value: string) {
+  ensureSpace(ctx, 12);
+  ctx.doc.setFillColor(...C.bgSoft);
+  ctx.doc.roundedRect(MARGIN_X, ctx.y, CONTENT_W, 10, 1.5, 1.5, 'F');
+  ctx.doc.setFont('helvetica', 'bold');
+  ctx.doc.setFontSize(7.5);
+  ctx.doc.setTextColor(...C.muted);
+  ctx.doc.text(label.toUpperCase(), MARGIN_X + 3, ctx.y + 3.5);
+  ctx.doc.setFont('helvetica', 'normal');
+  ctx.doc.setFontSize(9);
+  ctx.doc.setTextColor(...C.ink);
+  const lines = ctx.doc.splitTextToSize(value, CONTENT_W - 6);
+  ctx.doc.text(lines[0] ?? '', MARGIN_X + 3, ctx.y + 8);
+  ctx.y += 12;
+}
+
+// ===== Cover page =====
+function coverPage(ctx: Ctx, opts: { eyebrow: string; title: string; subtitle: string; meta: { label: string; value: string }[]; severityBadge?: { label: string; severity: string } }) {
+  newPage(ctx);
+  const { doc } = ctx;
+  // Hero band
+  doc.setFillColor(...C.ink);
+  doc.rect(0, 16, PAGE_W, 110, 'F');
+  doc.setFillColor(...C.primary);
+  doc.rect(0, 124, PAGE_W, 1.5, 'F');
+
+  doc.setTextColor(94, 234, 212);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(opts.eyebrow.toUpperCase(), MARGIN_X, 38);
 
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
-  doc.text('SOCMind', 14, 14);
+  doc.setFontSize(26);
+  const titleLines = doc.splitTextToSize(opts.title, CONTENT_W);
+  doc.text(titleLines, MARGIN_X, 52);
+
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(180, 220, 220);
-  doc.text('Autonomous SOC Platform — Knowledge Hub', 14, 20);
-  doc.text(`Generated ${new Date().toLocaleString()}`, 14, 26);
+  doc.setFontSize(11);
+  doc.setTextColor(180, 200, 210);
+  const subLines = doc.splitTextToSize(opts.subtitle, CONTENT_W);
+  doc.text(subLines, MARGIN_X, 52 + titleLines.length * 10 + 4);
 
-  doc.setTextColor(...BRAND.dark);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text(title, 14, 46);
-  if (subtitle) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(...BRAND.muted);
-    doc.text(subtitle, 14, 53);
+  if (opts.severityBadge) {
+    const c = sevColor[opts.severityBadge.severity] ?? C.muted;
+    badge(ctx, `${opts.severityBadge.label}: ${opts.severityBadge.severity}`, c, MARGIN_X, 118);
   }
-}
 
-function footer(doc: jsPDF) {
-  const pages = doc.getNumberOfPages();
-  for (let i = 1; i <= pages; i++) {
-    doc.setPage(i);
-    doc.setFontSize(8);
-    doc.setTextColor(...BRAND.muted);
-    doc.text('Powered by Ahmed Tareq · SOCMind Platform', 14, 290);
-    doc.text(`Page ${i} of ${pages}`, 196, 290, { align: 'right' });
-  }
-}
+  // meta cards
+  ctx.y = 140;
+  for (const m of opts.meta) infoCard(ctx, m.label, m.value);
 
-function section(doc: jsPDF, y: number, title: string): number {
-  if (y > 270) {
-    doc.addPage();
-    y = 20;
-  }
-  doc.setFillColor(...BRAND.primary);
-  doc.rect(14, y - 4, 3, 6, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(...BRAND.dark);
-  doc.text(title, 20, y);
-  return y + 6;
-}
-
-function paragraph(doc: jsPDF, y: number, text: string, opts?: { size?: number; color?: [number, number, number] }): number {
+  ctx.y = PAGE_H - 30;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(opts?.size ?? 10);
-  doc.setTextColor(...(opts?.color ?? BRAND.dark));
-  const lines = doc.splitTextToSize(text, 182);
-  for (const line of lines) {
-    if (y > 280) {
-      doc.addPage();
-      y = 20;
-    }
-    doc.text(line, 14, y);
-    y += 5;
-  }
-  return y + 2;
+  doc.setFontSize(8);
+  doc.setTextColor(...C.muted);
+  doc.text(`Generated ${new Date().toLocaleString()}  ·  SOCMind by Ahmed Tareq`, MARGIN_X, PAGE_H - 18);
 }
 
-function bullets(doc: jsPDF, y: number, items: string[]): number {
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(...BRAND.dark);
-  for (const item of items) {
-    if (y > 278) {
-      doc.addPage();
-      y = 20;
-    }
-    doc.setTextColor(...BRAND.accent);
-    doc.text('▸', 16, y);
-    doc.setTextColor(...BRAND.dark);
-    const lines = doc.splitTextToSize(item, 178);
-    doc.text(lines, 22, y);
-    y += lines.length * 5 + 1;
-  }
-  return y + 2;
-}
+// ============================================================
+//  Public exports
+// ============================================================
 
 export function generateAttackPDF(entry: AttackEntry) {
   const doc = new jsPDF();
-  header(doc, entry.name, `${entry.category} · Severity: ${entry.severity}`);
-
-  let y = 65;
-  y = section(doc, y, 'Summary');
-  y = paragraph(doc, y, entry.summary);
-
-  y = section(doc, y, 'How It Works');
-  y = bullets(doc, y, entry.howItWorks);
-
-  y = section(doc, y, 'Detection Signals');
-  y = bullets(doc, y, entry.detection);
-
-  y = section(doc, y, 'Mitigation Controls');
-  y = bullets(doc, y, entry.mitigation);
-
-  y = section(doc, y, 'Incident Response Playbook');
-  y = bullets(doc, y, entry.response);
-
-  y = section(doc, y, 'MITRE ATT&CK Mapping');
-  y = bullets(
-    doc,
-    y,
-    entry.mitre.map((m) => `${m.id} — ${m.name}`),
-  );
-
-  y = section(doc, y, 'Common Tools / Frameworks');
-  y = paragraph(doc, y, entry.tools.join(' · '));
-
-  footer(doc);
+  const ctx = newCtx(doc, entry.name, entry.category);
+  coverPage(ctx, {
+    eyebrow: `${entry.category} · Attack Reference`,
+    title: entry.name,
+    subtitle: entry.summary,
+    severityBadge: { label: 'Severity', severity: entry.severity },
+    meta: [
+      { label: 'Category', value: entry.category },
+      { label: 'Tools', value: entry.tools.join(' · ') },
+    ],
+  });
+  newPage(ctx);
+  h1(ctx, 'Summary'); p(ctx, entry.summary);
+  h1(ctx, 'How It Works'); bullets(ctx, entry.howItWorks);
+  h1(ctx, 'Detection Signals'); bullets(ctx, entry.detection);
+  h1(ctx, 'Mitigation Controls'); bullets(ctx, entry.mitigation);
+  h1(ctx, 'Incident Response'); bullets(ctx, entry.response);
+  h1(ctx, 'MITRE ATT&CK'); bullets(ctx, entry.mitre.map((m) => `${m.id} — ${m.name}`));
+  h1(ctx, 'Tools'); p(ctx, entry.tools.join(' · '));
   doc.save(`SOCMind-Attack-${entry.id}.pdf`);
 }
 
 export function generateForensicsBlogPDF(blog: ForensicsBlog) {
   const doc = new jsPDF();
-  header(doc, blog.title, `${blog.category} · ${blog.difficulty} · by ${blog.author}`);
-
-  let y = 65;
-  y = section(doc, y, 'Lab Reference');
-  y = paragraph(doc, y, `${blog.labProvider}: ${blog.labName}`);
-  y = paragraph(doc, y, blog.labUrl, { color: BRAND.primary, size: 9 });
-
-  y = section(doc, y, 'Scenario');
-  y = paragraph(doc, y, blog.scenario);
-
-  y = section(doc, y, 'Investigation Overview');
-  y = paragraph(doc, y, blog.overview);
-
-  y = section(doc, y, 'Investigation Steps');
+  const ctx = newCtx(doc, blog.title, blog.category);
+  coverPage(ctx, {
+    eyebrow: `${blog.category} · ${blog.difficulty}`,
+    title: blog.title,
+    subtitle: blog.scenario,
+    meta: [
+      { label: 'Lab', value: `${blog.labProvider} — ${blog.labName}` },
+      { label: 'Author', value: blog.author },
+    ],
+  });
+  newPage(ctx);
+  h1(ctx, 'Scenario'); p(ctx, blog.scenario);
+  h1(ctx, 'Investigation Overview'); p(ctx, blog.overview);
+  h1(ctx, 'Investigation Steps');
   for (const step of blog.investigationSteps) {
-    if (y > 260) {
-      doc.addPage();
-      y = 20;
-    }
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(...BRAND.dark);
-    doc.text(step.title, 14, y);
-    y += 5;
-    y = paragraph(doc, y, step.description);
-    if (step.commands && step.commands.length > 0) {
-      doc.setFillColor(245, 247, 250);
-      const boxStart = y - 2;
-      const cmdLines = step.commands.flatMap((c) => doc.splitTextToSize(`$ ${c}`, 178));
-      doc.rect(14, boxStart, 182, cmdLines.length * 4.5 + 4, 'F');
-      doc.setFont('courier', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(...BRAND.dark);
-      let cy = y + 2;
-      for (const l of cmdLines) {
-        doc.text(l, 17, cy);
-        cy += 4.5;
-      }
-      y = cy + 2;
-    }
-    if (step.findings) {
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(9);
-      doc.setTextColor(...BRAND.muted);
-      const fl = doc.splitTextToSize(`Findings: ${step.findings}`, 182);
-      for (const l of fl) {
-        if (y > 282) {
-          doc.addPage();
-          y = 20;
-        }
-        doc.text(l, 14, y);
-        y += 4.5;
-      }
-      y += 2;
-    }
+    h2(ctx, step.title); p(ctx, step.description);
+    if (step.commands?.length) codeBlock(ctx, step.commands.join('\n'), { language: 'shell', promptPrefix: '$ ' });
+    if (step.findings) p(ctx, `Findings: ${step.findings}`, { color: C.muted });
   }
-
-  y = section(doc, y, 'TTPs (MITRE ATT&CK)');
-  y = bullets(
-    doc,
-    y,
-    blog.ttps.map((t) => `${t.techniqueId} — ${t.tactic} / ${t.technique}: ${t.description}`),
-  );
-
-  y = section(doc, y, 'Indicators of Compromise');
-  y = bullets(doc, y, blog.iocs.map((i) => `[${i.type}] ${i.value} — ${i.context}`));
-
-  y = section(doc, y, 'Conclusion');
-  y = paragraph(doc, y, blog.conclusion);
-
-  y = section(doc, y, 'Lessons Learned');
-  y = bullets(doc, y, blog.lessonsLearned);
-
-  footer(doc);
+  h1(ctx, 'TTPs (MITRE ATT&CK)');
+  bullets(ctx, blog.ttps.map((t) => `${t.techniqueId} — ${t.tactic} / ${t.technique}: ${t.description}`));
+  h1(ctx, 'Indicators of Compromise');
+  bullets(ctx, blog.iocs.map((i) => `[${i.type}] ${i.value} — ${i.context}`));
+  h1(ctx, 'Conclusion'); p(ctx, blog.conclusion);
+  h1(ctx, 'Lessons Learned'); bullets(ctx, blog.lessonsLearned);
   doc.save(`SOCMind-Forensics-${blog.slug}.pdf`);
 }
 
+// ============================================================
+//  AD Attack Room — Premium PDF
+// ============================================================
 export function generateAdAttackRoomPDF(room: AdAttackRoom) {
   const doc = new jsPDF();
-  header(doc, room.shortName, `${room.category} · Severity: ${room.severity} · Difficulty: ${room.difficulty}`);
+  const ctx = newCtx(doc, room.shortName, 'AD Attack Room');
 
-  let y = 65;
-  y = section(doc, y, 'Lab Reference');
-  y = paragraph(doc, y, `${room.labProvider}: ${room.labName}`);
-  y = paragraph(doc, y, room.labUrl, { color: BRAND.primary, size: 9 });
+  // ---------- Cover ----------
+  coverPage(ctx, {
+    eyebrow: `Active Directory · ${room.category}`,
+    title: room.name,
+    subtitle: room.summary,
+    severityBadge: { label: 'Severity', severity: room.severity },
+    meta: [
+      { label: 'Lab', value: `${room.labProvider} — ${room.labName}` },
+      { label: 'Difficulty', value: room.difficulty },
+      { label: 'Author', value: `${room.author} · ${room.publishedAt}` },
+      { label: 'Reading Time', value: `${room.readingTime} min` },
+    ],
+  });
 
-  y = section(doc, y, 'Summary');
-  y = paragraph(doc, y, room.summary);
+  // ---------- TOC ----------
+  newPage(ctx);
+  h1(ctx, 'Table of Contents');
+  const sections = [
+    '1. Executive Summary',
+    '2. Prerequisites',
+    '3. Attack Flow (High Level)',
+    '4. Walkthrough (HTB Lab)',
+    '5. Commands — Detailed Explanation',
+    '6. Tools Used & Why',
+    '7. SOC Detection — Enumeration Phase',
+    '8. SOC Detection — Active Roasting',
+    '9. Mitigation Controls',
+    '10. Remediation Playbook',
+    '11. MITRE ATT&CK Mapping',
+    '12. References',
+  ];
+  ctx.doc.setFont('helvetica', 'normal');
+  ctx.doc.setFontSize(10);
+  ctx.doc.setTextColor(...C.body);
+  for (const s of sections) {
+    ensureSpace(ctx, 6);
+    ctx.doc.text(s, MARGIN_X + 2, ctx.y);
+    ctx.y += 5.5;
+  }
 
-  y = section(doc, y, 'Prerequisites');
-  y = bullets(doc, y, room.prerequisites);
+  // ---------- 1. Executive Summary ----------
+  newPage(ctx);
+  h1(ctx, '1. Executive Summary');
+  p(ctx, room.summary);
+  h2(ctx, 'Lab Reference');
+  p(ctx, `${room.labProvider} — ${room.labName}`);
+  p(ctx, room.labUrl, { color: C.primary, size: 8.5 });
 
-  y = section(doc, y, 'Attack Flow');
-  y = bullets(doc, y, room.attackFlow);
+  // ---------- 2. Prerequisites ----------
+  h1(ctx, '2. Prerequisites');
+  bullets(ctx, room.prerequisites);
 
-  y = section(doc, y, 'Walkthrough');
+  // ---------- 3. Attack Flow ----------
+  h1(ctx, '3. Attack Flow');
+  bullets(ctx, room.attackFlow);
+
+  // ---------- 4. Walkthrough ----------
+  h1(ctx, '4. Walkthrough');
   for (const step of room.walkthrough) {
-    if (y > 255) { doc.addPage(); y = 20; }
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(...BRAND.dark);
-    doc.text(step.title, 14, y);
-    y += 5;
-    y = paragraph(doc, y, step.description);
-    if (step.commands && step.commands.length) {
-      const cmdLines = step.commands.flatMap((c) => doc.splitTextToSize(`$ ${c}`, 178));
-      doc.setFillColor(245, 247, 250);
-      doc.rect(14, y - 2, 182, cmdLines.length * 4.5 + 4, 'F');
-      doc.setFont('courier', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(...BRAND.dark);
-      let cy = y + 2;
-      for (const l of cmdLines) { doc.text(l, 17, cy); cy += 4.5; }
-      y = cy + 2;
-    }
-    if (step.output) {
-      const outLines = doc.splitTextToSize(step.output, 178);
-      doc.setFillColor(20, 30, 40);
-      doc.rect(14, y - 2, 182, outLines.length * 4.5 + 4, 'F');
-      doc.setFont('courier', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(180, 230, 200);
-      let cy = y + 2;
-      for (const l of outLines) {
-        if (cy > 285) { doc.addPage(); cy = 20; }
-        doc.text(l, 17, cy); cy += 4.5;
-      }
-      y = cy + 3;
-    }
-    y += 2;
+    h2(ctx, step.title);
+    p(ctx, step.description);
+    if (step.commands?.length) codeBlock(ctx, step.commands.join('\n'), { language: 'shell', promptPrefix: '$ ' });
+    if (step.output) codeBlock(ctx, step.output, { language: 'output' });
   }
 
-  y = section(doc, y, 'Commands Cheatsheet');
-  for (const c of room.commandsCheatsheet) {
-    if (y > 275) { doc.addPage(); y = 20; }
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(...BRAND.dark);
-    doc.text(`▸ ${c.title}`, 14, y);
-    y += 4;
-    const lines = doc.splitTextToSize(c.command, 176);
-    doc.setFillColor(245, 247, 250);
-    doc.rect(18, y - 2, 178, lines.length * 4.2 + 3, 'F');
-    doc.setFont('courier', 'normal');
-    doc.setFontSize(8);
-    let cy = y + 2;
-    for (const l of lines) { doc.text(l, 21, cy); cy += 4.2; }
-    y = cy + 3;
+  // ---------- 5. Commands Explained ----------
+  h1(ctx, '5. Commands — Detailed Explanation');
+  p(ctx, 'Every command in the attack chain, broken down flag-by-flag with the operational reason behind it.', { color: C.muted, size: 9 });
+  for (const ce of room.commandExplanations) {
+    h2(ctx, ce.purpose);
+    codeBlock(ctx, ce.command, { language: 'command', promptPrefix: '$ ' });
+    p(ctx, 'Flag breakdown:', { bold: true, size: 9 });
+    bullets(ctx, ce.breakdown.map((b) => `${b.flag} → ${b.meaning}`));
+    p(ctx, `Why this command: ${ce.why}`, { color: C.body });
   }
 
-  y = section(doc, y, 'Detection Signals');
-  y = bullets(doc, y, room.detection);
+  // ---------- 6. Tools ----------
+  h1(ctx, '6. Tools Used & Why');
+  for (const t of room.toolsExplained) {
+    ensureSpace(ctx, 22);
+    ctx.doc.setFillColor(...C.bgSoft);
+    ctx.doc.roundedRect(MARGIN_X, ctx.y, CONTENT_W, 4.5, 1, 1, 'F');
+    ctx.doc.setFont('helvetica', 'bold');
+    ctx.doc.setFontSize(9.5);
+    ctx.doc.setTextColor(...C.ink);
+    ctx.doc.text(t.name, MARGIN_X + 3, ctx.y + 3.2);
+    ctx.doc.setFont('helvetica', 'normal');
+    ctx.doc.setFontSize(7.5);
+    ctx.doc.setTextColor(...C.primaryDark);
+    ctx.doc.text(t.category, PAGE_W - MARGIN_X - 3, ctx.y + 3.2, { align: 'right' });
+    ctx.y += 6;
+    p(ctx, `Purpose: ${t.purpose}`, { size: 9 });
+    p(ctx, `Why we use it: ${t.why}`, { size: 9, color: C.body });
+    if (t.link) p(ctx, t.link, { color: C.primary, size: 8 });
+  }
 
-  y = section(doc, y, 'Mitigation Controls');
-  y = bullets(doc, y, room.mitigation);
+  // ---------- 7. SOC — Enumeration ----------
+  h1(ctx, '7. SOC Detection — Enumeration Phase');
+  p(ctx, 'Catch the attacker BEFORE they roast — at the LDAP/SAMR enumeration step where they fingerprint roastable accounts.', { color: C.muted });
+  for (const d of room.enumerationDetection) renderDetection(ctx, d);
 
-  y = section(doc, y, 'Remediation Steps');
-  y = bullets(doc, y, room.remediation);
+  // ---------- 8. SOC — Active Roasting ----------
+  h1(ctx, '8. SOC Detection — Active Roasting');
+  p(ctx, 'Detection signals once the attacker is actively requesting AS-REP tickets, plus endpoint signals to catch their tooling.', { color: C.muted });
+  for (const d of room.socDetection) renderDetection(ctx, d);
 
-  y = section(doc, y, 'MITRE ATT&CK Mapping');
-  y = bullets(doc, y, room.mitre.map((m) => `${m.id} — ${m.name}`));
+  // ---------- 9. Mitigation ----------
+  h1(ctx, '9. Mitigation Controls');
+  bullets(ctx, room.mitigation);
 
-  y = section(doc, y, 'Tools');
-  y = paragraph(doc, y, room.tools.join(' · '));
+  // ---------- 10. Remediation ----------
+  h1(ctx, '10. Remediation Playbook');
+  bullets(ctx, room.remediation);
 
-  y = section(doc, y, 'References');
-  y = bullets(doc, y, room.references.map((r) => `${r.title} — ${r.url}`));
+  // ---------- 11. MITRE ----------
+  h1(ctx, '11. MITRE ATT&CK Mapping');
+  bullets(ctx, room.mitre.map((m) => `${m.id} — ${m.name} (${m.url})`));
 
-  footer(doc);
+  // ---------- 12. References ----------
+  h1(ctx, '12. References');
+  for (const r of room.references) {
+    p(ctx, r.title, { bold: true, size: 9 });
+    p(ctx, r.url, { color: C.primary, size: 8 });
+  }
+
   doc.save(`SOCMind-AD-${room.slug}.pdf`);
+}
+
+function renderDetection(ctx: Ctx, d: { title: string; description: string; eventIds?: string[]; dataSource?: string; query?: string; queryLanguage?: string; severity?: string }) {
+  ensureSpace(ctx, 18);
+  // title bar with severity
+  ctx.doc.setFillColor(...C.bgSoft);
+  ctx.doc.roundedRect(MARGIN_X, ctx.y, CONTENT_W, 6, 1, 1, 'F');
+  ctx.doc.setFont('helvetica', 'bold');
+  ctx.doc.setFontSize(10);
+  ctx.doc.setTextColor(...C.ink);
+  const titleLines = ctx.doc.splitTextToSize(d.title, CONTENT_W - 30);
+  ctx.doc.text(titleLines[0], MARGIN_X + 3, ctx.y + 4);
+  if (d.severity) {
+    badge(ctx, d.severity, sevColor[d.severity] ?? C.muted, PAGE_W - MARGIN_X - 22, ctx.y + 4);
+  }
+  ctx.y += 8;
+  if (titleLines.length > 1) p(ctx, titleLines.slice(1).join(' '));
+  p(ctx, d.description);
+  if (d.eventIds?.length) p(ctx, `Event IDs: ${d.eventIds.join(', ')}`, { size: 8.5, color: C.muted });
+  if (d.dataSource) p(ctx, `Data source: ${d.dataSource}`, { size: 8.5, color: C.muted });
+  if (d.query) codeBlock(ctx, d.query, { language: d.queryLanguage ?? 'query' });
 }
