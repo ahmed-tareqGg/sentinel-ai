@@ -594,6 +594,31 @@ export interface AdAttackStep {
   output?: string;
 }
 
+export interface CommandExplanation {
+  command: string;
+  purpose: string;
+  breakdown: { flag: string; meaning: string }[];
+  why: string;
+}
+
+export interface ToolExplanation {
+  name: string;
+  category: string;
+  purpose: string;
+  why: string;
+  link?: string;
+}
+
+export interface SocDetectionItem {
+  title: string;
+  description: string;
+  eventIds?: string[];
+  dataSource?: string;
+  query?: string;
+  queryLanguage?: 'KQL' | 'SPL' | 'SQL' | 'EQL';
+  severity?: 'Low' | 'Medium' | 'High' | 'Critical';
+}
+
 export interface AdAttackRoom {
   id: string;
   slug: string;
@@ -614,6 +639,10 @@ export interface AdAttackRoom {
   attackFlow: string[];
   walkthrough: AdAttackStep[];
   commandsCheatsheet: { title: string; command: string; note?: string }[];
+  commandExplanations: CommandExplanation[];
+  toolsExplained: ToolExplanation[];
+  enumerationDetection: SocDetectionItem[];
+  socDetection: SocDetectionItem[];
   detection: string[];
   mitigation: string[];
   remediation: string[];
