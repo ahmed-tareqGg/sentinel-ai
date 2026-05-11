@@ -189,7 +189,60 @@ export default function AdAttackRoomDetail() {
             </div>
           </Section>
 
-          <Section title="Detection Signals" icon={<Eye className="h-5 w-5 text-yellow-400" />}>
+          <Section title="Commands — Detailed Explanation" icon={<Code2 className="h-5 w-5 text-cyan-400" />}>
+            <p className="text-sm text-muted-foreground mb-4">Every command above, broken down flag-by-flag with the operational reason it exists in the chain.</p>
+            <div className="space-y-5">
+              {room.commandExplanations.map((ce, i) => (
+                <div key={i} className="rounded-xl border border-border bg-card/40 p-5">
+                  <div className="text-sm font-bold mb-2">{ce.purpose}</div>
+                  <pre className="text-xs font-mono bg-slate-950 text-emerald-300 border border-emerald-500/20 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all mb-3">$ {ce.command}</pre>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+                    {ce.breakdown.map((b, j) => (
+                      <div key={j} className="text-xs flex gap-2 p-2 rounded bg-muted/30 border border-border">
+                        <code className="font-mono font-bold text-cyan-400 shrink-0">{b.flag}</code>
+                        <span className="text-muted-foreground">{b.meaning}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-sm text-foreground/80 border-l-2 border-primary/50 pl-3 italic">
+                    <span className="font-semibold not-italic text-primary">Why: </span>{ce.why}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Section>
+
+          <Section title="Tools Used & Why" icon={<WrenchIcon className="h-5 w-5 text-emerald-400" />}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {room.toolsExplained.map((t, i) => (
+                <div key={i} className="rounded-xl border border-border bg-card/40 p-4 hover:border-primary/40 transition">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <div className="font-bold text-sm">{t.name}</div>
+                    <Badge variant="outline" className="text-[10px] shrink-0">{t.category}</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-2"><span className="font-semibold text-foreground">Purpose: </span>{t.purpose}</p>
+                  <p className="text-xs text-muted-foreground mb-2"><span className="font-semibold text-foreground">Why: </span>{t.why}</p>
+                  {t.link && <a href={t.link} target="_blank" rel="noreferrer" className="text-[11px] text-primary hover:underline inline-flex items-center gap-1"><ExternalLink className="h-3 w-3" />{t.link}</a>}
+                </div>
+              ))}
+            </div>
+          </Section>
+
+          <Section title="SOC Detection — Enumeration Phase" icon={<Radar className="h-5 w-5 text-yellow-400" />}>
+            <p className="text-sm text-muted-foreground mb-4">Catch the attacker BEFORE they roast — at the LDAP/SAMR enumeration step where they fingerprint roastable accounts.</p>
+            <div className="space-y-4">
+              {room.enumerationDetection.map((d, i) => <DetectionCard key={i} d={d} />)}
+            </div>
+          </Section>
+
+          <Section title="SOC Detection — Active Roasting" icon={<Eye className="h-5 w-5 text-orange-400" />}>
+            <p className="text-sm text-muted-foreground mb-4">Once the attacker requests AS-REP tickets, these queries fire — plus endpoint signals to catch their tooling.</p>
+            <div className="space-y-4">
+              {room.socDetection.map((d, i) => <DetectionCard key={i} d={d} />)}
+            </div>
+          </Section>
+
+          <Section title="Detection Signals (Quick List)" icon={<Eye className="h-5 w-5 text-yellow-400" />}>
             <ul className="space-y-2">
               {room.detection.map((d, i) => (
                 <li key={i} className="flex gap-3 text-sm"><span className="text-yellow-400 mt-0.5">▸</span><span className="leading-relaxed">{d}</span></li>
