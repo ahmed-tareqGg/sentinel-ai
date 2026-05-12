@@ -10,6 +10,8 @@ import adKerberoastHero from '@/assets/ad-kerberoast-hero.jpg';
 import adKerberoastFlow from '@/assets/ad-kerberoast-flow.jpg';
 import adSilverTicketHero from '@/assets/ad-silverticket-hero.jpg';
 import adSilverTicketFlow from '@/assets/ad-silverticket-flow.jpg';
+import adGoldenTicketHero from '@/assets/ad-goldenticket-hero.jpg';
+import adGoldenTicketFlow from '@/assets/ad-goldenticket-flow.jpg';
 
 export interface MitreTechnique {
   id: string;
