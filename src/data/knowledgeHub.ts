@@ -6,6 +6,10 @@ import forensicsNetworkImg from '@/assets/forensics-network.jpg';
 import adAsrepHero from '@/assets/ad-asrep-hero.jpg';
 import adAsrepFlow from '@/assets/ad-asrep-flow.jpg';
 import adAsrepCrack from '@/assets/ad-asrep-crack.jpg';
+import adKerberoastHero from '@/assets/ad-kerberoast-hero.jpg';
+import adKerberoastFlow from '@/assets/ad-kerberoast-flow.jpg';
+import adSilverTicketHero from '@/assets/ad-silverticket-hero.jpg';
+import adSilverTicketFlow from '@/assets/ad-silverticket-flow.jpg';
 
 export interface MitreTechnique {
   id: string;
