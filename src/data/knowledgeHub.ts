@@ -12,6 +12,11 @@ import adSilverTicketHero from '@/assets/ad-silverticket-hero.jpg';
 import adSilverTicketFlow from '@/assets/ad-silverticket-flow.jpg';
 import adGoldenTicketHero from '@/assets/ad-goldenticket-hero.jpg';
 import adGoldenTicketFlow from '@/assets/ad-goldenticket-flow.jpg';
+import adPthHero from '@/assets/ad-pth-hero.jpg';
+import adPttHero from '@/assets/ad-ptt-hero.jpg';
+import adDcShadowHero from '@/assets/ad-dcshadow-hero.jpg';
+import adOverpassHero from '@/assets/ad-overpass-hero.jpg';
+import adDelegationHero from '@/assets/ad-delegation-hero.jpg';
 
 export interface MitreTechnique {
   id: string;
