@@ -2551,6 +2551,60 @@ export type Database = {
           },
         ]
       }
+      topic_comments: {
+        Row: {
+          author_id: string
+          author_name: string
+          body: string
+          created_at: string
+          id: string
+          topic_id: string
+          topic_type: string
+        }
+        Insert: {
+          author_id: string
+          author_name?: string
+          body: string
+          created_at?: string
+          id?: string
+          topic_id: string
+          topic_type: string
+        }
+        Update: {
+          author_id?: string
+          author_name?: string
+          body?: string
+          created_at?: string
+          id?: string
+          topic_id?: string
+          topic_type?: string
+        }
+        Relationships: []
+      }
+      topic_likes: {
+        Row: {
+          created_at: string
+          id: string
+          liker_id: string
+          topic_id: string
+          topic_type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          liker_id: string
+          topic_id: string
+          topic_type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          liker_id?: string
+          topic_id?: string
+          topic_type?: string
+        }
+        Relationships: []
+      }
       user_access: {
         Row: {
           approved: boolean
