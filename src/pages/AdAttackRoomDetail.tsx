@@ -30,6 +30,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { adAttackRooms } from '@/data/knowledgeHub';
 import { generateAdAttackRoomPDF } from '@/lib/knowledgeHubPdf';
+import TopicEngagement from '@/components/knowledge/TopicEngagement';
 
 const severityColor: Record<string, string> = {
   Low: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
