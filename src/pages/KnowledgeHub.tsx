@@ -550,6 +550,8 @@ export default function KnowledgeHub() {
                 <Button onClick={() => generateAttackPDF(openAttack)} className="w-full gap-2">
                   <FileText className="h-4 w-4" /> Generate PDF Report
                 </Button>
+
+                <TopicEngagement topicType="attack" topicId={openAttack.id} />
               </div>
             </>
           )}
