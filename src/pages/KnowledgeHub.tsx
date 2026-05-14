@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -19,6 +19,9 @@ import {
   Sparkles,
   Network,
   ChevronRight,
+  Share2,
+  Heart,
+  MessageCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,8 +30,12 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { attackEntries, forensicsBlogs, adAttackRooms, type AttackEntry } from '@/data/knowledgeHub';
-import { generateAttackPDF, generateForensicsBlogPDF, generateAdAttackRoomPDF } from '@/lib/knowledgeHubPdf';
+import { generateAttackPDF, generateForensicsBlogPDF, generateAdAttackRoomPDF, generateAllAttacksSummaryPDF, sortBySeverity } from '@/lib/knowledgeHubPdf';
 import { KeyRound } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import { supabase as _supabase } from '@/integrations/supabase/client';
+import TopicEngagement from '@/components/knowledge/TopicEngagement';
+const supabase = _supabase as any;
 
 const severityColor: Record<string, string> = {
   Low: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
@@ -49,13 +56,69 @@ export default function KnowledgeHub() {
   const [openAttack, setOpenAttack] = useState<AttackEntry | null>(null);
   
 
+  // initial tab from URL hash for shareable category links (#attacks / #forensics / #ad)
+  const initialTab = (() => {
+    if (typeof window === 'undefined') return 'attacks';
+    const h = window.location.hash.replace('#', '');
+    return ['attacks', 'forensics', 'ad'].includes(h) ? h : 'attacks';
+  })();
+  const [tab, setTab] = useState<string>(initialTab);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.hash = tab;
+    window.history.replaceState(null, '', url.toString());
+  }, [tab]);
+
+  // engagement counts for cards (visible like + comment counts)
+  const [stats, setStats] = useState<Record<string, { likes: number; comments: number }>>({});
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const [likesRes, commentsRes] = await Promise.all([
+        supabase.from('topic_likes').select('topic_type, topic_id'),
+        supabase.from('topic_comments').select('topic_type, topic_id'),
+      ]);
+      if (!mounted) return;
+      const map: Record<string, { likes: number; comments: number }> = {};
+      const key = (t: string, id: string) => `${t}:${id}`;
+      for (const row of (likesRes.data ?? []) as any[]) {
+        const k = key(row.topic_type, row.topic_id);
+        map[k] = map[k] ?? { likes: 0, comments: 0 };
+        map[k].likes += 1;
+      }
+      for (const row of (commentsRes.data ?? []) as any[]) {
+        const k = key(row.topic_type, row.topic_id);
+        map[k] = map[k] ?? { likes: 0, comments: 0 };
+        map[k].comments += 1;
+      }
+      setStats(map);
+    })();
+    return () => { mounted = false; };
+  }, []);
+  const getStat = (t: string, id: string) => stats[`${t}:${id}`] ?? { likes: 0, comments: 0 };
+
+  const shareCategory = async (cat: 'attacks' | 'forensics' | 'ad') => {
+    const url = `${window.location.origin}/knowledge-hub#${cat}`;
+    const title = cat === 'ad' ? 'AD Attacks' : cat === 'forensics' ? 'Forensics Blogs' : 'Attack Atlas';
+    try {
+      if (navigator.share) await navigator.share({ title: `SOCMind — ${title}`, url });
+      else {
+        await navigator.clipboard.writeText(url);
+        toast({ title: 'Category link copied', description: url });
+      }
+    } catch { /* cancelled */ }
+  };
+
   const filteredAttacks = useMemo(
     () =>
-      attackEntries.filter(
-        (a) =>
-          a.name.toLowerCase().includes(search.toLowerCase()) ||
-          a.category.toLowerCase().includes(search.toLowerCase()) ||
-          a.summary.toLowerCase().includes(search.toLowerCase()),
+      sortBySeverity(
+        attackEntries.filter(
+          (a) =>
+            a.name.toLowerCase().includes(search.toLowerCase()) ||
+            a.category.toLowerCase().includes(search.toLowerCase()) ||
+            a.summary.toLowerCase().includes(search.toLowerCase()),
+        ),
       ),
     [search],
   );
@@ -73,11 +136,13 @@ export default function KnowledgeHub() {
 
   const filteredAdRooms = useMemo(
     () =>
-      adAttackRooms.filter(
-        (r) =>
-          r.name.toLowerCase().includes(search.toLowerCase()) ||
-          r.category.toLowerCase().includes(search.toLowerCase()) ||
-          r.summary.toLowerCase().includes(search.toLowerCase()),
+      sortBySeverity(
+        adAttackRooms.filter(
+          (r) =>
+            r.name.toLowerCase().includes(search.toLowerCase()) ||
+            r.category.toLowerCase().includes(search.toLowerCase()) ||
+            r.summary.toLowerCase().includes(search.toLowerCase()),
+        ),
       ),
     [search],
   );
@@ -134,13 +199,33 @@ export default function KnowledgeHub() {
                 className="pl-10 h-12 bg-card/50 backdrop-blur"
               />
             </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-6">
+              <Button
+                size="sm"
+                variant="default"
+                className="gap-1.5"
+                onClick={() => generateAllAttacksSummaryPDF({ attacks: attackEntries, adRooms: adAttackRooms, forensics: forensicsBlogs })}
+              >
+                <FileText className="h-4 w-4" /> Master Summary PDF
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => shareCategory('attacks')}>
+                <Share2 className="h-3.5 w-3.5" /> Share Attack Atlas
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => shareCategory('ad')}>
+                <Share2 className="h-3.5 w-3.5" /> Share AD Attacks
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => shareCategory('forensics')}>
+                <Share2 className="h-3.5 w-3.5" /> Share Forensics
+              </Button>
+            </div>
           </motion.div>
         </div>
       </section>
 
       {/* Tabs */}
       <section className="container mx-auto px-6 py-12">
-        <Tabs defaultValue="attacks" className="w-full">
+        <Tabs value={tab} onValueChange={setTab} className="w-full">
           <TabsList className="grid grid-cols-3 max-w-2xl mx-auto mb-10">
             <TabsTrigger value="attacks" className="gap-2">
               <AlertTriangle className="h-4 w-4" /> Attack Atlas
@@ -187,8 +272,9 @@ export default function KnowledgeHub() {
                         ))}
                       </div>
                       <div className="flex items-center justify-between pt-3 border-t border-border">
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          Open mind-map <ChevronRight className="h-3 w-3" />
+                        <span className="text-xs text-muted-foreground flex items-center gap-3">
+                          <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-red-400" />{getStat('attack', entry.id).likes}</span>
+                          <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3 text-cyan-400" />{getStat('attack', entry.id).comments}</span>
                         </span>
                         <Button
                           size="sm"
@@ -259,8 +345,9 @@ export default function KnowledgeHub() {
                       </div>
 
                       <div className="flex items-center justify-between pt-3 border-t border-border">
-                        <span className="text-xs text-emerald-400 flex items-center gap-1 font-medium">
-                          Read investigation <ChevronRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
+                        <span className="text-xs text-muted-foreground flex items-center gap-3">
+                          <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-red-400" />{getStat('forensics', blog.id).likes}</span>
+                          <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3 text-emerald-400" />{getStat('forensics', blog.id).comments}</span>
                         </span>
                         <div className="flex items-center gap-1">
                           <Button
@@ -361,8 +448,9 @@ export default function KnowledgeHub() {
                       </div>
 
                       <div className="flex items-center justify-between pt-3 border-t border-border">
-                        <span className="text-xs text-cyan-400 flex items-center gap-1 font-medium">
-                          Open room <ChevronRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
+                        <span className="text-xs text-muted-foreground flex items-center gap-3">
+                          <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-red-400" />{getStat('ad', room.id).likes}</span>
+                          <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3 text-cyan-400" />{getStat('ad', room.id).comments}</span>
                         </span>
                         <div className="flex items-center gap-1">
                           <Button asChild size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={(e) => e.stopPropagation()}>
@@ -463,6 +551,8 @@ export default function KnowledgeHub() {
                 <Button onClick={() => generateAttackPDF(openAttack)} className="w-full gap-2">
                   <FileText className="h-4 w-4" /> Generate PDF Report
                 </Button>
+
+                <TopicEngagement topicType="attack" topicId={openAttack.id} />
               </div>
             </>
           )}

@@ -30,6 +30,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { adAttackRooms } from '@/data/knowledgeHub';
 import { generateAdAttackRoomPDF } from '@/lib/knowledgeHubPdf';
+import TopicEngagement from '@/components/knowledge/TopicEngagement';
 
 const severityColor: Record<string, string> = {
   Low: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
@@ -294,6 +295,10 @@ export default function AdAttackRoomDetail() {
                 </li>
               ))}
             </ul>
+          </Section>
+
+          <Section title="Discussion & Likes" icon={<Sparkles className="h-5 w-5 text-cyan-400" />}>
+            <TopicEngagement topicType="ad" topicId={room.id} />
           </Section>
 
           <div className="border-t border-border pt-8 mt-12">

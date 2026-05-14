@@ -1,6 +1,11 @@
 import jsPDF from 'jspdf';
 import type { AttackEntry, ForensicsBlog, AdAttackRoom } from '@/data/knowledgeHub';
 
+const SEV_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+export function sortBySeverity<T extends { severity: string }>(arr: T[]): T[] {
+  return [...arr].sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
+}
+
 // ============================================================
 //  SOCMind — Professional PDF System
 // ============================================================
@@ -459,4 +464,134 @@ function renderDetection(ctx: Ctx, d: { title: string; description: string; even
   if (d.eventIds?.length) p(ctx, `Event IDs: ${d.eventIds.join(', ')}`, { size: 8.5, color: C.muted });
   if (d.dataSource) p(ctx, `Data source: ${d.dataSource}`, { size: 8.5, color: C.muted });
   if (d.query) codeBlock(ctx, d.query, { language: d.queryLanguage ?? 'query' });
+}
+
+// ============================================================
+//  ALL-ATTACKS SUMMARY — Combined Knowledge Hub PDF
+// ============================================================
+export function generateAllAttacksSummaryPDF(opts: {
+  attacks: AttackEntry[];
+  adRooms: AdAttackRoom[];
+  forensics: ForensicsBlog[];
+}) {
+  const doc = new jsPDF();
+  const ctx = newCtx(doc, 'Attack Atlas Summary', 'Knowledge Hub');
+
+  // ---------- Cover ----------
+  coverPage(ctx, {
+    eyebrow: 'SOCMind · Knowledge Hub',
+    title: 'Attack Atlas — Master Summary',
+    subtitle:
+      'A consolidated, severity-ranked reference of every attack, AD technique and forensics walkthrough curated for the SOCMind Knowledge Hub.',
+    meta: [
+      { label: 'Attack Playbooks', value: `${opts.attacks.length} entries` },
+      { label: 'AD Attack Rooms', value: `${opts.adRooms.length} entries` },
+      { label: 'Forensics Blogs', value: `${opts.forensics.length} entries` },
+      { label: 'Curated By', value: 'Ahmed Tareq · SOCMind' },
+    ],
+  });
+
+  // ---------- Legend ----------
+  newPage(ctx);
+  h1(ctx, 'How to read this document');
+  p(ctx,
+    'Every section below is sorted by severity (Critical → High → Medium → Low). For each attack you get a one-line summary, the highest-impact MITRE techniques, the tools attackers use, and the SOC detection / response priorities. Use this as a triage map: skim severity badges, then drill into the dedicated PDF for any attack you want to investigate further.',
+  );
+  h2(ctx, 'Severity legend');
+  bullets(ctx, [
+    'Critical — Domain or business-wide compromise potential. Page on-call.',
+    'High — Significant lateral movement / data exposure risk.',
+    'Medium — Localised compromise, requires investigation within shift.',
+    'Low — Noise / hardening opportunity, document and tune.',
+  ]);
+
+  // ---------- 1. Attack Playbooks ----------
+  newPage(ctx);
+  h1(ctx, '1. Attack Playbooks');
+  for (const a of sortBySeverity(opts.attacks)) renderAttackSummary(ctx, a);
+
+  // ---------- 2. AD Attack Rooms ----------
+  newPage(ctx);
+  h1(ctx, '2. Active Directory Attack Rooms');
+  for (const r of sortBySeverity(opts.adRooms)) renderAdSummary(ctx, r);
+
+  // ---------- 3. Forensics ----------
+  newPage(ctx);
+  h1(ctx, '3. Forensics Investigations');
+  for (const b of opts.forensics) renderForensicsSummary(ctx, b);
+
+  doc.save('SOCMind-Attack-Atlas-Summary.pdf');
+}
+
+function renderAttackSummary(ctx: Ctx, a: AttackEntry) {
+  ensureSpace(ctx, 30);
+  const startY = ctx.y;
+  // header strip
+  ctx.doc.setFillColor(...C.bgSoft);
+  ctx.doc.roundedRect(MARGIN_X, ctx.y, CONTENT_W, 7, 1.5, 1.5, 'F');
+  ctx.doc.setFont('helvetica', 'bold');
+  ctx.doc.setFontSize(10.5);
+  ctx.doc.setTextColor(...C.ink);
+  ctx.doc.text(a.name, MARGIN_X + 3, ctx.y + 4.8);
+  // severity badge right
+  badge(ctx, a.severity, sevColor[a.severity] ?? C.muted, PAGE_W - MARGIN_X - 22, ctx.y + 4.8);
+  ctx.y += 9;
+  ctx.doc.setFont('helvetica', 'normal');
+  ctx.doc.setFontSize(7.5);
+  ctx.doc.setTextColor(...C.muted);
+  ctx.doc.text(`${a.category}  ·  ${a.tools.slice(0, 4).join(' · ')}`, MARGIN_X + 1, ctx.y);
+  ctx.y += 4;
+  p(ctx, a.summary, { size: 9 });
+  if (a.mitre.length) {
+    p(ctx, `MITRE: ${a.mitre.map((m) => `${m.id} ${m.name}`).join('  ·  ')}`, { size: 8, color: C.primaryDark });
+  }
+  // accent bar
+  ctx.doc.setDrawColor(...(sevColor[a.severity] ?? C.muted));
+  ctx.doc.setLineWidth(1.2);
+  ctx.doc.line(MARGIN_X, startY, MARGIN_X, ctx.y - 1);
+  ctx.y += 2;
+}
+
+function renderAdSummary(ctx: Ctx, r: AdAttackRoom) {
+  ensureSpace(ctx, 30);
+  const startY = ctx.y;
+  ctx.doc.setFillColor(...C.bgSoft);
+  ctx.doc.roundedRect(MARGIN_X, ctx.y, CONTENT_W, 7, 1.5, 1.5, 'F');
+  ctx.doc.setFont('helvetica', 'bold');
+  ctx.doc.setFontSize(10.5);
+  ctx.doc.setTextColor(...C.ink);
+  ctx.doc.text(r.name, MARGIN_X + 3, ctx.y + 4.8);
+  badge(ctx, r.severity, sevColor[r.severity] ?? C.muted, PAGE_W - MARGIN_X - 22, ctx.y + 4.8);
+  ctx.y += 9;
+  ctx.doc.setFont('helvetica', 'normal');
+  ctx.doc.setFontSize(7.5);
+  ctx.doc.setTextColor(...C.muted);
+  ctx.doc.text(`${r.category}  ·  ${r.labProvider} — ${r.labName}  ·  ${r.difficulty}`, MARGIN_X + 1, ctx.y);
+  ctx.y += 4;
+  p(ctx, r.summary, { size: 9 });
+  if (r.mitre.length) {
+    p(ctx, `MITRE: ${r.mitre.slice(0, 4).map((m) => `${m.id} ${m.name}`).join('  ·  ')}`, { size: 8, color: C.primaryDark });
+  }
+  ctx.doc.setDrawColor(...(sevColor[r.severity] ?? C.muted));
+  ctx.doc.setLineWidth(1.2);
+  ctx.doc.line(MARGIN_X, startY, MARGIN_X, ctx.y - 1);
+  ctx.y += 2;
+}
+
+function renderForensicsSummary(ctx: Ctx, b: ForensicsBlog) {
+  ensureSpace(ctx, 24);
+  ctx.doc.setFillColor(...C.bgSoft);
+  ctx.doc.roundedRect(MARGIN_X, ctx.y, CONTENT_W, 7, 1.5, 1.5, 'F');
+  ctx.doc.setFont('helvetica', 'bold');
+  ctx.doc.setFontSize(10.5);
+  ctx.doc.setTextColor(...C.ink);
+  ctx.doc.text(b.title, MARGIN_X + 3, ctx.y + 4.8);
+  ctx.y += 9;
+  ctx.doc.setFont('helvetica', 'normal');
+  ctx.doc.setFontSize(7.5);
+  ctx.doc.setTextColor(...C.muted);
+  ctx.doc.text(`${b.category}  ·  ${b.difficulty}  ·  ${b.labProvider} — ${b.labName}`, MARGIN_X + 1, ctx.y);
+  ctx.y += 4;
+  p(ctx, b.scenario, { size: 9 });
+  ctx.y += 2;
 }
