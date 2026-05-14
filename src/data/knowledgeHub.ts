@@ -1626,6 +1626,7 @@ export const adAttackRooms: AdAttackRoom[] = [
       { title: 'Sean Metcalf — Detecting Forged Kerberos Tickets', url: 'https://adsecurity.org/?p=1515' },
       { title: 'SpecterOps — Kerberos Bronze Bit / Golden Ticket research', url: 'https://posts.specterops.io/' },
     ],
+  },
   // ======================= PASS-THE-HASH =======================
   {
     id: 'ad-pass-the-hash',
