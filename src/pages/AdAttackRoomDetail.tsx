@@ -297,6 +297,10 @@ export default function AdAttackRoomDetail() {
             </ul>
           </Section>
 
+          <Section title="Discussion & Likes" icon={<Sparkles className="h-5 w-5 text-cyan-400" />}>
+            <TopicEngagement topicType="ad" topicId={room.id} />
+          </Section>
+
           <div className="border-t border-border pt-8 mt-12">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
