@@ -344,8 +344,9 @@ export default function KnowledgeHub() {
                       </div>
 
                       <div className="flex items-center justify-between pt-3 border-t border-border">
-                        <span className="text-xs text-emerald-400 flex items-center gap-1 font-medium">
-                          Read investigation <ChevronRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
+                        <span className="text-xs text-muted-foreground flex items-center gap-3">
+                          <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-red-400" />{getStat('forensics', blog.id).likes}</span>
+                          <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3 text-emerald-400" />{getStat('forensics', blog.id).comments}</span>
                         </span>
                         <div className="flex items-center gap-1">
                           <Button
