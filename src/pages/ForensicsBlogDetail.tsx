@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { forensicsBlogs } from '@/data/knowledgeHub';
 import { generateForensicsBlogPDF } from '@/lib/knowledgeHubPdf';
+import TopicEngagement from '@/components/knowledge/TopicEngagement';
 
 const difficultyColor: Record<string, string> = {
   Easy: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
