@@ -271,8 +271,9 @@ export default function KnowledgeHub() {
                         ))}
                       </div>
                       <div className="flex items-center justify-between pt-3 border-t border-border">
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          Open mind-map <ChevronRight className="h-3 w-3" />
+                        <span className="text-xs text-muted-foreground flex items-center gap-3">
+                          <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-red-400" />{getStat('attack', entry.id).likes}</span>
+                          <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3 text-cyan-400" />{getStat('attack', entry.id).comments}</span>
                         </span>
                         <Button
                           size="sm"
