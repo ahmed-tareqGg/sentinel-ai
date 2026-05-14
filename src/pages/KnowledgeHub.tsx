@@ -198,13 +198,33 @@ export default function KnowledgeHub() {
                 className="pl-10 h-12 bg-card/50 backdrop-blur"
               />
             </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-6">
+              <Button
+                size="sm"
+                variant="default"
+                className="gap-1.5"
+                onClick={() => generateAllAttacksSummaryPDF({ attacks: attackEntries, adRooms: adAttackRooms, forensics: forensicsBlogs })}
+              >
+                <FileText className="h-4 w-4" /> Master Summary PDF
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => shareCategory('attacks')}>
+                <Share2 className="h-3.5 w-3.5" /> Share Attack Atlas
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => shareCategory('ad')}>
+                <Share2 className="h-3.5 w-3.5" /> Share AD Attacks
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => shareCategory('forensics')}>
+                <Share2 className="h-3.5 w-3.5" /> Share Forensics
+              </Button>
+            </div>
           </motion.div>
         </div>
       </section>
 
       {/* Tabs */}
       <section className="container mx-auto px-6 py-12">
-        <Tabs defaultValue="attacks" className="w-full">
+        <Tabs value={tab} onValueChange={setTab} className="w-full">
           <TabsList className="grid grid-cols-3 max-w-2xl mx-auto mb-10">
             <TabsTrigger value="attacks" className="gap-2">
               <AlertTriangle className="h-4 w-4" /> Attack Atlas
