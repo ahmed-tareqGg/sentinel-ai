@@ -1,0 +1,18 @@
+# SOCMind
+
+> Autonomous SOC platform by Ahmed Tareq — AI-driven detection, investigation, and response with a Knowledge Hub covering AD attacks, forensics, and SOC playbooks.
+
+## Pages
+
+- [Home](/): Platform overview and capabilities.
+- [About](/about): Mission and team behind SOCMind.
+- [How It Works](/how-it-works): Architecture, agents, and autonomous pipeline.
+- [Trust](/trust): Security posture, compliance, and data handling.
+- [Knowledge Hub](/knowledge-hub): AD attacks, forensics walkthroughs, SOC detection content.
+- [Demo](/demo-landing): Read-only investor demo of the SOC platform.
+- [Resume](/resume): Author profile — Ahmed Tareq.
+
+## Optional
+
+- [Terms](/terms): Terms of service.
+- [Privacy](/privacy): Privacy policy.
