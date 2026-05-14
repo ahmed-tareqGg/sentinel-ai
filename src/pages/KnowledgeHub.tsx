@@ -55,13 +55,69 @@ export default function KnowledgeHub() {
   const [openAttack, setOpenAttack] = useState<AttackEntry | null>(null);
   
 
+  // initial tab from URL hash for shareable category links (#attacks / #forensics / #ad)
+  const initialTab = (() => {
+    if (typeof window === 'undefined') return 'attacks';
+    const h = window.location.hash.replace('#', '');
+    return ['attacks', 'forensics', 'ad'].includes(h) ? h : 'attacks';
+  })();
+  const [tab, setTab] = useState<string>(initialTab);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.hash = tab;
+    window.history.replaceState(null, '', url.toString());
+  }, [tab]);
+
+  // engagement counts for cards (visible like + comment counts)
+  const [stats, setStats] = useState<Record<string, { likes: number; comments: number }>>({});
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const [likesRes, commentsRes] = await Promise.all([
+        supabase.from('topic_likes').select('topic_type, topic_id'),
+        supabase.from('topic_comments').select('topic_type, topic_id'),
+      ]);
+      if (!mounted) return;
+      const map: Record<string, { likes: number; comments: number }> = {};
+      const key = (t: string, id: string) => `${t}:${id}`;
+      for (const row of (likesRes.data ?? []) as any[]) {
+        const k = key(row.topic_type, row.topic_id);
+        map[k] = map[k] ?? { likes: 0, comments: 0 };
+        map[k].likes += 1;
+      }
+      for (const row of (commentsRes.data ?? []) as any[]) {
+        const k = key(row.topic_type, row.topic_id);
+        map[k] = map[k] ?? { likes: 0, comments: 0 };
+        map[k].comments += 1;
+      }
+      setStats(map);
+    })();
+    return () => { mounted = false; };
+  }, []);
+  const getStat = (t: string, id: string) => stats[`${t}:${id}`] ?? { likes: 0, comments: 0 };
+
+  const shareCategory = async (cat: 'attacks' | 'forensics' | 'ad') => {
+    const url = `${window.location.origin}/knowledge-hub#${cat}`;
+    const title = cat === 'ad' ? 'AD Attacks' : cat === 'forensics' ? 'Forensics Blogs' : 'Attack Atlas';
+    try {
+      if (navigator.share) await navigator.share({ title: `SOCMind — ${title}`, url });
+      else {
+        await navigator.clipboard.writeText(url);
+        toast({ title: 'Category link copied', description: url });
+      }
+    } catch { /* cancelled */ }
+  };
+
   const filteredAttacks = useMemo(
     () =>
-      attackEntries.filter(
-        (a) =>
-          a.name.toLowerCase().includes(search.toLowerCase()) ||
-          a.category.toLowerCase().includes(search.toLowerCase()) ||
-          a.summary.toLowerCase().includes(search.toLowerCase()),
+      sortBySeverity(
+        attackEntries.filter(
+          (a) =>
+            a.name.toLowerCase().includes(search.toLowerCase()) ||
+            a.category.toLowerCase().includes(search.toLowerCase()) ||
+            a.summary.toLowerCase().includes(search.toLowerCase()),
+        ),
       ),
     [search],
   );
@@ -79,11 +135,13 @@ export default function KnowledgeHub() {
 
   const filteredAdRooms = useMemo(
     () =>
-      adAttackRooms.filter(
-        (r) =>
-          r.name.toLowerCase().includes(search.toLowerCase()) ||
-          r.category.toLowerCase().includes(search.toLowerCase()) ||
-          r.summary.toLowerCase().includes(search.toLowerCase()),
+      sortBySeverity(
+        adAttackRooms.filter(
+          (r) =>
+            r.name.toLowerCase().includes(search.toLowerCase()) ||
+            r.category.toLowerCase().includes(search.toLowerCase()) ||
+            r.summary.toLowerCase().includes(search.toLowerCase()),
+        ),
       ),
     [search],
   );
