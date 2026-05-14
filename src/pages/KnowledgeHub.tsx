@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -19,6 +19,9 @@ import {
   Sparkles,
   Network,
   ChevronRight,
+  Share2,
+  Heart,
+  MessageCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,8 +30,11 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { attackEntries, forensicsBlogs, adAttackRooms, type AttackEntry } from '@/data/knowledgeHub';
-import { generateAttackPDF, generateForensicsBlogPDF, generateAdAttackRoomPDF } from '@/lib/knowledgeHubPdf';
+import { generateAttackPDF, generateForensicsBlogPDF, generateAdAttackRoomPDF, generateAllAttacksSummaryPDF, sortBySeverity } from '@/lib/knowledgeHubPdf';
 import { KeyRound } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import { supabase as _supabase } from '@/integrations/supabase/client';
+const supabase = _supabase as any;
 
 const severityColor: Record<string, string> = {
   Low: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
