@@ -34,6 +34,7 @@ import { generateAttackPDF, generateForensicsBlogPDF, generateAdAttackRoomPDF, g
 import { KeyRound } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { supabase as _supabase } from '@/integrations/supabase/client';
+import TopicEngagement from '@/components/knowledge/TopicEngagement';
 const supabase = _supabase as any;
 
 const severityColor: Record<string, string> = {
