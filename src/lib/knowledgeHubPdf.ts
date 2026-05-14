@@ -1,6 +1,11 @@
 import jsPDF from 'jspdf';
 import type { AttackEntry, ForensicsBlog, AdAttackRoom } from '@/data/knowledgeHub';
 
+const SEV_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+export function sortBySeverity<T extends { severity: string }>(arr: T[]): T[] {
+  return [...arr].sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
+}
+
 // ============================================================
 //  SOCMind — Professional PDF System
 // ============================================================
