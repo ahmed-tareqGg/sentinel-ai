@@ -238,6 +238,14 @@ export default function ForensicsBlogDetail() {
             </ul>
           </Section>
 
+          {/* Engagement */}
+          <div className="border-t border-border pt-8">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2.5">
+              <Sparkles className="h-5 w-5 text-cyan-400" /> Discussion & Likes
+            </h2>
+            <TopicEngagement topicType="forensics" topicId={blog.id} />
+          </div>
+
           {/* Author signature */}
           <div className="border-t border-border pt-8 mt-12">
             <div className="flex items-center justify-between flex-wrap gap-4">
