@@ -33,7 +33,7 @@ import { attackEntries, forensicsBlogs, adAttackRooms, type AttackEntry } from '
 import { generateAttackPDF, generateForensicsBlogPDF, generateAdAttackRoomPDF, generateAllAttacksSummaryPDF, sortBySeverity } from '@/lib/knowledgeHubPdf';
 import { KeyRound } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { supabase as _supabase } from '@/integrations/supabase/client';
+import { supabase as _supabase } from '@/integrations/backend/client';
 import TopicEngagement from '@/components/knowledge/TopicEngagement';
 const supabase = _supabase as any;
 
