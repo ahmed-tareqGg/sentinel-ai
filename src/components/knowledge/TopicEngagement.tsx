@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
-import { supabase as _supabase } from '@/integrations/supabase/client';
+import { supabase as _supabase } from '@/integrations/backend/client';
 // Cast to any because topic_likes / topic_comments tables are public utility
 // tables not yet present in the auto-generated Supabase types.
 const supabase = _supabase as any;
