@@ -149,18 +149,43 @@ export default function KnowledgeHub() {
     [search],
   );
 
-  const filteredAdRooms = useMemo(
-    () =>
-      sortBySeverity(
-        adAttackRooms.filter(
-          (r) =>
-            r.name.toLowerCase().includes(search.toLowerCase()) ||
-            r.category.toLowerCase().includes(search.toLowerCase()) ||
-            r.summary.toLowerCase().includes(search.toLowerCase()),
-        ),
-      ),
-    [search],
-  );
+  const filteredAdRooms = useMemo(() => {
+    const q = (adSearch || search).toLowerCase();
+    let rooms = adAttackRooms.filter((r) => {
+      const matchesQ =
+        !q ||
+        r.name.toLowerCase().includes(q) ||
+        r.shortName.toLowerCase().includes(q) ||
+        r.category.toLowerCase().includes(q) ||
+        r.summary.toLowerCase().includes(q) ||
+        r.mitre.some((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q));
+      const matchesSev = adSeverity === 'all' || r.severity === adSeverity;
+      const matchesCat = adCategory === 'all' || r.category === adCategory;
+      const matchesDiff = adDifficulty === 'all' || r.difficulty === adDifficulty;
+      return matchesQ && matchesSev && matchesCat && matchesDiff;
+    });
+    if (adSort === 'severity') {
+      rooms = [...rooms].sort((a, b) => (severityRank[b.severity] ?? 0) - (severityRank[a.severity] ?? 0));
+    } else if (adSort === 'likes') {
+      rooms = [...rooms].sort((a, b) => getStat('ad', b.id).likes - getStat('ad', a.id).likes);
+    } else if (adSort === 'name') {
+      rooms = [...rooms].sort((a, b) => a.shortName.localeCompare(b.shortName));
+    } else if (adSort === 'recent') {
+      rooms = [...rooms].reverse();
+    }
+    return rooms;
+  }, [search, adSearch, adSort, adSeverity, adCategory, adDifficulty, stats]);
+
+  const adGrouped = useMemo(() => {
+    const groups: Record<string, typeof filteredAdRooms> = {};
+    for (const r of filteredAdRooms) {
+      (groups[r.category] ??= []).push(r);
+    }
+    return groups;
+  }, [filteredAdRooms]);
+
+  const adFiltersActive =
+    adSearch !== '' || adSeverity !== 'all' || adCategory !== 'all' || adDifficulty !== 'all';
 
   return (
     <div className="min-h-screen bg-background">
