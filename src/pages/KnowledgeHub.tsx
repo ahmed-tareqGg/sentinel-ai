@@ -77,6 +77,14 @@ export default function KnowledgeHub() {
     window.history.replaceState(null, '', url.toString());
   }, [tab]);
 
+  // AD-specific organising controls
+  const [adSearch, setAdSearch] = useState('');
+  const [adSort, setAdSort] = useState<'severity' | 'likes' | 'recent' | 'name'>('severity');
+  const [adSeverity, setAdSeverity] = useState<string>('all');
+  const [adCategory, setAdCategory] = useState<string>('all');
+  const [adDifficulty, setAdDifficulty] = useState<string>('all');
+  const [adView, setAdView] = useState<'grid' | 'grouped'>('grid');
+
   // engagement counts for cards (visible like + comment counts)
   const [stats, setStats] = useState<Record<string, { likes: number; comments: number }>>({});
   useEffect(() => {
