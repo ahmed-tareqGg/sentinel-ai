@@ -31,11 +31,18 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { attackEntries, forensicsBlogs, adAttackRooms, type AttackEntry } from '@/data/knowledgeHub';
 import { generateAttackPDF, generateForensicsBlogPDF, generateAdAttackRoomPDF, generateAllAttacksSummaryPDF, sortBySeverity } from '@/lib/knowledgeHubPdf';
-import { KeyRound } from 'lucide-react';
+import { KeyRound, LayoutGrid, Layers, X } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { toast } from '@/hooks/use-toast';
 import { supabase as _supabase } from '@/integrations/backend/client';
 import TopicEngagement from '@/components/knowledge/TopicEngagement';
 const supabase = _supabase as any;
+
+const severityRank: Record<string, number> = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+const AD_CATEGORIES = ['Credential Access', 'Privilege Escalation', 'Lateral Movement', 'Persistence', 'Defense Evasion'] as const;
+const AD_SEVERITIES = ['Critical', 'High', 'Medium', 'Low'] as const;
+const AD_DIFFICULTIES = ['Insane', 'Hard', 'Medium', 'Easy'] as const;
 
 const severityColor: Record<string, string> = {
   Low: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
