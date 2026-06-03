@@ -430,94 +430,129 @@ export default function KnowledgeHub() {
 
           {/* AD ATTACK ROOMS */}
           <TabsContent value="ad">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredAdRooms.map((room, idx) => (
-                <motion.div
-                  key={room.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: idx * 0.05 }}
-                >
-                  <Link
-                    to={`/knowledge-hub/ad/${room.slug}`}
-                    className="group block rounded-xl overflow-hidden border border-border bg-card hover:border-cyan-500/50 transition-all hover:shadow-xl hover:shadow-cyan-500/10 h-full flex flex-col"
+            {/* Organising toolbar */}
+            <div className="mb-6 rounded-2xl border border-border bg-card/40 backdrop-blur p-4 md:p-5 space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center gap-3">
+                <div className="relative flex-1 min-w-0">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search AD attacks, MITRE IDs, techniques..."
+                    value={adSearch}
+                    onChange={(e) => setAdSearch(e.target.value)}
+                    className="pl-10 h-10 bg-background/60"
+                  />
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Select value={adSort} onValueChange={(v: any) => setAdSort(v)}>
+                    <SelectTrigger className="h-10 w-[170px]">
+                      <SelectValue placeholder="Sort by" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="severity">Sort: Severity</SelectItem>
+                      <SelectItem value="likes">Sort: Most liked</SelectItem>
+                      <SelectItem value="recent">Sort: Recently added</SelectItem>
+                      <SelectItem value="name">Sort: Name (A–Z)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <ToggleGroup
+                    type="single"
+                    value={adView}
+                    onValueChange={(v) => v && setAdView(v as 'grid' | 'grouped')}
+                    className="border border-border rounded-md h-10"
                   >
-                    <div className="aspect-video relative overflow-hidden">
-                      <img
-                        src={room.coverImage}
-                        alt={room.name}
-                        loading="lazy"
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent" />
-                      <div className="absolute top-3 left-3 flex gap-1.5">
-                        <Badge variant="outline" className="text-[10px] bg-background/70 backdrop-blur">
-                          {room.category}
-                        </Badge>
-                        <Badge variant="outline" className={`text-[10px] backdrop-blur bg-background/70 border ${severityColor[room.severity]}`}>
-                          {room.severity}
-                        </Badge>
-                      </div>
-                      <div className="absolute top-3 right-3">
-                        <Badge variant="outline" className="text-[10px] bg-background/70 backdrop-blur border-cyan-500/40 text-cyan-400">
-                          <KeyRound className="h-3 w-3 mr-1" /> AD Room
-                        </Badge>
-                      </div>
-                    </div>
+                    <ToggleGroupItem value="grid" aria-label="Grid view" className="h-9 px-3 gap-1.5">
+                      <LayoutGrid className="h-3.5 w-3.5" /> <span className="text-xs">Grid</span>
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="grouped" aria-label="Group by category" className="h-9 px-3 gap-1.5">
+                      <Layers className="h-3.5 w-3.5" /> <span className="text-xs">Grouped</span>
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+              </div>
 
-                    <div className="p-5 flex-1 flex flex-col">
-                      <h3 className="text-lg font-bold mb-2 group-hover:text-cyan-400 transition-colors leading-snug line-clamp-2">
-                        {room.shortName}
-                      </h3>
-                      <p className="text-sm text-muted-foreground line-clamp-3 mb-4 flex-1">{room.summary}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground mr-1">Severity:</span>
+                <button
+                  onClick={() => setAdSeverity('all')}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition ${adSeverity === 'all' ? 'bg-primary/15 border-primary/40 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                >All</button>
+                {AD_SEVERITIES.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setAdSeverity(s === adSeverity ? 'all' : s)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition ${adSeverity === s ? severityColor[s] : 'border-border text-muted-foreground hover:text-foreground'}`}
+                  >{s}</button>
+                ))}
 
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {room.mitre.slice(0, 3).map((m) => (
-                          <span key={m.id} className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/10 text-primary">
-                            {m.id}
-                          </span>
-                        ))}
-                      </div>
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground ml-3 mr-1">Category:</span>
+                <button
+                  onClick={() => setAdCategory('all')}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition ${adCategory === 'all' ? 'bg-primary/15 border-primary/40 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                >All</button>
+                {AD_CATEGORIES.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setAdCategory(c === adCategory ? 'all' : c)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition ${adCategory === c ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                  >{c}</button>
+                ))}
 
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
-                        <span className="flex items-center gap-1">
-                          <Activity className="h-3 w-3" /> {room.readingTime} min
-                        </span>
-                        <span>·</span>
-                        <span className="text-primary">{room.labProvider}</span>
-                      </div>
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground ml-3 mr-1">Difficulty:</span>
+                <button
+                  onClick={() => setAdDifficulty('all')}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition ${adDifficulty === 'all' ? 'bg-primary/15 border-primary/40 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                >All</button>
+                {AD_DIFFICULTIES.map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setAdDifficulty(d === adDifficulty ? 'all' : d)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition ${adDifficulty === d ? difficultyColor[d] : 'border-border text-muted-foreground hover:text-foreground'}`}
+                  >{d}</button>
+                ))}
 
-                      <div className="flex items-center justify-between pt-3 border-t border-border">
-                        <span className="text-xs text-muted-foreground flex items-center gap-3">
-                          <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-red-400" />{getStat('ad', room.id).likes}</span>
-                          <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3 text-cyan-400" />{getStat('ad', room.id).comments}</span>
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <Button asChild size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={(e) => e.stopPropagation()}>
-                            <a href={`/knowledge-hub/ad/${room.slug}`} target="_blank" rel="noreferrer" title="Open in new tab">
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </a>
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 px-2 text-xs"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              generateAdAttackRoomPDF(room);
-                            }}
-                            title="Download PDF"
-                          >
-                            <Download className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                </motion.div>
-              ))}
+                {adFiltersActive && (
+                  <button
+                    onClick={() => { setAdSearch(''); setAdSeverity('all'); setAdCategory('all'); setAdDifficulty('all'); }}
+                    className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-red-400 transition"
+                  >
+                    <X className="h-3 w-3" /> Clear filters
+                  </button>
+                )}
+              </div>
+
+              <div className="text-xs text-muted-foreground">
+                Showing <span className="text-foreground font-semibold">{filteredAdRooms.length}</span> of {adAttackRooms.length} AD attacks
+              </div>
             </div>
+
+            {filteredAdRooms.length === 0 && (
+              <div className="text-center py-16 border border-dashed border-border rounded-xl text-muted-foreground">
+                No AD attacks match your filters.
+              </div>
+            )}
+
+            {adView === 'grid' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredAdRooms.map((room, idx) => renderAdCard(room, idx))}
+              </div>
+            ) : (
+              <div className="space-y-10">
+                {AD_CATEGORIES.filter((c) => adGrouped[c]?.length).map((cat) => (
+                  <div key={cat}>
+                    <div className="flex items-center gap-3 mb-4">
+                      <h2 className="text-xl font-bold flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-cyan-400" /> {cat}
+                      </h2>
+                      <Badge variant="outline" className="text-[10px]">{adGrouped[cat].length}</Badge>
+                      <div className="flex-1 h-px bg-border" />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {adGrouped[cat].map((room, idx) => renderAdCard(room, idx))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </section>
