@@ -187,6 +187,96 @@ export default function KnowledgeHub() {
   const adFiltersActive =
     adSearch !== '' || adSeverity !== 'all' || adCategory !== 'all' || adDifficulty !== 'all';
 
+  const renderAdCard = (room: typeof adAttackRooms[number], idx: number) => (
+    <motion.div
+      key={room.id}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: Math.min(idx * 0.04, 0.4) }}
+    >
+      <Link
+        to={`/knowledge-hub/ad/${room.slug}`}
+        className="group block rounded-xl overflow-hidden border border-border bg-card hover:border-cyan-500/50 transition-all hover:shadow-xl hover:shadow-cyan-500/10 h-full flex flex-col"
+      >
+        <div className="aspect-video relative overflow-hidden">
+          <img
+            src={room.coverImage}
+            alt={room.name}
+            loading="lazy"
+            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent" />
+          <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
+            <Badge variant="outline" className="text-[10px] bg-background/70 backdrop-blur">
+              {room.category}
+            </Badge>
+            <Badge variant="outline" className={`text-[10px] backdrop-blur bg-background/70 border ${severityColor[room.severity]}`}>
+              {room.severity}
+            </Badge>
+            <Badge variant="outline" className={`text-[10px] backdrop-blur bg-background/70 border ${difficultyColor[room.difficulty]}`}>
+              {room.difficulty}
+            </Badge>
+          </div>
+          <div className="absolute top-3 right-3">
+            <Badge variant="outline" className="text-[10px] bg-background/70 backdrop-blur border-cyan-500/40 text-cyan-400">
+              <KeyRound className="h-3 w-3 mr-1" /> AD Room
+            </Badge>
+          </div>
+        </div>
+
+        <div className="p-5 flex-1 flex flex-col">
+          <h3 className="text-lg font-bold mb-2 group-hover:text-cyan-400 transition-colors leading-snug line-clamp-2">
+            {room.shortName}
+          </h3>
+          <p className="text-sm text-muted-foreground line-clamp-3 mb-4 flex-1">{room.summary}</p>
+
+          <div className="flex flex-wrap gap-1 mb-3">
+            {room.mitre.slice(0, 3).map((m) => (
+              <span key={m.id} className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/10 text-primary">
+                {m.id}
+              </span>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
+            <span className="flex items-center gap-1">
+              <Activity className="h-3 w-3" /> {room.readingTime} min
+            </span>
+            <span>·</span>
+            <span className="text-primary">{room.labProvider}</span>
+          </div>
+
+          <div className="flex items-center justify-between pt-3 border-t border-border">
+            <span className="text-xs text-muted-foreground flex items-center gap-3">
+              <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-red-400" />{getStat('ad', room.id).likes}</span>
+              <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3 text-cyan-400" />{getStat('ad', room.id).comments}</span>
+            </span>
+            <div className="flex items-center gap-1">
+              <Button asChild size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={(e) => e.stopPropagation()}>
+                <a href={`/knowledge-hub/ad/${room.slug}`} target="_blank" rel="noreferrer" title="Open in new tab">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  generateAdAttackRoomPDF(room);
+                }}
+                title="Download PDF"
+              >
+                <Download className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Link>
+    </motion.div>
+  );
+
   return (
     <div className="min-h-screen bg-background">
       {/* Hero */}
