@@ -567,6 +567,37 @@ export default function Auth() {
               </div>
             )}
 
+            {!isLogin && (
+              <div className="space-y-2">
+                <Label htmlFor="requestedRole" className="text-sm font-medium text-foreground">
+                  Requested Position
+                </Label>
+                <Select value={requestedRole} onValueChange={setRequestedRole}>
+                  <SelectTrigger id="requestedRole" className="bg-secondary/50 border-border">
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="h-4 w-4 text-muted-foreground" />
+                      <SelectValue placeholder="Select your role" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROLE_OPTIONS.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{r.label}</span>
+                          <span className="text-xs text-muted-foreground">{r.description}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <ShieldCheck className="h-3 w-3" />
+                  Access is granted only after an admin approves your role.
+                </p>
+              </div>
+            )}
+
+
             <div className="space-y-2">
               <Label htmlFor="email" className="text-sm font-medium text-foreground">
                 Email
