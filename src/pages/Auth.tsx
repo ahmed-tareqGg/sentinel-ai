@@ -103,10 +103,16 @@ export default function Auth() {
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
 
-  // Role requested at signup + pending approval dialog
+  // Role requested at signup + account status dialog
   const [requestedRole, setRequestedRole] = useState<string>('soc_tier_1');
   const [pendingOpen, setPendingOpen] = useState(false);
-  const [pendingInfo, setPendingInfo] = useState<{ email: string; role: string } | null>(null);
+  const [pendingInfo, setPendingInfo] = useState<{
+    email: string;
+    role: string;
+    status: 'pending' | 'blocked' | 'approved';
+    reason?: string | null;
+  } | null>(null);
+
 
   const navigate = useNavigate();
   const location = useLocation();
