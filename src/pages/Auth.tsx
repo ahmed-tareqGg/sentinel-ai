@@ -782,6 +782,63 @@ export default function Auth() {
 
         <AuthFooter />
       </div>
+
+      {/* Pending Approval Dialog */}
+      <Dialog open={pendingOpen} onOpenChange={setPendingOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="mx-auto h-12 w-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-2">
+              <Clock className="h-6 w-6 text-amber-400" />
+            </div>
+            <DialogTitle className="text-center">Account Pending Approval</DialogTitle>
+            <DialogDescription className="text-center">
+              Your account was created successfully, but access is gated until an admin reviews your request.
+            </DialogDescription>
+          </DialogHeader>
+
+          {pendingInfo && (
+            <div className="rounded-lg border border-border bg-secondary/40 p-4 space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Email</span>
+                <span className="font-medium text-foreground">{pendingInfo.email}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Requested role</span>
+                <span className="font-medium text-foreground">
+                  {ROLE_OPTIONS.find((r) => r.value === pendingInfo.role)?.label || pendingInfo.role}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Status</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-xs font-medium">
+                  <Clock className="h-3 w-3" /> Pending review
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-md bg-primary/5 border border-primary/20 p-3 text-xs text-muted-foreground flex gap-2">
+            <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+            <span>
+              An admin or SOC manager will review your request shortly. You'll be able to sign in
+              once your role is approved.
+            </span>
+          </div>
+
+          <DialogFooter className="sm:justify-center">
+            <Button
+              onClick={() => {
+                setPendingOpen(false);
+                setIsLogin(true);
+                setPassword('');
+              }}
+              className="w-full"
+            >
+              Got it
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
