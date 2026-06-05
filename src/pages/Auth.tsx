@@ -32,6 +32,12 @@ const ROLE_OPTIONS: { value: string; label: string; description: string }[] = [
 
 const emailSchema = z.string().email('Please enter a valid email address');
 
+type DemoOtpResponse = {
+  success?: boolean;
+  error?: string;
+  token_hash?: string;
+};
+
 // Strong password requirements: 12+ chars, uppercase, lowercase, number, special char
 const passwordSchema = z.string()
   .min(12, 'Password must be at least 12 characters')
@@ -138,7 +144,7 @@ export default function Auth() {
       try {
         const res = await supabase.functions.invoke('verify-demo-otp', { method: 'POST', body: { code: demoOtpCode } });
         if (res.error) throw res.error;
-        const data = res.data as any;
+        const data = res.data as DemoOtpResponse;
         if (!data?.success) {
           toast.error('كود غير صحيح أو منتهي الصلاحية');
           return;
@@ -159,7 +165,7 @@ export default function Auth() {
       try {
         const res = await supabase.functions.invoke('send-demo-otp', { method: 'POST', body: {} });
         if (res.error) throw res.error;
-        const data = res.data as any;
+        const data = res.data as DemoOtpResponse;
         if (!data?.success) throw new Error(data?.error || 'Failed');
         setDemoOtpSent(true);
         toast.success('تم إرسال كود الدخول! اطلب الكود من مسؤول النظام.');
