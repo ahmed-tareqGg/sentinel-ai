@@ -80,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         // Defer Supabase calls with setTimeout to prevent deadlock
         if (session?.user) {
+          setLoading(true);
           setTimeout(() => {
             fetchUserData(session.user.id);
           }, 0);
@@ -115,26 +116,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUserData = async (userId: string) => {
     try {
-      // Fetch profile
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+      const [profileRes, roleRes, accessRes] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle(),
+        supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', userId)
+          .maybeSingle(),
+        supabase
+          .from('user_access')
+          .select('approved')
+          .eq('user_id', userId)
+          .maybeSingle(),
+      ]);
 
-      if (profileData) {
-        setProfile(profileData as Profile);
+      if (accessRes.data && !accessRes.data.approved) {
+        await supabase.auth.signOut();
+        setUser(null);
+        setSession(null);
+        setProfile(null);
+        setRole(null);
+        return;
       }
 
-      // Fetch role
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .maybeSingle();
+      if (profileRes.data) {
+        setProfile(profileRes.data as Profile);
+      }
 
-      if (roleData) {
-        setRole(roleData.role as AppRole);
+      if (roleRes.data) {
+        setRole(roleRes.data.role as AppRole);
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
