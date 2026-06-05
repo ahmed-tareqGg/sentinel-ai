@@ -2912,6 +2912,10 @@ export type Database = {
         Args: { _channel_id: string; _password: string }
         Returns: boolean
       }
+      verify_private_channel_password: {
+        Args: { _channel_id: string; _password: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role:
