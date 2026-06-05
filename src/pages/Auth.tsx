@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { Mail, Lock, User, Eye, EyeOff, Check, X, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, Check, X, ArrowLeft, ShieldCheck, Clock, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,12 +13,22 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import socmindLogo from '@/assets/socmind-logo.png';
 import { AuthFooter } from '@/components/layout/AuthFooter';
 import { useAuth } from '@/hooks/useAuth';
+
+const ROLE_OPTIONS: { value: string; label: string; description: string }[] = [
+  { value: 'soc_tier_1', label: 'SOC Analyst – Tier 1', description: 'Triage alerts, basic investigation' },
+  { value: 'soc_tier_2', label: 'SOC Analyst – Tier 2', description: 'Incident handling & deeper analysis' },
+  { value: 'soc_tier_3', label: 'SOC Analyst – Tier 3', description: 'Threat hunting & advanced response' },
+  { value: 'soc_manager', label: 'SOC Manager', description: 'Team oversight & escalations' },
+  { value: 'grc_engineer', label: 'GRC Engineer', description: 'Governance, risk & compliance' },
+  { value: 'ciso', label: 'CISO', description: 'Executive security leadership' },
+];
 
 const emailSchema = z.string().email('Please enter a valid email address');
 
@@ -86,6 +96,11 @@ export default function Auth() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
+
+  // Role requested at signup + pending approval dialog
+  const [requestedRole, setRequestedRole] = useState<string>('soc_tier_1');
+  const [pendingOpen, setPendingOpen] = useState(false);
+  const [pendingInfo, setPendingInfo] = useState<{ email: string; role: string } | null>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -231,7 +246,7 @@ export default function Auth() {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data: signInData, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
@@ -245,11 +260,33 @@ export default function Auth() {
           return;
         }
 
+        // Gate: check user_access.approved
+        const uid = signInData.user?.id;
+        if (uid) {
+          const { data: access } = await supabase
+            .from('user_access')
+            .select('approved')
+            .eq('user_id', uid)
+            .maybeSingle();
+
+          if (!access?.approved) {
+            const { data: req } = await supabase
+              .from('user_access_requests')
+              .select('requested_role')
+              .eq('email', email.toLowerCase())
+              .maybeSingle();
+            await supabase.auth.signOut();
+            setPendingInfo({ email, role: req?.requested_role || 'soc_tier_1' });
+            setPendingOpen(true);
+            return;
+          }
+        }
+
         toast.success('Welcome back!');
         navigate('/dashboard');
       } else {
         const redirectUrl = `${window.location.origin}/`;
-        
+
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -257,6 +294,7 @@ export default function Auth() {
             emailRedirectTo: redirectUrl,
             data: {
               full_name: fullName || email.split('@')[0],
+              requested_role: requestedRole,
             },
           },
         });
@@ -270,8 +308,10 @@ export default function Auth() {
           return;
         }
 
-        toast.success('Account created successfully!');
-        navigate('/dashboard');
+        // Sign out immediately — access is gated until admin approves
+        await supabase.auth.signOut();
+        setPendingInfo({ email, role: requestedRole });
+        setPendingOpen(true);
       }
     } catch (error) {
       console.error('Auth error:', error);
@@ -527,6 +567,37 @@ export default function Auth() {
               </div>
             )}
 
+            {!isLogin && (
+              <div className="space-y-2">
+                <Label htmlFor="requestedRole" className="text-sm font-medium text-foreground">
+                  Requested Position
+                </Label>
+                <Select value={requestedRole} onValueChange={setRequestedRole}>
+                  <SelectTrigger id="requestedRole" className="bg-secondary/50 border-border">
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="h-4 w-4 text-muted-foreground" />
+                      <SelectValue placeholder="Select your role" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROLE_OPTIONS.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{r.label}</span>
+                          <span className="text-xs text-muted-foreground">{r.description}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <ShieldCheck className="h-3 w-3" />
+                  Access is granted only after an admin approves your role.
+                </p>
+              </div>
+            )}
+
+
             <div className="space-y-2">
               <Label htmlFor="email" className="text-sm font-medium text-foreground">
                 Email
@@ -711,6 +782,63 @@ export default function Auth() {
 
         <AuthFooter />
       </div>
+
+      {/* Pending Approval Dialog */}
+      <Dialog open={pendingOpen} onOpenChange={setPendingOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="mx-auto h-12 w-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-2">
+              <Clock className="h-6 w-6 text-amber-400" />
+            </div>
+            <DialogTitle className="text-center">Account Pending Approval</DialogTitle>
+            <DialogDescription className="text-center">
+              Your account was created successfully, but access is gated until an admin reviews your request.
+            </DialogDescription>
+          </DialogHeader>
+
+          {pendingInfo && (
+            <div className="rounded-lg border border-border bg-secondary/40 p-4 space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Email</span>
+                <span className="font-medium text-foreground">{pendingInfo.email}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Requested role</span>
+                <span className="font-medium text-foreground">
+                  {ROLE_OPTIONS.find((r) => r.value === pendingInfo.role)?.label || pendingInfo.role}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Status</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-xs font-medium">
+                  <Clock className="h-3 w-3" /> Pending review
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-md bg-primary/5 border border-primary/20 p-3 text-xs text-muted-foreground flex gap-2">
+            <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+            <span>
+              An admin or SOC manager will review your request shortly. You'll be able to sign in
+              once your role is approved.
+            </span>
+          </div>
+
+          <DialogFooter className="sm:justify-center">
+            <Button
+              onClick={() => {
+                setPendingOpen(false);
+                setIsLogin(true);
+                setPassword('');
+              }}
+              className="w-full"
+            >
+              Got it
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
