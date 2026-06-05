@@ -279,7 +279,7 @@ export default function Auth() {
           const [accessRes, roleRes] = await Promise.all([
             supabase
               .from('user_access')
-              .select('approved')
+              .select('approved, status, denial_reason')
               .eq('user_id', uid)
               .maybeSingle(),
             supabase
@@ -289,25 +289,33 @@ export default function Auth() {
               .maybeSingle(),
           ]);
 
-          if (accessRes.data && !accessRes.data.approved) {
+          const access = accessRes.data as { approved: boolean; status?: string; denial_reason?: string | null } | null;
+
+          if (access && access.status && access.status !== 'approved') {
             const { data: req } = await supabase
               .from('user_access_requests')
               .select('requested_role')
               .eq('email', email.toLowerCase())
               .maybeSingle();
             await supabase.auth.signOut();
-            setPendingInfo({ email, role: req?.requested_role || 'soc_tier_1' });
+            setPendingInfo({
+              email,
+              role: req?.requested_role || 'soc_tier_1',
+              status: access.status === 'blocked' ? 'blocked' : 'pending',
+              reason: access.denial_reason ?? null,
+            });
             setPendingOpen(true);
             return;
           }
 
-          if (!accessRes.data && !roleRes.data) {
+          if (!access && !roleRes.data) {
             await supabase.auth.signOut();
-            setPendingInfo({ email, role: 'soc_tier_1' });
+            setPendingInfo({ email, role: 'soc_tier_1', status: 'pending' });
             setPendingOpen(true);
             return;
           }
         }
+
 
         toast.success('Welcome back!');
         navigate('/dashboard');
