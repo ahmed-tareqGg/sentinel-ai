@@ -260,16 +260,24 @@ export default function Auth() {
           return;
         }
 
-        // Gate: check user_access.approved
+        // Gate: explicit denied/pending access blocks login. Legacy approved-role accounts without
+        // an access row are allowed so existing admins don't get bounced back to login.
         const uid = signInData.user?.id;
         if (uid) {
-          const { data: access } = await supabase
-            .from('user_access')
-            .select('approved')
-            .eq('user_id', uid)
-            .maybeSingle();
+          const [accessRes, roleRes] = await Promise.all([
+            supabase
+              .from('user_access')
+              .select('approved')
+              .eq('user_id', uid)
+              .maybeSingle(),
+            supabase
+              .from('user_roles')
+              .select('role')
+              .eq('user_id', uid)
+              .maybeSingle(),
+          ]);
 
-          if (!access?.approved) {
+          if (accessRes.data && !accessRes.data.approved) {
             const { data: req } = await supabase
               .from('user_access_requests')
               .select('requested_role')
@@ -277,6 +285,13 @@ export default function Auth() {
               .maybeSingle();
             await supabase.auth.signOut();
             setPendingInfo({ email, role: req?.requested_role || 'soc_tier_1' });
+            setPendingOpen(true);
+            return;
+          }
+
+          if (!accessRes.data && !roleRes.data) {
+            await supabase.auth.signOut();
+            setPendingInfo({ email, role: 'soc_tier_1' });
             setPendingOpen(true);
             return;
           }
