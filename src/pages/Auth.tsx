@@ -246,7 +246,7 @@ export default function Auth() {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data: signInData, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
@@ -260,11 +260,33 @@ export default function Auth() {
           return;
         }
 
+        // Gate: check user_access.approved
+        const uid = signInData.user?.id;
+        if (uid) {
+          const { data: access } = await supabase
+            .from('user_access')
+            .select('approved')
+            .eq('user_id', uid)
+            .maybeSingle();
+
+          if (!access?.approved) {
+            const { data: req } = await supabase
+              .from('user_access_requests')
+              .select('requested_role')
+              .eq('email', email.toLowerCase())
+              .maybeSingle();
+            await supabase.auth.signOut();
+            setPendingInfo({ email, role: req?.requested_role || 'soc_tier_1' });
+            setPendingOpen(true);
+            return;
+          }
+        }
+
         toast.success('Welcome back!');
         navigate('/dashboard');
       } else {
         const redirectUrl = `${window.location.origin}/`;
-        
+
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -272,6 +294,7 @@ export default function Auth() {
             emailRedirectTo: redirectUrl,
             data: {
               full_name: fullName || email.split('@')[0],
+              requested_role: requestedRole,
             },
           },
         });
@@ -285,8 +308,10 @@ export default function Auth() {
           return;
         }
 
-        toast.success('Account created successfully!');
-        navigate('/dashboard');
+        // Sign out immediately — access is gated until admin approves
+        await supabase.auth.signOut();
+        setPendingInfo({ email, role: requestedRole });
+        setPendingOpen(true);
       }
     } catch (error) {
       console.error('Auth error:', error);
