@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { Mail, Lock, User, Eye, EyeOff, Check, X, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, Check, X, ArrowLeft, ShieldCheck, Clock, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,12 +13,22 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/backend/client';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import socmindLogo from '@/assets/socmind-logo.png';
 import { AuthFooter } from '@/components/layout/AuthFooter';
 import { useAuth } from '@/hooks/useAuth';
+
+const ROLE_OPTIONS: { value: string; label: string; description: string }[] = [
+  { value: 'soc_tier_1', label: 'SOC Analyst – Tier 1', description: 'Triage alerts, basic investigation' },
+  { value: 'soc_tier_2', label: 'SOC Analyst – Tier 2', description: 'Incident handling & deeper analysis' },
+  { value: 'soc_tier_3', label: 'SOC Analyst – Tier 3', description: 'Threat hunting & advanced response' },
+  { value: 'soc_manager', label: 'SOC Manager', description: 'Team oversight & escalations' },
+  { value: 'grc_engineer', label: 'GRC Engineer', description: 'Governance, risk & compliance' },
+  { value: 'ciso', label: 'CISO', description: 'Executive security leadership' },
+];
 
 const emailSchema = z.string().email('Please enter a valid email address');
 
