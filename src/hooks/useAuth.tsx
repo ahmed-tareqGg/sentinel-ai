@@ -173,19 +173,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
 
-      if (profileRes.data) {
-        setProfile(profileRes.data as Profile);
-      }
-
-      if (roleRes.data) {
-        setRole(roleRes.data.role as AppRole);
-      }
-    } catch (error) {
-      console.error('Error fetching user data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const signOut = async () => {
     await supabase.auth.signOut();
