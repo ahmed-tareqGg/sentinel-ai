@@ -818,62 +818,111 @@ export default function Auth() {
         <AuthFooter />
       </div>
 
-      {/* Pending Approval Dialog */}
+      {/* Account Status Dialog */}
       <Dialog open={pendingOpen} onOpenChange={setPendingOpen}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <div className="mx-auto h-12 w-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-2">
-              <Clock className="h-6 w-6 text-amber-400" />
-            </div>
-            <DialogTitle className="text-center">Account Pending Approval</DialogTitle>
-            <DialogDescription className="text-center">
-              Your account was created successfully, but access is gated until an admin reviews your request.
-            </DialogDescription>
-          </DialogHeader>
+          {(() => {
+            const status = pendingInfo?.status ?? 'pending';
+            const isBlocked = status === 'blocked';
+            const isApproved = status === 'approved';
+            const iconWrap = isBlocked
+              ? 'bg-destructive/10 border-destructive/30'
+              : isApproved
+              ? 'bg-emerald-500/10 border-emerald-500/30'
+              : 'bg-amber-500/10 border-amber-500/30';
+            const iconColor = isBlocked
+              ? 'text-destructive'
+              : isApproved
+              ? 'text-emerald-400'
+              : 'text-amber-400';
+            const Icon = isBlocked ? X : isApproved ? Check : Clock;
+            const title = isBlocked
+              ? 'Account Blocked'
+              : isApproved
+              ? 'Account Approved'
+              : 'Account Pending Approval';
+            const description = isBlocked
+              ? 'Your access to SOCMind has been blocked by an administrator.'
+              : isApproved
+              ? 'Your account is active. You can sign in now.'
+              : 'Your account was created, but access is gated until an admin reviews your request.';
+            const statusPillClass = isBlocked
+              ? 'bg-destructive/15 text-destructive'
+              : isApproved
+              ? 'bg-emerald-500/15 text-emerald-400'
+              : 'bg-amber-500/15 text-amber-400';
+            const statusLabel = isBlocked ? 'Blocked' : isApproved ? 'Approved' : 'Pending review';
 
-          {pendingInfo && (
-            <div className="rounded-lg border border-border bg-secondary/40 p-4 space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Email</span>
-                <span className="font-medium text-foreground">{pendingInfo.email}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Requested role</span>
-                <span className="font-medium text-foreground">
-                  {ROLE_OPTIONS.find((r) => r.value === pendingInfo.role)?.label || pendingInfo.role}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Status</span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-xs font-medium">
-                  <Clock className="h-3 w-3" /> Pending review
-                </span>
-              </div>
-            </div>
-          )}
+            return (
+              <>
+                <DialogHeader>
+                  <div className={`mx-auto h-12 w-12 rounded-full border flex items-center justify-center mb-2 ${iconWrap}`}>
+                    <Icon className={`h-6 w-6 ${iconColor}`} />
+                  </div>
+                  <DialogTitle className="text-center">{title}</DialogTitle>
+                  <DialogDescription className="text-center">{description}</DialogDescription>
+                </DialogHeader>
 
-          <div className="rounded-md bg-primary/5 border border-primary/20 p-3 text-xs text-muted-foreground flex gap-2">
-            <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-            <span>
-              An admin or SOC manager will review your request shortly. You'll be able to sign in
-              once your role is approved.
-            </span>
-          </div>
+                {pendingInfo && (
+                  <div className="rounded-lg border border-border bg-secondary/40 p-4 space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Email</span>
+                      <span className="font-medium text-foreground">{pendingInfo.email}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Requested role</span>
+                      <span className="font-medium text-foreground">
+                        {ROLE_OPTIONS.find((r) => r.value === pendingInfo.role)?.label || pendingInfo.role}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Status</span>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${statusPillClass}`}>
+                        <Icon className="h-3 w-3" /> {statusLabel}
+                      </span>
+                    </div>
+                    {isBlocked && pendingInfo.reason && (
+                      <div className="pt-2 border-t border-border/60">
+                        <span className="text-muted-foreground block mb-1">Reason</span>
+                        <span className="text-foreground">{pendingInfo.reason}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-          <DialogFooter className="sm:justify-center">
-            <Button
-              onClick={() => {
-                setPendingOpen(false);
-                setIsLogin(true);
-                setPassword('');
-              }}
-              className="w-full"
-            >
-              Got it
-            </Button>
-          </DialogFooter>
+                <div className={`rounded-md p-3 text-xs flex gap-2 border ${
+                  isBlocked
+                    ? 'bg-destructive/5 border-destructive/20 text-muted-foreground'
+                    : 'bg-primary/5 border-primary/20 text-muted-foreground'
+                }`}>
+                  <ShieldCheck className={`h-4 w-4 shrink-0 mt-0.5 ${isBlocked ? 'text-destructive' : 'text-primary'}`} />
+                  <span>
+                    {isBlocked
+                      ? 'If you believe this is a mistake, please contact your SOC Manager or CISO to restore access.'
+                      : isApproved
+                      ? 'Sign in with your email and password to enter the dashboard.'
+                      : "An admin or SOC manager will review your request shortly. You'll be able to sign in once your role is approved."}
+                  </span>
+                </div>
+
+                <DialogFooter className="sm:justify-center">
+                  <Button
+                    onClick={() => {
+                      setPendingOpen(false);
+                      setIsLogin(true);
+                      setPassword('');
+                    }}
+                    className="w-full"
+                  >
+                    Got it
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
   );
 }
+
