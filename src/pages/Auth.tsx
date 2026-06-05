@@ -136,6 +136,27 @@ export default function Auth() {
     if (!forgotEmail && email) setForgotEmail(email);
   }, [email, forgotEmail]);
 
+  // If useAuth signed the user out due to a non-approved status, surface it here.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('socmind_account_status');
+      if (!raw) return;
+      sessionStorage.removeItem('socmind_account_status');
+      const parsed = JSON.parse(raw) as { email?: string; status?: string; reason?: string | null };
+      if (!parsed?.status) return;
+      setPendingInfo({
+        email: parsed.email || '',
+        role: 'soc_tier_1',
+        status: parsed.status === 'blocked' ? 'blocked' : 'pending',
+        reason: parsed.reason ?? null,
+      });
+      setPendingOpen(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+
   const [demoOtpSent, setDemoOtpSent] = useState(false);
   const [demoOtpCode, setDemoOtpCode] = useState('');
 
