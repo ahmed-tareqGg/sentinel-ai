@@ -129,12 +129,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .maybeSingle(),
         supabase
           .from('user_access')
-          .select('approved')
+          .select('approved, status, denial_reason')
           .eq('user_id', userId)
           .maybeSingle(),
       ]);
 
-      if (accessRes.data && !accessRes.data.approved) {
+      const access = accessRes.data as { approved: boolean; status?: string; denial_reason?: string | null } | null;
+
+      if (access && access.status && access.status !== 'approved') {
+        // Surface status to /auth so user sees a clear message instead of a silent redirect.
+        try {
+          sessionStorage.setItem(
+            'socmind_account_status',
+            JSON.stringify({
+              email: (profileRes.data as { email?: string } | null)?.email ?? '',
+              status: access.status === 'blocked' ? 'blocked' : 'pending',
+              reason: access.denial_reason ?? null,
+            })
+          );
+        } catch {
+          /* ignore storage failures */
+        }
         await supabase.auth.signOut();
         setUser(null);
         setSession(null);
@@ -156,6 +171,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }
   };
+
+
 
   const signOut = async () => {
     await supabase.auth.signOut();

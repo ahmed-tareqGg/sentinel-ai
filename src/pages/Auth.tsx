@@ -103,10 +103,16 @@ export default function Auth() {
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
 
-  // Role requested at signup + pending approval dialog
+  // Role requested at signup + account status dialog
   const [requestedRole, setRequestedRole] = useState<string>('soc_tier_1');
   const [pendingOpen, setPendingOpen] = useState(false);
-  const [pendingInfo, setPendingInfo] = useState<{ email: string; role: string } | null>(null);
+  const [pendingInfo, setPendingInfo] = useState<{
+    email: string;
+    role: string;
+    status: 'pending' | 'blocked' | 'approved';
+    reason?: string | null;
+  } | null>(null);
+
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -129,6 +135,27 @@ export default function Auth() {
     // Convenience: prefill forgot email from the login email input
     if (!forgotEmail && email) setForgotEmail(email);
   }, [email, forgotEmail]);
+
+  // If useAuth signed the user out due to a non-approved status, surface it here.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('socmind_account_status');
+      if (!raw) return;
+      sessionStorage.removeItem('socmind_account_status');
+      const parsed = JSON.parse(raw) as { email?: string; status?: string; reason?: string | null };
+      if (!parsed?.status) return;
+      setPendingInfo({
+        email: parsed.email || '',
+        role: 'soc_tier_1',
+        status: parsed.status === 'blocked' ? 'blocked' : 'pending',
+        reason: parsed.reason ?? null,
+      });
+      setPendingOpen(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
 
   const [demoOtpSent, setDemoOtpSent] = useState(false);
   const [demoOtpCode, setDemoOtpCode] = useState('');
@@ -273,7 +300,7 @@ export default function Auth() {
           const [accessRes, roleRes] = await Promise.all([
             supabase
               .from('user_access')
-              .select('approved')
+              .select('approved, status, denial_reason')
               .eq('user_id', uid)
               .maybeSingle(),
             supabase
@@ -283,25 +310,33 @@ export default function Auth() {
               .maybeSingle(),
           ]);
 
-          if (accessRes.data && !accessRes.data.approved) {
+          const access = accessRes.data as { approved: boolean; status?: string; denial_reason?: string | null } | null;
+
+          if (access && access.status && access.status !== 'approved') {
             const { data: req } = await supabase
               .from('user_access_requests')
               .select('requested_role')
               .eq('email', email.toLowerCase())
               .maybeSingle();
             await supabase.auth.signOut();
-            setPendingInfo({ email, role: req?.requested_role || 'soc_tier_1' });
+            setPendingInfo({
+              email,
+              role: req?.requested_role || 'soc_tier_1',
+              status: access.status === 'blocked' ? 'blocked' : 'pending',
+              reason: access.denial_reason ?? null,
+            });
             setPendingOpen(true);
             return;
           }
 
-          if (!accessRes.data && !roleRes.data) {
+          if (!access && !roleRes.data) {
             await supabase.auth.signOut();
-            setPendingInfo({ email, role: 'soc_tier_1' });
+            setPendingInfo({ email, role: 'soc_tier_1', status: 'pending' });
             setPendingOpen(true);
             return;
           }
         }
+
 
         toast.success('Welcome back!');
         navigate('/dashboard');
@@ -331,7 +366,7 @@ export default function Auth() {
 
         // Sign out immediately — access is gated until admin approves
         await supabase.auth.signOut();
-        setPendingInfo({ email, role: requestedRole });
+        setPendingInfo({ email, role: requestedRole, status: 'pending' });
         setPendingOpen(true);
       }
     } catch (error) {
@@ -804,62 +839,111 @@ export default function Auth() {
         <AuthFooter />
       </div>
 
-      {/* Pending Approval Dialog */}
+      {/* Account Status Dialog */}
       <Dialog open={pendingOpen} onOpenChange={setPendingOpen}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <div className="mx-auto h-12 w-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-2">
-              <Clock className="h-6 w-6 text-amber-400" />
-            </div>
-            <DialogTitle className="text-center">Account Pending Approval</DialogTitle>
-            <DialogDescription className="text-center">
-              Your account was created successfully, but access is gated until an admin reviews your request.
-            </DialogDescription>
-          </DialogHeader>
+          {(() => {
+            const status = pendingInfo?.status ?? 'pending';
+            const isBlocked = status === 'blocked';
+            const isApproved = status === 'approved';
+            const iconWrap = isBlocked
+              ? 'bg-destructive/10 border-destructive/30'
+              : isApproved
+              ? 'bg-emerald-500/10 border-emerald-500/30'
+              : 'bg-amber-500/10 border-amber-500/30';
+            const iconColor = isBlocked
+              ? 'text-destructive'
+              : isApproved
+              ? 'text-emerald-400'
+              : 'text-amber-400';
+            const Icon = isBlocked ? X : isApproved ? Check : Clock;
+            const title = isBlocked
+              ? 'Account Blocked'
+              : isApproved
+              ? 'Account Approved'
+              : 'Account Pending Approval';
+            const description = isBlocked
+              ? 'Your access to SOCMind has been blocked by an administrator.'
+              : isApproved
+              ? 'Your account is active. You can sign in now.'
+              : 'Your account was created, but access is gated until an admin reviews your request.';
+            const statusPillClass = isBlocked
+              ? 'bg-destructive/15 text-destructive'
+              : isApproved
+              ? 'bg-emerald-500/15 text-emerald-400'
+              : 'bg-amber-500/15 text-amber-400';
+            const statusLabel = isBlocked ? 'Blocked' : isApproved ? 'Approved' : 'Pending review';
 
-          {pendingInfo && (
-            <div className="rounded-lg border border-border bg-secondary/40 p-4 space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Email</span>
-                <span className="font-medium text-foreground">{pendingInfo.email}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Requested role</span>
-                <span className="font-medium text-foreground">
-                  {ROLE_OPTIONS.find((r) => r.value === pendingInfo.role)?.label || pendingInfo.role}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Status</span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-xs font-medium">
-                  <Clock className="h-3 w-3" /> Pending review
-                </span>
-              </div>
-            </div>
-          )}
+            return (
+              <>
+                <DialogHeader>
+                  <div className={`mx-auto h-12 w-12 rounded-full border flex items-center justify-center mb-2 ${iconWrap}`}>
+                    <Icon className={`h-6 w-6 ${iconColor}`} />
+                  </div>
+                  <DialogTitle className="text-center">{title}</DialogTitle>
+                  <DialogDescription className="text-center">{description}</DialogDescription>
+                </DialogHeader>
 
-          <div className="rounded-md bg-primary/5 border border-primary/20 p-3 text-xs text-muted-foreground flex gap-2">
-            <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-            <span>
-              An admin or SOC manager will review your request shortly. You'll be able to sign in
-              once your role is approved.
-            </span>
-          </div>
+                {pendingInfo && (
+                  <div className="rounded-lg border border-border bg-secondary/40 p-4 space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Email</span>
+                      <span className="font-medium text-foreground">{pendingInfo.email}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Requested role</span>
+                      <span className="font-medium text-foreground">
+                        {ROLE_OPTIONS.find((r) => r.value === pendingInfo.role)?.label || pendingInfo.role}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Status</span>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${statusPillClass}`}>
+                        <Icon className="h-3 w-3" /> {statusLabel}
+                      </span>
+                    </div>
+                    {isBlocked && pendingInfo.reason && (
+                      <div className="pt-2 border-t border-border/60">
+                        <span className="text-muted-foreground block mb-1">Reason</span>
+                        <span className="text-foreground">{pendingInfo.reason}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-          <DialogFooter className="sm:justify-center">
-            <Button
-              onClick={() => {
-                setPendingOpen(false);
-                setIsLogin(true);
-                setPassword('');
-              }}
-              className="w-full"
-            >
-              Got it
-            </Button>
-          </DialogFooter>
+                <div className={`rounded-md p-3 text-xs flex gap-2 border ${
+                  isBlocked
+                    ? 'bg-destructive/5 border-destructive/20 text-muted-foreground'
+                    : 'bg-primary/5 border-primary/20 text-muted-foreground'
+                }`}>
+                  <ShieldCheck className={`h-4 w-4 shrink-0 mt-0.5 ${isBlocked ? 'text-destructive' : 'text-primary'}`} />
+                  <span>
+                    {isBlocked
+                      ? 'If you believe this is a mistake, please contact your SOC Manager or CISO to restore access.'
+                      : isApproved
+                      ? 'Sign in with your email and password to enter the dashboard.'
+                      : "An admin or SOC manager will review your request shortly. You'll be able to sign in once your role is approved."}
+                  </span>
+                </div>
+
+                <DialogFooter className="sm:justify-center">
+                  <Button
+                    onClick={() => {
+                      setPendingOpen(false);
+                      setIsLogin(true);
+                      setPassword('');
+                    }}
+                    className="w-full"
+                  >
+                    Got it
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
   );
 }
+
