@@ -345,7 +345,7 @@ export default function Auth() {
 
         // Sign out immediately — access is gated until admin approves
         await supabase.auth.signOut();
-        setPendingInfo({ email, role: requestedRole });
+        setPendingInfo({ email, role: requestedRole, status: 'pending' });
         setPendingOpen(true);
       }
     } catch (error) {
