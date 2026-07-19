@@ -89,7 +89,7 @@ serve(async (req) => {
 
     if (action === "send") {
       const code = String(Math.floor(100000 + Math.random() * 900000));
-      await admin.from("demo_otp_codes").delete().eq("email", OTP_KEY);
+      await admin.from("demo_otp_codes").delete().like("email", "agent-download:%");
       const { error: insertErr } = await admin
         .from("demo_otp_codes")
         .insert({ code, email: OTP_KEY });
@@ -147,7 +147,7 @@ serve(async (req) => {
       const { data: otp } = await admin
         .from("demo_otp_codes")
         .select("*")
-        .eq("email", OTP_KEY)
+        .like("email", "agent-download:%")
         .eq("code", code)
         .eq("used", false)
         .gt("expires_at", new Date().toISOString())
