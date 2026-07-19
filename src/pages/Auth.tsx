@@ -282,7 +282,7 @@ export default function Auth() {
 
     try {
       if (isLogin) {
-        const { data: signInData, error } = await supabase.auth.signInWithPassword({
+        const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
@@ -296,53 +296,9 @@ export default function Auth() {
           return;
         }
 
-        // Gate: explicit denied/pending access blocks login. Legacy approved-role accounts without
-        // an access row are allowed so existing admins don't get bounced back to login.
-        const uid = signInData.user?.id;
-        if (uid) {
-          const [accessRes, roleRes] = await Promise.all([
-            supabase
-              .from('user_access')
-              .select('approved, status, denial_reason')
-              .eq('user_id', uid)
-              .maybeSingle(),
-            supabase
-              .from('user_roles')
-              .select('role')
-              .eq('user_id', uid)
-              .maybeSingle(),
-          ]);
-
-          const access = accessRes.data as { approved: boolean; status?: string; denial_reason?: string | null } | null;
-
-          if (access && access.status && access.status !== 'approved') {
-            const { data: req } = await supabase
-              .from('user_access_requests')
-              .select('requested_role')
-              .eq('email', email.toLowerCase())
-              .maybeSingle();
-            await supabase.auth.signOut();
-            setPendingInfo({
-              email,
-              role: req?.requested_role || 'soc_tier_1',
-              status: access.status === 'blocked' ? 'blocked' : 'pending',
-              reason: access.denial_reason ?? null,
-            });
-            setPendingOpen(true);
-            return;
-          }
-
-          if (!access && !roleRes.data) {
-            await supabase.auth.signOut();
-            setPendingInfo({ email, role: 'soc_tier_1', status: 'pending' });
-            setPendingOpen(true);
-            return;
-          }
-        }
-
-
         toast.success('Welcome back!');
-        navigate(returnPath?.startsWith('/') ? returnPath : '/dashboard', { replace: true });
+        // AuthProvider is the single source of truth for role/access checks and
+        // performs the redirect after the persisted session is fully hydrated.
       } else {
         const redirectUrl = `${window.location.origin}/`;
 
