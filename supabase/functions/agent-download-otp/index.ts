@@ -89,7 +89,12 @@ serve(async (req) => {
 
     if (action === "send") {
       const code = String(Math.floor(100000 + Math.random() * 900000));
-      await admin.from("demo_otp_codes").delete().like("email", "agent-download:%");
+      // Purge only expired/used codes; keep valid unused ones so previously-emailed codes still work
+      await admin
+        .from("demo_otp_codes")
+        .delete()
+        .like("email", "agent-download:%")
+        .or(`used.eq.true,expires_at.lt.${new Date().toISOString()}`);
       const { error: insertErr } = await admin
         .from("demo_otp_codes")
         .insert({ code, email: OTP_KEY });
