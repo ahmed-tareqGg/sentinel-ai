@@ -116,7 +116,10 @@ export default function Auth() {
 
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const returnPath = (
+    location.state as { from?: string } | null
+  )?.from;
 
   const isRecoveryFlow = useMemo(() => {
     const hash = location.hash || '';
@@ -126,10 +129,10 @@ export default function Auth() {
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (user && !isRecoveryFlow) {
-      navigate('/dashboard');
+    if (!authLoading && user && !isRecoveryFlow) {
+      navigate(returnPath?.startsWith('/') ? returnPath : '/dashboard', { replace: true });
     }
-  }, [user, isRecoveryFlow, navigate]);
+  }, [user, authLoading, isRecoveryFlow, navigate, returnPath]);
 
   useEffect(() => {
     // Convenience: prefill forgot email from the login email input
@@ -180,7 +183,7 @@ export default function Auth() {
           await supabase.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
         }
         toast.success('Welcome to Demo Mode! 👋');
-        navigate('/dashboard');
+        navigate(returnPath?.startsWith('/') ? returnPath : '/dashboard', { replace: true });
       } catch (error) {
         console.error('Demo OTP verify error:', error);
         toast.error('كود غير صحيح أو منتهي الصلاحية');
