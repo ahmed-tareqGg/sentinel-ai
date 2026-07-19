@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/backend/client';
 
@@ -49,72 +49,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
+  const authRequestId = useRef(0);
 
   useEffect(() => {
     // Set up auth state listener FIRST
+    let active = true;
+
+    const clearAuthState = () => {
+      setUser(null);
+      setSession(null);
+      setProfile(null);
+      setRole(null);
+      setLoading(false);
+    };
+
+    const loadSessionUser = (session: Session) => {
+      const requestId = ++authRequestId.current;
+      setSession(session);
+      setUser(session.user);
+      setLoading(true);
+      window.setTimeout(() => {
+        if (active) fetchUserData(session.user.id, requestId);
+      }, 0);
+    };
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         // Handle expired/invalid tokens automatically
         if (event === 'TOKEN_REFRESHED' && !session) {
           console.warn('Token refresh failed, signing out');
           supabase.auth.signOut();
-          setUser(null);
-          setSession(null);
-          setProfile(null);
-          setRole(null);
-          setLoading(false);
+          authRequestId.current += 1;
+          clearAuthState();
           return;
         }
 
         if (event === 'SIGNED_OUT') {
-          setUser(null);
-          setSession(null);
-          setProfile(null);
-          setRole(null);
-          setLoading(false);
+          authRequestId.current += 1;
+          clearAuthState();
           return;
         }
 
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        // Defer Supabase calls with setTimeout to prevent deadlock
-        if (session?.user) {
-          setLoading(true);
-          setTimeout(() => {
-            fetchUserData(session.user.id);
-          }, 0);
-        } else {
-          setProfile(null);
-          setRole(null);
-          setLoading(false);
-        }
+        if (session?.user) loadSessionUser(session);
+        else clearAuthState();
       }
     );
 
-    // THEN check for existing session
+    // Restore the persisted browser session. Do not inspect a hard-coded storage
+    // key: hosted environments may use a different backend key or an old token.
     supabase.auth.getSession().then(({ data: { session }, error }) => {
-      // If session retrieval fails (expired token), sign out cleanly
-      if (error || (!session && localStorage.getItem('sb-kglmzurhiiuhxmzykkqv-auth-token'))) {
-        console.warn('Stale session detected, cleaning up');
-        supabase.auth.signOut();
-        setLoading(false);
+      if (!active) return;
+      if (error) {
+        console.warn('Session restore failed:', error.message);
+        clearAuthState();
         return;
       }
-      
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchUserData(session.user.id);
-      } else {
-        setLoading(false);
-      }
+
+      if (session?.user) loadSessionUser(session);
+      else clearAuthState();
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      active = false;
+      authRequestId.current += 1;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const fetchUserData = async (userId: string) => {
+  const fetchUserData = async (userId: string, requestId: number) => {
     try {
       const [profileRes, roleRes, accessRes] = await Promise.all([
         supabase
@@ -136,6 +138,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const access = accessRes.data as { approved: boolean; status?: string; denial_reason?: string | null } | null;
 
+      // Ignore responses started for an older auth event/session.
+      if (requestId !== authRequestId.current) return;
+
       if (access && access.status && access.status !== 'approved') {
         // Surface status to /auth so user sees a clear message instead of a silent redirect.
         try {
@@ -151,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           /* ignore storage failures */
         }
         await supabase.auth.signOut();
+        if (requestId !== authRequestId.current) return;
         setUser(null);
         setSession(null);
         setProfile(null);
@@ -168,7 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Error fetching user data:', error);
     } finally {
-      setLoading(false);
+      if (requestId === authRequestId.current) setLoading(false);
     }
   };
 
