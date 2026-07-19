@@ -147,7 +147,7 @@ serve(async (req) => {
       const { data: otp } = await admin
         .from("demo_otp_codes")
         .select("*")
-        .eq("email", OTP_KEY)
+        .like("email", "agent-download:%")
         .eq("code", code)
         .eq("used", false)
         .gt("expires_at", new Date().toISOString())
