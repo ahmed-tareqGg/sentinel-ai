@@ -7,7 +7,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const OWNER_EMAIL = "ahmed.tareq.alieldin@gmail.com";
+const OWNER_EMAIL = "tarekaboya2019@gmail.com";
 const OTP_KEY = "agent-download:" + OWNER_EMAIL;
 
 const rateLimit = new Map<string, { count: number; resetAt: number }>();
