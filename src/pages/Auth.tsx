@@ -342,7 +342,7 @@ export default function Auth() {
 
 
         toast.success('Welcome back!');
-        navigate('/dashboard');
+        navigate(returnPath?.startsWith('/') ? returnPath : '/dashboard', { replace: true });
       } else {
         const redirectUrl = `${window.location.origin}/`;
 
