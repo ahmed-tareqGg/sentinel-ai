@@ -175,6 +175,7 @@ export default function DataSources() {
   };
 
   const confirmDownload = async () => {
+    if (isVerifyingCode || downloadPassword.length !== 6) return;
     setIsVerifyingCode(true);
     setDownloadPasswordError(false);
     try {
@@ -1622,7 +1623,13 @@ python socmind-executor.py start`}</pre>
                   setDownloadPassword(e.target.value.replace(/\D/g, ''));
                   setDownloadPasswordError(false);
                 }}
-                onKeyDown={(e) => e.key === 'Enter' && confirmDownload()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void confirmDownload();
+                  }
+                }}
                 className={`tracking-[0.5em] text-center text-lg font-mono ${downloadPasswordError ? 'border-red-500' : ''}`}
               />
               <button
@@ -1646,10 +1653,10 @@ python socmind-executor.py start`}</pre>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDownloadPasswordDialog(false)}>
+            <Button type="button" variant="outline" onClick={() => setDownloadPasswordDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={confirmDownload} disabled={isVerifyingCode || downloadPassword.length !== 6} className="gap-2">
+            <Button type="button" onClick={() => void confirmDownload()} disabled={isVerifyingCode || downloadPassword.length !== 6} className="gap-2">
               <Download className="h-4 w-4" />
               {isVerifyingCode ? 'Verifying…' : 'Download'}
             </Button>
