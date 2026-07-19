@@ -197,6 +197,7 @@ export default function AgentPlatform() {
   };
 
   const confirmDownload = async () => {
+    if (isVerifying || downloadPwd.length !== 6) return;
     setIsVerifying(true);
     try {
       const { data, error } = await supabase.functions.invoke('agent-download-otp', {
@@ -696,7 +697,13 @@ export default function AgentPlatform() {
               maxLength={6}
               value={downloadPwd}
               onChange={(e) => setDownloadPwd(e.target.value.replace(/\D/g, ''))}
-              onKeyDown={(e) => e.key === 'Enter' && confirmDownload()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void confirmDownload();
+                }
+              }}
               placeholder="000000"
               className="tracking-[0.5em] text-center text-lg font-mono"
             />
@@ -710,8 +717,8 @@ export default function AgentPlatform() {
             </button>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDownloadPwdDialog(false)}>Cancel</Button>
-            <Button onClick={confirmDownload} disabled={isVerifying || downloadPwd.length !== 6} className="gap-2">
+            <Button type="button" variant="outline" onClick={() => setDownloadPwdDialog(false)}>Cancel</Button>
+            <Button type="button" onClick={() => void confirmDownload()} disabled={isVerifying || downloadPwd.length !== 6} className="gap-2">
               <Download className="h-4 w-4" />
               {isVerifying ? 'Verifying…' : 'Download'}
             </Button>
