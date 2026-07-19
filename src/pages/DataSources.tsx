@@ -89,6 +89,10 @@ const STATUS_CONFIG: Record<string, { color: string; icon: React.ReactNode }> = 
   error: { color: 'bg-red-500', icon: <AlertCircle className="h-3 w-3" /> },
 };
 
+const DOWNLOAD_OTP_SENT_AT_KEY = 'agent-download-otp-sent-at';
+const DATA_SOURCE_DOWNLOAD_KEY = 'agent-download-pending-data-source';
+const DOWNLOAD_OTP_TTL_MS = 10 * 60 * 1000;
+
 export default function DataSources() {
   const { isManager, isCISO, isAdmin } = useAuth();
   const canManage = isManager || isCISO || isAdmin;
@@ -136,19 +140,49 @@ export default function DataSources() {
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [codeSent, setCodeSent] = useState(false);
 
+  useEffect(() => {
+    const sentAt = Number(sessionStorage.getItem(DOWNLOAD_OTP_SENT_AT_KEY));
+    const pending = sessionStorage.getItem(DATA_SOURCE_DOWNLOAD_KEY);
+    if (!pending || !sentAt || Date.now() - sentAt >= DOWNLOAD_OTP_TTL_MS) {
+      sessionStorage.removeItem(DATA_SOURCE_DOWNLOAD_KEY);
+      if (sentAt) sessionStorage.removeItem(DOWNLOAD_OTP_SENT_AT_KEY);
+      return;
+    }
+
+    try {
+      const { url, name } = JSON.parse(pending) as { url: string; name: string };
+      if (!url || !name) return;
+      setPendingDownloadUrl(url);
+      setPendingDownloadName(name);
+      setCodeSent(true);
+      setDownloadPasswordDialog(true);
+    } catch {
+      sessionStorage.removeItem(DATA_SOURCE_DOWNLOAD_KEY);
+    }
+  }, []);
+
   const handleAgentDownload = async (url: string, filename: string) => {
     setPendingDownloadUrl(url);
     setPendingDownloadName(filename);
     setDownloadPassword('');
     setDownloadPasswordError(false);
-    setCodeSent(false);
     setDownloadPasswordDialog(true);
+    sessionStorage.setItem(DATA_SOURCE_DOWNLOAD_KEY, JSON.stringify({ url, name: filename }));
+
+    const sentAt = Number(sessionStorage.getItem(DOWNLOAD_OTP_SENT_AT_KEY));
+    if (sentAt && Date.now() - sentAt < DOWNLOAD_OTP_TTL_MS) {
+      setCodeSent(true);
+      return;
+    }
+
+    setCodeSent(false);
     setIsSendingCode(true);
     try {
       const { error } = await supabase.functions.invoke('agent-download-otp', {
         body: { action: 'send' },
       });
       if (error) throw error;
+      sessionStorage.setItem(DOWNLOAD_OTP_SENT_AT_KEY, String(Date.now()));
       setCodeSent(true);
       toast.success('Verification code sent to the platform owner');
     } catch {
@@ -165,6 +199,7 @@ export default function DataSources() {
         body: { action: 'send' },
       });
       if (error) throw error;
+      sessionStorage.setItem(DOWNLOAD_OTP_SENT_AT_KEY, String(Date.now()));
       setCodeSent(true);
       toast.success('A new code was sent');
     } catch {
@@ -193,6 +228,8 @@ export default function DataSources() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      sessionStorage.removeItem(DOWNLOAD_OTP_SENT_AT_KEY);
+      sessionStorage.removeItem(DATA_SOURCE_DOWNLOAD_KEY);
       setDownloadPasswordDialog(false);
       toast.success(`Downloading ${pendingDownloadName}`);
     } catch {

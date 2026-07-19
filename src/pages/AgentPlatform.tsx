@@ -44,6 +44,10 @@ interface Agent {
   config: any;
 }
 
+const DOWNLOAD_OTP_SENT_AT_KEY = 'agent-download-otp-sent-at';
+const AGENT_PLATFORM_DOWNLOAD_KEY = 'agent-download-pending-platform';
+const DOWNLOAD_OTP_TTL_MS = 10 * 60 * 1000;
+
 const AGENT_DOWNLOADS = [
   {
     name: 'SOCMind Universal Agent',
@@ -141,6 +145,26 @@ export default function AgentPlatform() {
   const [codeSent, setCodeSent] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
+  useEffect(() => {
+    const sentAt = Number(sessionStorage.getItem(DOWNLOAD_OTP_SENT_AT_KEY));
+    const pending = sessionStorage.getItem(AGENT_PLATFORM_DOWNLOAD_KEY);
+    if (!pending || !sentAt || Date.now() - sentAt >= DOWNLOAD_OTP_TTL_MS) {
+      sessionStorage.removeItem(AGENT_PLATFORM_DOWNLOAD_KEY);
+      if (sentAt) sessionStorage.removeItem(DOWNLOAD_OTP_SENT_AT_KEY);
+      return;
+    }
+
+    try {
+      const download = JSON.parse(pending) as { url: string; name: string };
+      if (!download.url || !download.name) return;
+      setPendingDownload(download);
+      setCodeSent(true);
+      setDownloadPwdDialog(true);
+    } catch {
+      sessionStorage.removeItem(AGENT_PLATFORM_DOWNLOAD_KEY);
+    }
+  }, []);
+
   // Fetch agents
   const { data: agents, isLoading, refetch } = useQuery({
     queryKey: ['agent-platform-agents'],
@@ -162,8 +186,16 @@ export default function AgentPlatform() {
   const handleDownload = async (url: string, filename: string) => {
     setPendingDownload({ url, name: filename });
     setDownloadPwd('');
-    setCodeSent(false);
     setDownloadPwdDialog(true);
+    sessionStorage.setItem(AGENT_PLATFORM_DOWNLOAD_KEY, JSON.stringify({ url, name: filename }));
+
+    const sentAt = Number(sessionStorage.getItem(DOWNLOAD_OTP_SENT_AT_KEY));
+    if (sentAt && Date.now() - sentAt < DOWNLOAD_OTP_TTL_MS) {
+      setCodeSent(true);
+      return;
+    }
+
+    setCodeSent(false);
     // Auto-send code
     setIsSendingCode(true);
     try {
@@ -171,6 +203,7 @@ export default function AgentPlatform() {
         body: { action: 'send' },
       });
       if (error) throw error;
+      sessionStorage.setItem(DOWNLOAD_OTP_SENT_AT_KEY, String(Date.now()));
       setCodeSent(true);
       toast.success('Verification code sent to the platform owner');
     } catch {
@@ -187,6 +220,7 @@ export default function AgentPlatform() {
         body: { action: 'send' },
       });
       if (error) throw error;
+      sessionStorage.setItem(DOWNLOAD_OTP_SENT_AT_KEY, String(Date.now()));
       setCodeSent(true);
       toast.success('A new code was sent');
     } catch {
@@ -215,6 +249,8 @@ export default function AgentPlatform() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      sessionStorage.removeItem(DOWNLOAD_OTP_SENT_AT_KEY);
+      sessionStorage.removeItem(AGENT_PLATFORM_DOWNLOAD_KEY);
       setDownloadPwdDialog(false);
       toast.success(`Downloading ${pendingDownload.name}`);
     } catch {
