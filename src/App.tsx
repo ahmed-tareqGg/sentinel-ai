@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
+import { PageSeo } from "@/components/seo/PageSeo";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PublicLayout } from "@/components/layout/PublicLayout";
@@ -77,20 +78,29 @@ const App = () => (
               <Routes>
               {/* Public Routes with PublicLayout */}
               <Route element={<PublicLayout />}>
-                <Route path="/" element={<Landing />} />
-                <Route path="/about" element={<About />} />
-                <Route path="/how-it-works" element={<HowItWorks />} />
-                <Route path="/trust" element={<Trust />} />
-                <Route path="/terms" element={<Terms />} />
-                <Route path="/privacy" element={<Privacy />} />
-                <Route path="/resume" element={<Resume />} />
-                <Route path="/knowledge-hub" element={<KnowledgeHub />} />
+                <Route path="/" element={<><PageSeo path="/" title="SOCMind — AI-Driven Security Operations Center" description="Autonomous SOC platform for real-time threat detection, automated response and incident management, built for lean security teams." />
+                  <Landing /></>} />
+                <Route path="/about" element={<><PageSeo path="/about" title="About SOCMind — Autonomous SOC Platform" description="Learn how SOCMind combines AI triage, SOAR automation and analyst workflows into one security operations platform." />
+                  <About /></>} />
+                <Route path="/how-it-works" element={<><PageSeo path="/how-it-works" title="How SOCMind Works — Detect, Triage, Respond" description="See how logs are ingested, correlated into incidents, enriched with AI analysis and contained through automated playbooks." />
+                  <HowItWorks /></>} />
+                <Route path="/trust" element={<><PageSeo path="/trust" title="Trust & Security at SOCMind" description="Encryption, role-based access control, audit logging and compliance mapping that protect data inside SOCMind." />
+                  <Trust /></>} />
+                <Route path="/terms" element={<><PageSeo path="/terms" title="Terms of Service — SOCMind" description="Terms governing use of the SOCMind security operations platform, including data ownership and automated response liability." />
+                  <Terms /></>} />
+                <Route path="/privacy" element={<><PageSeo path="/privacy" title="Privacy Policy — SOCMind" description="How SOCMind handles security log data, encryption, access control, retention and compliance requirements." />
+                  <Privacy /></>} />
+                <Route path="/resume" element={<><PageSeo path="/resume" title="Ahmed Tareq — Security Operations Engineer" description="Background, certifications and hands-on SOC and Active Directory security work behind the SOCMind platform." />
+                  <Resume /></>} />
+                <Route path="/knowledge-hub" element={<><PageSeo path="/knowledge-hub" title="Knowledge Hub — AD Attacks & DFIR Writeups" description="Deep-dive Active Directory attack rooms and digital forensics writeups with detection queries, MITRE mapping and mitigations." />
+                  <KnowledgeHub /></>} />
                 <Route path="/knowledge-hub/blog/:slug" element={<ForensicsBlogDetail />} />
                 <Route path="/knowledge-hub/ad/:slug" element={<AdAttackRoomDetail />} />
               </Route>
               
               {/* Demo Landing (standalone - no layout) */}
-              <Route path="/demo-landing" element={<DemoLanding />} />
+              <Route path="/demo-landing" element={<><PageSeo path="/demo-landing" title="SOCMind Live Demo — Explore a Working SOC" description="Walk through a live, read-only SOCMind environment with real incidents, playbooks and AI-assisted investigation." />
+                <DemoLanding /></>} />
               
               {/* Auth Route (standalone) */}
               <Route path="/auth" element={<Auth />} />
