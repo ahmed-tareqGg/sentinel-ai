@@ -31,6 +31,7 @@ import { toast } from '@/hooks/use-toast';
 import { adAttackRooms } from '@/data/knowledgeHub';
 import { generateAdAttackRoomPDF } from '@/lib/knowledgeHubPdf';
 import TopicEngagement from '@/components/knowledge/TopicEngagement';
+import { PageSeo, SITE_URL } from '@/components/seo/PageSeo';
 
 const severityColor: Record<string, string> = {
   Low: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
@@ -57,6 +58,24 @@ export default function AdAttackRoomDetail() {
 
   return (
     <article className="min-h-screen bg-background">
+      <PageSeo
+        path={`/knowledge-hub/ad/${room.slug}`}
+        title={`${room.name} — AD Attack & Detection`.slice(0, 60)}
+        description={room.summary.slice(0, 155)}
+        type="article"
+        image={room.coverImage}
+        jsonLd={{
+          '@context': 'https://schema.org',
+          '@type': 'Article',
+          headline: room.name,
+          description: room.summary,
+          datePublished: room.publishedAt,
+          author: { '@type': 'Person', name: room.author },
+          publisher: { '@type': 'Organization', name: 'SOCMind' },
+          articleSection: room.category,
+          mainEntityOfPage: `${SITE_URL}/knowledge-hub/ad/${room.slug}`,
+        }}
+      />
       {/* Hero */}
       <header className="relative h-[60vh] min-h-[420px] overflow-hidden">
         <img src={room.coverImage} alt={room.name} className="absolute inset-0 w-full h-full object-cover" />
