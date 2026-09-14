@@ -24,6 +24,7 @@ import { toast } from '@/hooks/use-toast';
 import { forensicsBlogs } from '@/data/knowledgeHub';
 import { generateForensicsBlogPDF } from '@/lib/knowledgeHubPdf';
 import TopicEngagement from '@/components/knowledge/TopicEngagement';
+import { PageSeo, SITE_URL } from '@/components/seo/PageSeo';
 
 const difficultyColor: Record<string, string> = {
   Easy: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
@@ -56,6 +57,24 @@ export default function ForensicsBlogDetail() {
 
   return (
     <article className="min-h-screen bg-background">
+      <PageSeo
+        path={`/knowledge-hub/blog/${blog.slug}`}
+        title={`${blog.title} — DFIR Writeup`.slice(0, 60)}
+        description={blog.scenario.slice(0, 155)}
+        type="article"
+        image={blog.coverImage}
+        jsonLd={{
+          '@context': 'https://schema.org',
+          '@type': 'Article',
+          headline: blog.title,
+          description: blog.scenario,
+          datePublished: blog.publishedAt,
+          author: { '@type': 'Person', name: blog.author },
+          publisher: { '@type': 'Organization', name: 'SOCMind' },
+          articleSection: blog.category,
+          mainEntityOfPage: `${SITE_URL}/knowledge-hub/blog/${blog.slug}`,
+        }}
+      />
       {/* Hero with cover image */}
       <header className="relative h-[60vh] min-h-[420px] overflow-hidden">
         <img
